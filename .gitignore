@@ -1,0 +1,62 @@
+
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Local databases (SQLite)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+
+# Local application data
+data/
+logs/
+tmp/
+temp/
+
+# Agent runtime data
+.agent-sessions/
+.agent-worktrees/
+.agent-logs/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Package manager
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE / Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+
+# Local overrides
+*.local
+
+# Generated files
+*.log
