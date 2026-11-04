@@ -8,17 +8,11 @@ pnpm permits its native install script in `pnpm-workspace.yaml`.
 
 ## Connection lifecycle
 
-The default database file is:
-
-```text
-~/Library/Application Support/ai-agent-manager/database.sqlite
-```
-
-Override it with `AI_AGENT_MANAGER_DATABASE_PATH`, using an absolute filesystem
-path or a path starting with `~/`. Empty, relative, null-byte, URL, and `:memory:`
-values are rejected. The parent directory is created recursively when a connection
-is explicitly opened, not on import or during migration generation. This default
-is macOS-specific; another platform should supply an explicit override for now.
+The database file is resolved by `resolveDatabasePath()` using the runtime path
+rules in the next section (by default
+`~/Library/Application Support/ai-agent-manager/database.sqlite`). The parent
+directory is created (mode `0700` for new directories) only when a connection is
+explicitly opened, not on import or during migration generation.
 
 Every connection enables foreign keys, WAL mode, and a 5000 ms busy timeout.
 Opening a connection never applies migrations. Close each connection when finished.
@@ -44,6 +38,57 @@ try {
 tests. `resolveDatabasePath()` resolves the environment configuration without I/O.
 There is no singleton and the web app does not consume the package yet.
 
+## Runtime paths
+
+This package is the single, Node.js-only resolver for local runtime paths. Path
+resolution is pure (no filesystem access) and validated with Zod; directory creation
+is a separate, explicit step. Nothing is created on import.
+
+| Variable                         | Purpose                         | Default                                          |
+| -------------------------------- | ------------------------------- | ------------------------------------------------ |
+| `AI_AGENT_MANAGER_DATA_ROOT`     | Application data directory      | `~/Library/Application Support/ai-agent-manager` |
+| `AI_AGENT_MANAGER_DATABASE_PATH` | SQLite database file            | `<data root>/database.sqlite`                    |
+| `AI_AGENT_MANAGER_WORKTREE_ROOT` | Managed root for task worktrees | `<data root>/worktrees`                          |
+
+Precedence, highest first:
+
+1. An explicit argument, such as `createDatabase({ path })` (tests and tooling).
+2. The specific variable (`AI_AGENT_MANAGER_DATABASE_PATH`, `AI_AGENT_MANAGER_WORKTREE_ROOT`).
+3. A path derived from `AI_AGENT_MANAGER_DATA_ROOT`.
+4. The macOS default, based on the current user's home directory.
+
+The database and worktree overrides are independent: setting the database path does
+not move the data root or the worktree root. The worktree default follows ARCHITECTURE
+§8; any other location, such as `~/repos/.agent-worktrees`, is set via the variable.
+
+Validation rules, applied before any side effect:
+
+- Values are trimmed; empty, relative, `~user`, bare `~`, `:memory:`, and null-byte
+  values are rejected with a `RuntimeConfigError` naming the variable. Values may be
+  absolute or start with `~/`; spaces are supported. Paths are normalized.
+- The data root and worktree root must not be the home directory, the filesystem
+  root, or a parent of either.
+- The worktree root must not be the data root or contain it, and the database file
+  must not be inside the worktree root, so agent workspaces cannot reach app data.
+
+```ts
+import {
+  ensureWorktreeRoot,
+  initializeDataRoot,
+  resolveRuntimePaths,
+} from '@ai-agent-manager/database';
+
+const paths = resolveRuntimePaths(); // { dataRoot, databasePath, worktreeRoot }, frozen
+initializeDataRoot(paths); // explicit; creates missing directories with mode 0700
+ensureWorktreeRoot(paths); // only when a worktree is about to be created (future milestone)
+```
+
+`resolveRuntimePaths({ environment, homeDirectory })` accepts an explicit environment
+and home directory for tests. `resolveDataRoot`, `resolveDatabasePath`, and
+`resolveWorktreeRoot` resolve individual paths with the same rules. The initialization
+helpers never delete, empty, or change permissions of existing directories and fail
+if a file occupies the path.
+
 ## Explicit commands
 
 Run these from the repository root:
@@ -67,7 +112,9 @@ pnpm --filter @ai-agent-manager/database db:smoke
 - `db:migrate:kit` initializes the file and then invokes `drizzle-kit migrate`
   with the same configuration and migration history. This alternate CLI uses its
   own connection; use `db:migrate` when connection PRAGMAs must govern migration SQL.
-- `db:smoke` (also `test`) uses temporary directories and never touches the default
+- `test` runs all package tests, including runtime path resolution, directory
+  initialization, and a check that importing the package has no filesystem side effects.
+- `db:smoke` uses temporary directories and never touches the default
   application database. It verifies SQL operations, persistence, connection PRAGMAs,
   rollback, constraints, migration replay, and invalid paths.
 

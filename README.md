@@ -9,7 +9,8 @@ in dedicated Git worktrees. Product requirements and architecture live in
 M0.4 adds an explicit SQLite/Drizzle database foundation alongside the web shell.
 M0.5 adds shared `core` contracts and a standalone Node.js worker process that opens
 the configured database and shuts down gracefully. Projects, project boards, and
-dashboard data remain future features. The web app is not connected to the database,
+dashboard data remain future features. M0-03 adds validated runtime configuration for
+the data root, database file, and managed worktree root. The web app is not connected to the database,
 and no scheduling, API endpoints, or agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
@@ -72,10 +73,12 @@ database and worker tests use disposable temporary databases.
 
 ## Worker and shared packages
 
-`apps/worker` is a separate Node.js process. It never imports Next.js; it opens SQLite
-only through `createDatabase()` from `@ai-agent-manager/database`, so the default path
-and the `AI_AGENT_MANAGER_DATABASE_PATH` override behave exactly as described below.
-It does not apply migrations, poll, or run jobs yet. A single idle timer keeps it alive
+`apps/worker` is a separate Node.js process. It never imports Next.js. At startup it
+resolves and validates all runtime paths (see [Runtime configuration](#runtime-configuration)),
+logs them, and only then opens SQLite through `createDatabase()` from
+`@ai-agent-manager/database`. Invalid configuration fails startup with exit code 1 before
+any file is touched. It does not create the worktree root, apply migrations, poll, or
+run jobs yet. A single idle timer keeps it alive
 until SIGINT or SIGTERM, which stop the worker, close the database connection, and exit
 with code 0.
 
@@ -93,6 +96,43 @@ Workspace packages export `dist/` for production. They also declare a
 TypeScript `customConditions`), so they work without building dependencies first. The
 worker build clears the condition and compiles against the built packages; `pnpm build`
 builds dependencies first in topological order.
+
+## Runtime configuration
+
+All local paths come from one Node.js-only resolver in `@ai-agent-manager/database`
+(`resolveRuntimePaths()`). Environment files are not loaded automatically; export
+variables in the shell.
+
+| Variable                         | Default                                          |
+| -------------------------------- | ------------------------------------------------ |
+| `AI_AGENT_MANAGER_DATA_ROOT`     | `~/Library/Application Support/ai-agent-manager` |
+| `AI_AGENT_MANAGER_DATABASE_PATH` | `<data root>/database.sqlite`                    |
+| `AI_AGENT_MANAGER_WORKTREE_ROOT` | `<data root>/worktrees`                          |
+
+A specific variable wins over a path derived from the data root, which wins over the
+macOS default; the home directory is resolved at run time. Values must be absolute or
+start with `~/`, may contain spaces, and are validated before any filesystem access. See
+[`packages/database/README.md`](packages/database/README.md#runtime-paths) for the full
+precedence and validation rules. Directories are created only by explicit calls,
+never on import; the worktree root is created only when a worktree is needed.
+
+```sh
+# Keep task worktrees beside local repositories (the PoC development layout).
+export AI_AGENT_MANAGER_WORKTREE_ROOT="$HOME/repos/.agent-worktrees"
+
+# Use an isolated data root, for example on another volume.
+export AI_AGENT_MANAGER_DATA_ROOT="/Volumes/Work Disk/ai-agent-manager"
+
+# Only move the database; the data and worktree roots keep their defaults.
+export AI_AGENT_MANAGER_DATABASE_PATH="$HOME/tmp/ai-agent-manager/database.sqlite"
+
+pnpm dev
+```
+
+The worker reads these variables when it starts. The web app does not consume them
+yet; when it does, only server-side code (route handlers and server components) may
+import `@ai-agent-manager/database`. Resolved paths must not be passed to client
+components or exposed through `NEXT_PUBLIC_*` variables.
 
 ## Database foundation
 

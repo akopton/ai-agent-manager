@@ -9,6 +9,7 @@ export type SignalSource = {
 
 export type RunWorkerOptions = {
   logger?: Logger;
+  resolvePaths?: WorkerOptions['resolvePaths'];
   openDatabase?: WorkerOptions['openDatabase'];
   signals?: SignalSource;
   /** Called after the worker has started and shutdown handlers are installed. */
@@ -26,11 +27,12 @@ const keepAliveIntervalMs = 2 ** 31 - 1;
  */
 export const runWorker = ({
   logger = createConsoleLogger(),
+  resolvePaths,
   openDatabase,
   signals = process,
   onStarted,
 }: RunWorkerOptions = {}): Promise<WorkerExit> => {
-  const worker = createWorker({ logger, openDatabase });
+  const worker = createWorker({ logger, resolvePaths, openDatabase });
 
   try {
     worker.start();

@@ -4,7 +4,11 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { shutdownSignals, workerStateSchema } from '@ai-agent-manager/core';
-import { createDatabase, type DatabaseConnection } from '@ai-agent-manager/database';
+import {
+  createDatabase,
+  resolveRuntimePaths,
+  type DatabaseConnection,
+} from '@ai-agent-manager/database';
 import { runWorker, type SignalSource } from '../src/run-worker.js';
 import { createWorker } from '../src/worker.js';
 import { createRecordingLogger, withTemporaryDirectory } from './helpers.js';
@@ -58,6 +62,42 @@ test('uses AI_AGENT_MANAGER_DATABASE_PATH through the database package by defaul
       }
     }
   });
+});
+
+test('derives the database from AI_AGENT_MANAGER_DATA_ROOT and defers the worktree root', async () => {
+  await withTemporaryDirectory((directory) => {
+    const dataRoot = join(directory, 'Application Support', 'agent manager');
+    const worker = createWorker({
+      logger: createRecordingLogger(),
+      resolvePaths: () =>
+        resolveRuntimePaths({ environment: { AI_AGENT_MANAGER_DATA_ROOT: dataRoot } }),
+    });
+    worker.start();
+    try {
+      assert.equal(worker.paths?.dataRoot, dataRoot);
+      assert.equal(worker.connection?.path, join(dataRoot, 'database.sqlite'));
+      assert.equal(existsSync(join(dataRoot, 'database.sqlite')), true);
+      assert.equal(existsSync(join(dataRoot, 'worktrees')), false);
+    } finally {
+      worker.stop();
+    }
+  });
+});
+
+test('rejects invalid runtime configuration before opening the database', async () => {
+  let opened = false;
+  const exit = await runWorker({
+    logger: createRecordingLogger(),
+    signals: new EventEmitter(),
+    resolvePaths: () =>
+      resolveRuntimePaths({ environment: { AI_AGENT_MANAGER_WORKTREE_ROOT: 'relative' } }),
+    openDatabase: () => {
+      opened = true;
+      throw new Error('Unexpected database access');
+    },
+  });
+  assert.deepEqual(exit, { exitCode: 1 });
+  assert.equal(opened, false);
 });
 
 for (const signal of shutdownSignals) {

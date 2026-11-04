@@ -1,8 +1,8 @@
-import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { resolveDatabasePath } from './config.js';
+import { ensureDirectory } from './directories.js';
 import { schema } from './schema.js';
 
 export type DatabaseConnection = {
@@ -16,7 +16,7 @@ export const createDatabase = (options: { path?: string } = {}): DatabaseConnect
   const path = resolveDatabasePath(
     options.path === undefined ? process.env : { AI_AGENT_MANAGER_DATABASE_PATH: options.path },
   );
-  mkdirSync(dirname(path), { recursive: true });
+  ensureDirectory(dirname(path));
   const sqlite = new Database(path);
 
   try {

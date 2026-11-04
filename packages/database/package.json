@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "tsx --test tests/database.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "db:smoke": "tsx --test tests/database.test.ts",
     "db:init": "tsx scripts/init.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
