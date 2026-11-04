@@ -175,6 +175,10 @@ an unconfined agent is dangerous. Their verdict is always `inconclusive`.
 
 ## Future supervised real CLI tests
 
+The complete isolation assessment, test matrices and operator runbook are in
+[`docs/real-cli-verification.md`](docs/real-cli-verification.md) (M1-04B.1). No real CLI test may
+start before the owner approves that environment and plan.
+
 Real runs need a CLI login and, for adversarial probes, an isolation mechanism. Neither is ever used
 automatically.
 
