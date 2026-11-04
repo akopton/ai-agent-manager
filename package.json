@@ -1,10 +1,13 @@
 {
   "name": "ai-agent-manager",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
+  "description": "Local-first orchestration for coding agents",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "pnpm --recursive --parallel --if-present run dev",
+    "typecheck": "tsc --noEmit && pnpm --recursive --if-present run typecheck",
+    "lint": "pnpm --recursive --if-present run lint",
+    "test": "pnpm --recursive --if-present run test"
   },
   "keywords": [],
   "author": "",
