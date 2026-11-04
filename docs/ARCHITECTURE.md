@@ -304,6 +304,21 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
   - the workspace matches the trusted repository identity;
   - the invocation starts with the launch arguments.
 
+**SEC-02b implementation notes (Trusted Local gate, `packages/orchestrator`).**
+
+- **API.** `authorizeTrustedLocalExecution(request, trustedState)` is a separate function from `authorizeAgentExecution`. It shares the strict gate's preflight (`verifyWorkspace`, `verifyExecutable`, the deny list), which is exported internally.
+- **Trusted state.** `trustedState` (`TrustedLocalState`: `enabled`, `currentDisclosureVersion`, the recorded `acceptance` with its `acceptedRisks`, `trustedRepositories`) is a separate argument. It is injected until settings persistence exists (M2/M3). Request fields cannot grant trust or acceptance, and unknown request fields are rejected.
+- **Invocation re-preparation.** The gate re-prepares the invocation with the shipped adapter, from the detected `installation`, the request's `modelId` and the launch environment. The arguments, environment digest, executable identity and working directory must match exactly.
+- **Version support.** CLI version support uses the adapters' discovery minimums (`isSupportedCliVersion` in `agents`).
+- **Control assessments** come from the shipped profile (`getRuntimeSecurityProfile`) through `assessControl`, never from the request.
+- **Clock, UID and environment** are dependencies of an internal factory (`createTrustedLocalGate`, tests only). The public function uses the real clock, `process.geteuid()` and `process.env`; an unknown effective UID is denied.
+- **Additional denial codes:** `acceptance_invalid` (the policy's acceptance differs from the recorded one, lists unrecorded risks, or is future-dated), `risk_not_accepted` and `cli_version_unsupported`.
+- **Safeguards recorded:**
+  - verified at authorization: `invocation_binding`, `worktree_verification`, `allow_listed_environment`, `non_root`;
+  - bound as obligations of the future Trusted Local launch boundary (SEC-02c): `mandatory_timeout`, `output_limits`, `process_group_stop`;
+  - not yet recorded: `post_run_git_integrity_check` (until SEC-02d).
+- **Not usable for launching yet.** No launch boundary accepts a Trusted Local authorization until SEC-02c. The strict `startAgentExecution` rejects it (tested).
+
 **Breaking contract change:** a strict policy now **requires** `mode: 'strict_isolated'`. A policy without a mode is `policy_invalid`, never interpreted as either mode. Strict outcomes are otherwise unchanged; every shipped-profile execution is still denied.
 
 **Mode selection and no silent downgrade.**

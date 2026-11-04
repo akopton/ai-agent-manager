@@ -36,6 +36,7 @@ export {
   type SecurityModeAuthorization,
   type StrictExecutionAuthorization,
   type TrustedLocalExecutionAuthorization,
+  type TrustedLocalAuthorizationDecision,
   type TrustedLocalSafeguard,
   type TrustedRepository,
   type VerifiedWorkspace,

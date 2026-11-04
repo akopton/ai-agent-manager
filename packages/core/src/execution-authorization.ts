@@ -49,7 +49,7 @@ export const securityDenialCodes = [
   'executable_not_verified',
   /** The invocation does not start with the profile's launch arguments, or is malformed. */
   'invocation_invalid',
-  // Trusted Local Mode only (SEC-02). Defined here; no gate emits them yet (SEC-02b).
+  // Trusted Local Mode only (SEC-02). Emitted by `authorizeTrustedLocalExecution` (SEC-02b).
   /** The request's mode does not match the gate or authorization it was given to. */
   'mode_mismatch',
   /** Trusted Local Mode is not enabled by the operator. */
@@ -58,6 +58,12 @@ export const securityDenialCodes = [
   'acceptance_missing',
   /** The acceptance refers to an older disclosure version. */
   'acceptance_stale',
+  /** The policy's acceptance differs from the recorded one, lists unaccepted risks, or is future-dated. */
+  'acceptance_invalid',
+  /** A control that is not enforced was not explicitly accepted as a risk. */
+  'risk_not_accepted',
+  /** The detected CLI version is malformed or older than the oldest assessed version. */
+  'cli_version_unsupported',
   /** The repository is not trusted, or its identity (root, common dir) differs from the trusted one. */
   'repository_not_trusted',
   /** The process would run with elevated privileges. */
@@ -376,4 +382,9 @@ export type SecurityModeAuthorization = z.infer<typeof securityModeAuthorization
 
 export type ExecutionAuthorizationDecision =
   | { authorized: true; authorization: ExecutionAuthorization }
+  | { authorized: false; denials: readonly SecurityDenial[] };
+
+/** Result of the Trusted Local gate. A denial never carries a partial authorization. */
+export type TrustedLocalAuthorizationDecision =
+  | { authorized: true; authorization: TrustedLocalExecutionAuthorization }
   | { authorized: false; denials: readonly SecurityDenial[] };

@@ -38,6 +38,7 @@ export {
   type StartAgentExecutionResult,
 } from './execution-launch.js';
 export { cliModelIdSchema, type CliModelId } from './model-selection.js';
+export { isSupportedCliVersion } from './version-support.js';
 export { getAgentAdapter, agentAdapters } from './registry.js';
 export {
   findUnsafeLaunchArguments,

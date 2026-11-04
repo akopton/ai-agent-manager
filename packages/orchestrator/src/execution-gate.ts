@@ -99,25 +99,33 @@ const invocationSchema = z
   })
   .strict();
 
+/**
+ * Shape of the recorded task workspace facts. Shared with the Trusted Local gate.
+ *
+ * @internal Not exported from the package entry point.
+ */
+export const workspaceRequestSchema = z
+  .object({
+    taskId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+    repositoryPath: absolutePathSchema,
+    commonDir: absolutePathSchema,
+    worktreeRoot: absolutePathSchema,
+    worktreePath: absolutePathSchema,
+    branchName: z.string().min(1).max(255),
+    baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, 'must be a full commit SHA'),
+    workingDirectory: absolutePathSchema.optional(),
+  })
+  .strict();
+
 const requestSchema = z.object({
   runtime: agentRuntimeSchema,
   runtimeVersion: z.string().trim().min(1).max(100).nullable(),
   invocation: invocationSchema,
-  workspace: z
-    .object({
-      taskId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
-      repositoryPath: absolutePathSchema,
-      commonDir: absolutePathSchema,
-      worktreeRoot: absolutePathSchema,
-      worktreePath: absolutePathSchema,
-      branchName: z.string().min(1).max(255),
-      baseCommit: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/, 'must be a full commit SHA'),
-      workingDirectory: absolutePathSchema.optional(),
-    })
-    .strict(),
+  workspace: workspaceRequestSchema,
 });
 
-const describeIssues = (error: z.ZodError): string =>
+/** @internal Shared with the Trusted Local gate. */
+export const describeIssues = (error: z.ZodError): string =>
   error.issues
     .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'value'}: ${issue.message}`)
     .join('; ');
@@ -139,7 +147,8 @@ const realpathOrNull = async (path: string): Promise<string | null> => {
   }
 };
 
-const deepFreeze = <T>(value: T): T => {
+/** @internal Shared with the Trusted Local gate. */
+export const deepFreeze = <T>(value: T): T => {
   if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
     Object.freeze(value);
     for (const child of Object.values(value)) deepFreeze(child);
@@ -162,7 +171,8 @@ const issueDenials: Partial<Record<TaskWorktreeIssue, SecurityDenial['code']>> =
  * Verifies that the executable is a canonical, executable regular file whose identity still
  * equals the one observed at discovery. Read-only.
  */
-const verifyExecutable = async (
+/** @internal Shared with the Trusted Local gate. */
+export const verifyExecutable = async (
   executable: AuthorizedInvocation['executable'],
 ): Promise<SecurityDenial[]> => {
   const deny = (message: string): SecurityDenial[] => [
@@ -226,9 +236,13 @@ const assessPolicy = (
   return { controls, denials };
 };
 
-/** Verifies the worktree and working directory; read-only. */
-const verifyWorkspace = async (
-  workspace: z.output<typeof requestSchema>['workspace'],
+/**
+ * Verifies the worktree and working directory; read-only.
+ *
+ * @internal Shared with the Trusted Local gate, which must not skip any of these checks.
+ */
+export const verifyWorkspace = async (
+  workspace: z.output<typeof workspaceRequestSchema>,
   gitOptions: GitCommandOptions,
 ): Promise<{ verified: VerifiedWorkspace | null; denials: SecurityDenial[] }> => {
   const denials: SecurityDenial[] = [];

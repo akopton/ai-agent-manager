@@ -108,6 +108,47 @@ A control counts as **enforced** only when all of these hold:
 Prompt or system-prompt instructions (`instruction_only`) are defense in depth and never satisfy
 a requirement.
 
+## Trusted Local gate (SEC-02b)
+
+`authorizeTrustedLocalExecution(request, trustedState)` is a **separate** entry point for the
+personal-use Trusted Local Mode (`docs/ARCHITECTURE.md` §7.5). It never changes the strict gate,
+and neither gate falls back to the other. Agent execution is still not possible:
+`startAgentExecution` rejects Trusted Local authorizations until SEC-02c.
+
+```ts
+const decision = await authorizeTrustedLocalExecution(
+  {
+    policy, // { mode: 'trusted_local', version: 1, acceptance, acceptedRisks, interactiveApproval: 'deny', timeoutMs }
+    runtime: 'codex',
+    installation, // from adapter.detect()
+    modelId: null,
+    invocation: plan.invocation, // from adapter.prepareExecution()
+    workspace, // same shape as for the strict gate
+  },
+  trustedState, // from operator settings, never from the request (injected until M2/M3)
+);
+```
+
+It authorizes only when all of these hold:
+
+- Trusted Local is enabled, the recorded acceptance matches the current disclosure version and is
+  not in the future, and the policy repeats exactly that acceptance.
+- Every control the shipped profile does not enforce is an accepted risk.
+- The repository is trusted by canonical root **and** common Git directory.
+- The worktree passes every strict-gate workspace check.
+- The executable is the detected, unchanged CLI, at a supported version.
+- The invocation, environment digest and working directory equal what the adapter prepares.
+- A valid timeout is set, and the effective user is not root (an unknown user is denied).
+
+The authorization records:
+
+- `controlAssessments`: honest statuses from the shipped profile;
+- `acceptedRisks`: every unenforced control;
+- `safeguards`: what was verified or bound; `post_run_git_integrity_check` is not recorded until SEC-02d;
+- `processContainment: 'process_group_only'`.
+
+It never claims enforcement.
+
 ## What the gate verifies
 
 All checks are read-only (`realpath`, `lstat`, and the Git package's hardened inspection). It
