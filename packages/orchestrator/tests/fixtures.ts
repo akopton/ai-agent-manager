@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -78,4 +79,64 @@ export const snapshot = (directory: string): Map<string, string> => {
   };
   visit(directory);
   return entries;
+};
+
+/** What the fake Codex CLI does after reading its prompt from stdin. */
+export type FakeCodexBehavior = 'succeed' | 'hang';
+
+/**
+ * Writes a fake `codex` executable (a Node script) into `directory`. It answers `--version` and
+ * `exec --help` like Codex 0.166.0, records its invocation, then behaves as `behavior.txt` says.
+ * It never contacts a network or a real CLI.
+ */
+export const createFakeCodexCli = (directory: string) => {
+  mkdirSync(directory, { recursive: true });
+  const executablePath = join(directory, 'codex');
+  const help = [
+    'Usage: codex exec [OPTIONS] [PROMPT]',
+    'Options:',
+    '  -m, --model <MODEL>',
+    '  -s, --sandbox <SANDBOX_MODE>',
+    '      --ignore-user-config',
+    '      --ignore-rules',
+    '      --json',
+    '',
+  ].join('\n');
+  writeFileSync(
+    executablePath,
+    `#!${process.execPath}
+const fs = require('fs');
+const path = require('path');
+const args = process.argv.slice(2);
+const out = (text, code) => process.stdout.write(text, () => process.exit(code));
+if (args[0] === '--version') out('codex-cli 0.166.0\\n', 0);
+else if (args.includes('--help')) out(${JSON.stringify(help)}, 0);
+else {
+  let stdin = '';
+  process.stdin.on('data', (chunk) => (stdin += chunk));
+  process.stdin.on('end', () => {
+    fs.writeFileSync(path.join(__dirname, 'invocation.json'), JSON.stringify({ args, cwd: process.cwd(), stdin }));
+    const behavior = fs.readFileSync(path.join(__dirname, 'behavior.txt'), 'utf8');
+    if (behavior === 'hang') { setInterval(() => {}, 1000); return; }
+    const events = [
+      { type: 'thread.started', thread_id: 't-1' },
+      { type: 'item.completed', item: { id: 'i', type: 'agent_message', text: 'Done.' } },
+      { type: 'turn.completed', usage: {} },
+    ];
+    out(events.map((event) => JSON.stringify(event)).join('\\n') + '\\n', 0);
+  });
+}
+`,
+    { mode: 0o755 },
+  );
+  const setBehavior = (behavior: FakeCodexBehavior): void =>
+    writeFileSync(join(directory, 'behavior.txt'), behavior);
+  setBehavior('succeed');
+  return {
+    executablePath: realpathSync(executablePath),
+    setBehavior,
+    invocation: (): { args: string[]; cwd: string; stdin: string } =>
+      JSON.parse(readFileSync(join(directory, 'invocation.json'), 'utf8')),
+    wasStarted: (): boolean => existsSync(join(directory, 'invocation.json')),
+  };
 };

@@ -14,7 +14,8 @@ import {
   securityControls,
   trustedLocalExecutionAuthorizationSchema,
   trustedLocalSafeguards,
-  type ExecutionAuthorization,
+  type ExecutionSecurityMode,
+  type SecurityModeAuthorization,
 } from '@ai-agent-manager/core';
 import type { AgentAdapter, AgentEvent, AgentRunResult } from '../src/contract.js';
 import { claudeAdapterSpecification } from '../src/claude-adapter.js';
@@ -128,6 +129,7 @@ const start = async (
     ANTHROPIC_API_KEY: 'k',
   };
   const result = await startAgentExecution({
+    securityMode: 'strict_isolated',
     adapter: context.adapter,
     installation: context.installation,
     request: {
@@ -179,6 +181,8 @@ test('runs Claude with the exact prepared invocation and reports completion', as
     assert.equal(result.sessionId, 's-1');
     assert.equal(result.reportedModelId, 'claude-x');
     assert.equal(result.lingeringProcesses, 'none');
+    assert.equal(result.securityMode, 'strict_isolated');
+    assert.equal(result.processContainment, 'process_group_only');
 
     const invocation = context.fake.invocation();
     assert.deepEqual(invocation.args, [
@@ -210,6 +214,9 @@ test('runs Claude with the exact prepared invocation and reports completion', as
       'the prompt is never emitted',
     );
     assert.equal(terminalEvents(events).length, 1);
+    const started = events.find((event) => event.type === 'started');
+    assert.equal(started?.type === 'started' && started.securityMode, 'strict_isolated');
+    assert.equal(started?.type === 'started' && started.processContainment, 'process_group_only');
   });
 });
 
@@ -490,6 +497,7 @@ test('refuses to launch without a matching, fresh, single-use authorization', as
     const request = { runId: 'run-2', prompt: 'p', modelId: null, workingDirectory: workspace };
     const attempt = (overrides: Partial<Parameters<typeof startAgentExecution>[0]>) =>
       startAgentExecution({
+        securityMode: 'strict_isolated',
         adapter,
         installation,
         request,
@@ -556,10 +564,9 @@ test('refuses to launch without a matching, fresh, single-use authorization', as
   });
 });
 
-test('the strict launch boundary refuses a Trusted Local authorization (SEC-02a)', async () => {
-  // Trusted Local launches are not implemented (SEC-02c). Until then, a Trusted Local authorization
-  // that reaches startAgentExecution, for example through an unchecked cast, must be refused
-  // before anything is spawned, even with a test adapter whose profile claims enforcement.
+test('a Trusted Local authorization never passes the strict path or launches unissued', async () => {
+  // A structurally valid Trusted Local authorization that the gate never issued (built by hand,
+  // deserialized, or cast) must be refused before anything is spawned, in either mode.
   await withFakeRuntime('codex', [], async (context) => {
     const { adapter, installation, workspace } = context;
     const strict = authorizationFor(adapter, installation, workspace);
@@ -592,17 +599,75 @@ test('the strict launch boundary refuses a Trusted Local authorization (SEC-02a)
       processContainment: 'process_group_only',
     };
     assert.equal(trustedLocalExecutionAuthorizationSchema.safeParse(trusted).success, true);
-    const result = await startAgentExecution({
-      adapter,
-      installation,
-      request: { runId: 'run-trusted', prompt: 'p', modelId: null, workingDirectory: workspace },
-      // Deliberate misuse: the strict launch boundary is typed for strict authorizations only.
-      authorization: trusted as unknown as ExecutionAuthorization,
-      emit: () => undefined,
-    });
-    assert.equal(result.started, false);
-    assert.equal(!result.started && result.code, 'authorization_mismatch');
+    const forged = trusted as unknown as SecurityModeAuthorization;
+    const attempt = (securityMode: ExecutionSecurityMode, authorization: unknown) =>
+      startAgentExecution({
+        securityMode,
+        adapter,
+        installation,
+        request: { runId: 'run-trusted', prompt: 'p', modelId: null, workingDirectory: workspace },
+        authorization: authorization as SecurityModeAuthorization,
+        emit: () => undefined,
+      });
+    const codeOf = async (securityMode: ExecutionSecurityMode, authorization: unknown) => {
+      const result = await attempt(securityMode, authorization);
+      return result.started ? 'started' : result.code;
+    };
+    // Strict launch with a Trusted Local authorization: never converted.
+    assert.equal(await codeOf('strict_isolated', forged), 'mode_mismatch');
+    // Trusted Local launch with a forged authorization: no provenance.
+    assert.equal(await codeOf('trusted_local', forged), 'authorization_mismatch');
+    // A strict authorization requested as Trusted Local: never converted.
+    assert.equal(await codeOf('trusted_local', strict), 'mode_mismatch');
+    // Mixed-mode objects fail the contract before any mode-specific check.
+    for (const mixed of [
+      { ...trusted, controls: strict.controls },
+      { ...strict, controlAssessments: trusted.controlAssessments },
+      { ...trusted, mode: 'strict_isolated' },
+      { ...strict, mode: 'trusted_local' },
+      { ...trusted, mode: undefined },
+    ]) {
+      assert.equal(await codeOf('trusted_local', mixed), 'authorization_mismatch');
+      assert.equal(await codeOf('strict_isolated', mixed), 'authorization_mismatch');
+    }
+    // A missing or unknown requested mode is refused.
+    for (const mode of [undefined, 'none', 'strict']) {
+      assert.equal(
+        await codeOf(mode as unknown as ExecutionSecurityMode, strict),
+        'mode_mismatch',
+        String(mode),
+      );
+    }
     assert.throws(() => context.fake.invocation(), 'the fake CLI must never have been started');
+  });
+});
+
+test('strict single use holds for copies and deserialized authorizations', async () => {
+  await withFakeRuntime('claude', claudeSuccess, async (context) => {
+    const { adapter, installation, workspace } = context;
+    const authorization = authorizationFor(adapter, installation, workspace);
+    const launch = async (candidate: unknown) => {
+      const result = await startAgentExecution({
+        securityMode: 'strict_isolated',
+        adapter,
+        installation,
+        request: { runId: 'run-5', prompt: 'p', modelId: null, workingDirectory: workspace },
+        authorization: candidate as SecurityModeAuthorization,
+        emit: () => undefined,
+      });
+      if (result.started) {
+        await result.handle.completed;
+        return 'started';
+      }
+      return result.code;
+    };
+    assert.equal(await launch(authorization), 'started');
+    assert.equal(await launch({ ...authorization }), 'authorization_mismatch');
+    assert.equal(await launch(JSON.parse(JSON.stringify(authorization))), 'authorization_mismatch');
+    // Concurrent launches of one authorization: exactly one starts.
+    const shared = authorizationFor(adapter, installation, workspace);
+    const outcomes = await Promise.all([launch(shared), launch({ ...shared })]);
+    assert.deepEqual([...outcomes].sort(), ['authorization_mismatch', 'started']);
   });
 });
 
@@ -611,6 +676,7 @@ test('refuses a non-canonical working directory', async () => {
     const { adapter, installation, workspace } = context;
     const missing = join(context.directory, 'missing');
     const result = await startAgentExecution({
+      securityMode: 'strict_isolated',
       adapter,
       installation,
       request: { runId: 'run-3', prompt: 'p', modelId: null, workingDirectory: missing },
@@ -648,6 +714,7 @@ test('refuses a launch that differs from the authorized invocation', async () =>
     const base = authorizationFor(adapter, installation, workspace);
     const attempt = async (authorization: typeof base, sourceEnvironment = process.env) => {
       const result = await startAgentExecution({
+        securityMode: 'strict_isolated',
         adapter,
         installation,
         request,

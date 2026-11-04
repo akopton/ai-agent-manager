@@ -44,7 +44,11 @@ export type SupervisedProcess = {
   exited: Promise<ProcessExit>;
 };
 
-const usesProcessGroups = process.platform !== 'win32';
+/**
+ * Whether stop, timeout and cleanup can signal the CLI's process group on this platform. Trusted
+ * Local launches are refused where they cannot (`process_group_stop` safeguard).
+ */
+export const supervisorUsesProcessGroups = process.platform !== 'win32';
 const pollIntervalMs = 25;
 /** How long to wait for stdio to close after the process and its group are gone. */
 const streamCloseTimeoutMs = 2_000;
@@ -74,12 +78,12 @@ export const startSupervisedProcess = (
     cwd: spec.cwd,
     env: spec.env,
     shell: false,
-    detached: usesProcessGroups,
+    detached: supervisorUsesProcessGroups,
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
   });
   const pid = child.pid ?? null;
-  const processGroupId = usesProcessGroups ? pid : null;
+  const processGroupId = supervisorUsesProcessGroups ? pid : null;
   let termination: TerminationReason | null = null;
   let mainExited = false;
   let stdoutBytes = 0;

@@ -7,6 +7,28 @@ import prettier from 'eslint-config-prettier/flat';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+const diagnosticsImports = [
+  {
+    name: '@ai-agent-manager/agents/diagnostics',
+    message:
+      'Diagnostics-only entry point: it starts processes without any authorization. Launch agents through startAgentExecution.',
+  },
+  {
+    name: '@ai-agent-manager/cli-diagnostics',
+    message: 'The CLI diagnostics harness is development tooling, not production code.',
+  },
+];
+const trustedLocalIssuerImport = {
+  name: '@ai-agent-manager/agents/trusted-local-issuer',
+  message: 'Only the orchestrator Trusted Local gate may register Trusted Local authorizations.',
+};
+// Reaching into another package's sources bypasses its entry points (and the restrictions above).
+const agentsInternals = {
+  group: ['**/agents/src/**', '**/agents/dist/**'],
+  message: 'Import @ai-agent-manager/agents through its package entry points.',
+};
+const trustedLocalGateFile = 'packages/orchestrator/src/trusted-local-gate.ts';
+
 const webRequire = createRequire(new URL('./apps/web/package.json', import.meta.url));
 
 export default defineConfig([
@@ -60,26 +82,36 @@ export default defineConfig([
     extends: [tseslint.configs.recommended],
     rules: { '@typescript-eslint/consistent-type-definitions': ['error', 'type'] },
   },
+  // Restricted entry points. A later block replaces `no-restricted-imports` for its files, so each
+  // block lists everything that stays forbidden there.
   {
     // The diagnostics harness and the supervisor entry point it uses are development tooling.
-    // Production code launches agents only through `startAgentExecution`.
+    // Production code launches agents only through `startAgentExecution`. The Trusted Local issuer
+    // belongs to the orchestrator's Trusted Local gate alone.
     files: ['**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
-    ignores: ['packages/cli-diagnostics/**'],
+    ignores: ['packages/cli-diagnostics/**', trustedLocalGateFile],
     rules: {
       'no-restricted-imports': [
         'error',
-        {
-          paths: [
-            {
-              name: '@ai-agent-manager/agents/diagnostics',
-              message: 'Diagnostics-only entry point; launch agents through startAgentExecution.',
-            },
-            {
-              name: '@ai-agent-manager/cli-diagnostics',
-              message: 'The CLI diagnostics harness is development tooling, not production code.',
-            },
-          ],
-        },
+        { paths: [...diagnosticsImports, trustedLocalIssuerImport], patterns: [agentsInternals] },
+      ],
+    },
+  },
+  {
+    files: ['packages/cli-diagnostics/**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: [trustedLocalIssuerImport], patterns: [agentsInternals] },
+      ],
+    },
+  },
+  {
+    files: [trustedLocalGateFile],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: diagnosticsImports, patterns: [agentsInternals] },
       ],
     },
   },

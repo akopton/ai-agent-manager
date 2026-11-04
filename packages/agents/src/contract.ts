@@ -2,6 +2,7 @@ import type {
   AgentRuntime,
   AuthorizedInvocation,
   ExecutableIdentity,
+  ExecutionSecurityMode,
   RuntimeSecurityProfile,
 } from '@ai-agent-manager/core';
 
@@ -101,7 +102,11 @@ export type AgentExecutionRequest = {
   modelId: string | null;
   /** Canonical working directory; must equal the authorization's `workspace.workingDirectory`. */
   workingDirectory: string;
-  /** Wall-clock limit; the run fails with `timeout` when exceeded. */
+  /**
+   * Wall-clock limit; the run fails with `timeout` when exceeded. Optional in Strict Isolated
+   * Mode. In Trusted Local Mode the authorized policy's `timeoutMs` always applies, and a
+   * different value here is refused.
+   */
   timeoutMs?: number;
   /** Not supported yet; any value is rejected. Reserved for verified session resume. */
   resumeSessionId?: string;
@@ -109,7 +114,7 @@ export type AgentExecutionRequest = {
 
 /**
  * A prepared CLI invocation. **Not authorized and not safe to execute by itself**: only
- * `startAgentExecution`, given a matching `ExecutionAuthorization`, launches anything. Contains no
+ * `startAgentExecution`, given a matching authorization, launches anything. Contains no
  * environment values.
  */
 export type UnauthorizedInvocationPlan = {
@@ -232,6 +237,8 @@ export type ProcessContainment = 'process_group_only';
 export type AgentRunResult = AgentRunOutcome & {
   runId: string;
   runtime: AgentRuntime;
+  /** The mode of the authorization the run was launched under. Never inferred or upgraded. */
+  securityMode: ExecutionSecurityMode;
   pid: number | null;
   startedAt: string;
   endedAt: string;
@@ -246,8 +253,15 @@ export type AgentRunResult = AgentRunOutcome & {
 };
 
 export type AgentLifecycleEvent =
-  | { type: 'started'; pid: number; processGroupId: number | null }
+  | {
+      type: 'started';
+      pid: number;
+      processGroupId: number | null;
+      securityMode: ExecutionSecurityMode;
+      processContainment: ProcessContainment;
+    }
   | { type: 'stopping'; reason: 'requested' | 'timeout' | 'output_limit' | 'event_handler_failed' }
+  // Terminal events carry `securityMode` and `processContainment` inside `result`.
   | { type: 'completed'; result: AgentRunResult }
   | { type: 'failed'; result: AgentRunResult }
   | { type: 'stopped'; result: AgentRunResult };
@@ -289,7 +303,7 @@ export type AgentHandle = {
 
 /**
  * Adapter for one CLI runtime. Adapters are pure description and parsing; process execution goes
- * through `startAgentExecution`, which requires an `ExecutionAuthorization`.
+ * through `startAgentExecution`, which requires a Strict Isolated or Trusted Local authorization.
  *
  * Conversation Mode will be a separate, smaller contract reusing `detect` and the parser; it is
  * deliberately not part of this type.

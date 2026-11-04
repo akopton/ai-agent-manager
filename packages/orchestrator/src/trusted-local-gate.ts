@@ -29,6 +29,8 @@ import {
   type TrustedLocalSafeguard,
   type VerifiedWorkspace,
 } from '@ai-agent-manager/core';
+// Restricted entry point: ESLint allows it only in this module.
+import { claimTrustedLocalIssuer } from '@ai-agent-manager/agents/trusted-local-issuer';
 import type { GitCommandOptions } from '@ai-agent-manager/git';
 import {
   deepFreeze,
@@ -70,6 +72,12 @@ export type TrustedLocalState = z.infer<typeof trustedLocalStateSchema>;
 export type AuthorizeTrustedLocalExecutionRequest = {
   /** Untrusted until validated. Must be a Trusted Local policy; nothing else is converted. */
   policy: unknown;
+  /**
+   * The run this authorization is for: the `runId` and the exact prompt the launch will send on
+   * stdin. The launch boundary refuses any other run or prompt. Only a digest of the prompt is
+   * retained, in process memory; it is never part of the authorization.
+   */
+  run: { runId: string; prompt: string };
   runtime: AgentRuntime;
   /** From `adapter.detect()` (trusted code): executable identity, version, detected options. */
   installation: CliInstallation;
@@ -116,6 +124,7 @@ const installationSchema = z
 const requestSchema = z
   .object({
     policy: z.unknown(),
+    run: z.object({ runId: z.string().max(128), prompt: z.string() }).strict(),
     runtime: agentRuntimeSchema,
     installation: installationSchema,
     modelId: z.string().max(200).nullable(),
@@ -126,10 +135,12 @@ const requestSchema = z
   .strict();
 
 /**
- * Prompt used only to re-prepare the invocation. Adapters send the prompt via stdin, so it is not
- * part of the arguments or environment; if that ever changed, the comparison below would deny.
+ * The once-per-process capability to register issued authorizations with the launch boundary
+ * (`packages/agents`, SEC-02c). Claimed when this module loads. If anything claimed it first, it is
+ * `null` and every Trusted Local authorization is denied: without registration no launch could
+ * accept it anyway.
  */
-const authorizationProbePrompt = 'Trusted Local authorization check (not sent to any CLI).';
+const issuer = claimTrustedLocalIssuer();
 
 /**
  * Safeguards recorded in every Trusted Local authorization. Each one is verified here or bound as
@@ -138,9 +149,9 @@ const authorizationProbePrompt = 'Trusted Local authorization check (not sent to
  * - `invocation_binding`, `worktree_verification`, `allow_listed_environment`, `non_root`: checked
  *   here (re-prepared invocation, Git worktree verification, environment digest of the
  *   allow-listed environment, effective UID).
- * - `mandatory_timeout`, `output_limits`, `process_group_stop`: obligations the launch boundary
- *   must honor (the timeout is in the policy). Until SEC-02c exists, no launch boundary accepts a
- *   Trusted Local authorization at all.
+ * - `mandatory_timeout`, `output_limits`, `process_group_stop`: obligations that
+ *   `startAgentExecution` enforces for Trusted Local launches (the policy's timeout, non-widened
+ *   output limits, process-group stop), refusing the launch where it cannot.
  *
  * `post_run_git_integrity_check` is deliberately absent until SEC-02d implements it.
  */
@@ -342,8 +353,8 @@ const checkInvocation = async (
   const preparation = adapter.prepareExecution(
     installation,
     {
-      runId: 'trusted-local-authorization',
-      prompt: authorizationProbePrompt,
+      runId: input.run.runId,
+      prompt: input.run.prompt,
       modelId: input.modelId,
       workingDirectory,
       ...(policy === null ? {} : { timeoutMs: policy.timeoutMs }),
@@ -491,6 +502,16 @@ export const createTrustedLocalGate =
         },
       ]);
     }
+    // Provenance: only registered authorizations can be launched, once, for this run and prompt.
+    if (issuer === null || !issuer(authorization.data, input.run)) {
+      return deny([
+        {
+          code: 'inspection_failed',
+          message:
+            'The authorization could not be registered with the launch boundary; nothing can be launched.',
+        },
+      ]);
+    }
     return deepFreeze({ authorized: true, authorization: authorization.data });
   };
 
@@ -502,8 +523,12 @@ export const createTrustedLocalGate =
  * and every unenforced control as a risk, and trusted this exact repository (canonical root and
  * common Git directory); the worktree passes every strict-gate workspace check; the executable is
  * the detected, unchanged, supported CLI; the invocation, environment digest and working directory
- * are exactly what the trusted adapter prepares; a timeout is set; and the agent will not run with
- * elevated privileges.
+ * are exactly what the trusted adapter prepares for this run and prompt; a timeout is set; and
+ * the agent will not run with elevated privileges.
+ *
+ * Every issued authorization is registered with the launch boundary: `startAgentExecution`
+ * accepts it once, for `request.run`, within its freshness limit, and refuses copies, serialized
+ * forms and objects this gate did not issue.
  *
  * A Trusted Local authorization is **not** an enforcement claim: `controlAssessments` are the
  * honest statuses from the shipped profiles, and every unenforced control appears in

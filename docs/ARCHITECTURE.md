@@ -235,7 +235,7 @@ On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed b
 
 ### 7.5 Execution security modes (SEC-02)
 
-> Design decided 2026-11-04 for the personal-use MVP. **Not implemented.** The current gate (`authorizeAgentExecution`) and launch boundary (`startAgentExecution`) stay fail-closed and unchanged until the staged implementation in `IMPLEMENTATION_PLAN.md` §9.3.
+> Design decided 2026-11-04 for the personal-use MVP. **Partly implemented:** contracts (SEC-02a), gate (SEC-02b) and launch boundary (SEC-02c) exist; the Git integrity check (SEC-02d) and the smoke runs (SEC-02e) do not. No worker, scheduler or UI calls them yet, so nothing executes agents (`IMPLEMENTATION_PLAN.md` §9.3). Strict Isolated Mode stays fail-closed.
 
 **Threat model** (`SPEC.md` §12.1):
 
@@ -296,7 +296,7 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
   - `ExecutionSecurityPolicy`, `executionSecurityPolicySchema` and `ExecutionAuthorization` keep their pre-SEC-02 names as **strict-only** aliases of `StrictIsolatedPolicy` and `StrictExecutionAuthorization`, so the strict gate and launch boundary did not change.
   - The unions are `SecurityModePolicy` / `securityModePolicySchema` and `SecurityModeAuthorization` / `securityModeAuthorizationSchema`.
 - **The Trusted Local policy lists `acceptedRisks`** (what the operator accepted). The authorization's `acceptedRisks` (the controls actually not enforced) must be a subset.
-- **Both authorizations carry an `authorizationId` (UUID)** besides `checkedAt`. The strict gate generates it. Single-use is still enforced by object identity in the launch boundary; ID-based single-use tracking follows with SEC-02c.
+- **Both authorizations carry an `authorizationId` (UUID)** besides `checkedAt`. The strict gate generates it. Since SEC-02c the launch boundary enforces single use by this ID in both modes.
 - **Schema invariants:**
   - every control is assessed exactly once;
   - accepted risks equal the unenforced assessments;
@@ -315,9 +315,33 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
 - **Additional denial codes:** `acceptance_invalid` (the policy's acceptance differs from the recorded one, lists unrecorded risks, or is future-dated), `risk_not_accepted` and `cli_version_unsupported`.
 - **Safeguards recorded:**
   - verified at authorization: `invocation_binding`, `worktree_verification`, `allow_listed_environment`, `non_root`;
-  - bound as obligations of the future Trusted Local launch boundary (SEC-02c): `mandatory_timeout`, `output_limits`, `process_group_stop`;
+  - bound as obligations of the Trusted Local launch boundary (enforced since SEC-02c): `mandatory_timeout`, `output_limits`, `process_group_stop`;
   - not yet recorded: `post_run_git_integrity_check` (until SEC-02d).
-- **Not usable for launching yet.** No launch boundary accepts a Trusted Local authorization until SEC-02c. The strict `startAgentExecution` rejects it (tested).
+- **Run binding (added in SEC-02c).** The request carries `run: { runId, prompt }`. The gate re-prepares the invocation for that run and prompt instead of a probe prompt, and binds the authorization to them (below).
+
+**SEC-02c implementation notes (launch boundary, `packages/agents`).**
+
+- **Explicit mode.** `StartAgentExecutionInput` requires `securityMode`, and `authorization` is the `SecurityModeAuthorization` union. The boundary validates the authorization against the full SEC-02a contract first, so malformed and mixed-mode objects are refused. A `securityMode` that differs from `authorization.mode`, or is missing, is refused with `mode_mismatch`. An exhaustive `switch` on `mode` follows. Nothing is inferred, converted or retried in another mode.
+- **Strict Isolated path:** unchanged checks (runtime, version, profile, every required control enforced in the authorization **and** the shipped profile, freshness, working directory). Single use is now tracked by `authorizationId`, so copies and deserialized forms are refused as well. Shipped profiles are still unverified, so every strict launch is still refused.
+- **Provenance (Trusted Local).** A schema proves shape, not origin. `packages/agents` keeps an in-memory **issuance registry**:
+  - The orchestrator's gate claims the registry's issuer capability once, when its module loads (`claimTrustedLocalIssuer` returns `null` to every later caller). The issuer is exported only from the subpath `@ai-agent-manager/agents/trusted-local-issuer`, not from the main entry point, and ESLint allows that import only in `packages/orchestrator/src/trusted-local-gate.ts`. It registers each authorization it issues: a canonical digest of the authorization, the `runId`, and a SHA-256 digest of the prompt. The prompt itself is never stored, and the authorization contains neither the prompt nor its digest.
+  - The launch boundary **redeems** the authorization by ID before any other check and removes the entry. It then requires an identical digest and the same `runId` and prompt. Unregistered (hand-built, deserialized, REST, database), altered, reused, copied and expired authorizations are refused. A failed attempt uses the authorization up.
+  - Limits: at most 256 unredeemed entries. An entry is unusable after 65 s (the 60 s freshness limit plus 5 s skew) or when the clock moved backwards. When the registry is full, the gate denies (`inspection_failed`).
+  - **Process scope.** The registry lives in memory, so the gate and the launch must run in the same process (the future worker), and a restarted worker invalidates every outstanding authorization. Package import order does not matter: only the gate claims the issuer (tested in fresh processes for both orders). Two copies of `@ai-agent-manager/agents` in one process, for example mixed `dist` and `src` resolution, would have separate registries, and every Trusted Local launch would then fail closed.
+  - **This is in-process provenance, not protection against hostile code already running in the worker process.** Such code could claim the issuer before the gate (every Trusted Local authorization is then denied: fail closed, tested), import internal modules, or spawn processes itself. The mechanism protects against untrusted **data** crossing a boundary: forged, deserialized, copied or replayed authorizations.
+- **Trusted Local launch checks** (after redemption): the shipped adapter instance for the runtime; the installation's runtime and version equal the authorization's, and the version is supported (`isSupportedCliVersion`); the launch profile ID and arguments; `controlAssessments` equal to `assessControl` on the shipped profile (never upgraded); the acceptance is not later than `checkedAt` or the current time; freshness (60 s, by the boundary's own clock; a caller-supplied `now` is refused); the request's working directory equals the authorized one and lies inside the authorized worktree; and then the shared binding checks for both modes (executable identity re-read from disk, every argument, model, environment digest, canonical `cwd`). The disclosure version's currency and repository trust are checked by the gate against trusted state, which the launch boundary does not have. Provenance makes that check binding.
+- **Runtime safeguards (Trusted Local)**, refused with the given code when they cannot be applied:
+  - the policy's `timeoutMs` always applies, and a different `request.timeoutMs` is refused;
+  - execution limits may only be tightened: finite, positive and at most the defaults (`safeguard_unavailable`);
+  - process-group stop must be available on the platform; it is not on Windows (`safeguard_unavailable`);
+  - an authorization that lists `post_run_git_integrity_check` is refused until SEC-02d exists (`safeguard_unavailable`);
+  - the effective UID is checked again and must be known and non-zero (`elevated_privileges`).
+
+  Output limits, SIGTERM/SIGKILL escalation, termination after a throwing `emit`, and `processContainment: 'process_group_only'` come from the existing supervisor, unchanged.
+- **Events and results.** The `started` event carries `securityMode` and `processContainment`. `AgentRunResult` carries `securityMode` next to the existing `runId`, `runtime` and `processContainment`, and terminal events carry it through `result`. Other events keep their envelope (`runId`, `runtime`, `sequence`). Prompts, environment values and tool inputs are still never emitted.
+- **Not persisted yet.** The run metadata listed below (`task_runs.security_mode`, `accepted_risks_json`, ...) needs the M2 run tables. Until then, the caller receives `securityMode` and `processContainment` in events and results, and the authorization carries the rest.
+- **Test-only factories.** `createAgentExecutionLauncher` (clock, effective UID, process-group support) mirrors `createTrustedLocalGate`, and `createIssuanceRegistry` (clock, lifetime, capacity) exists for expiry and capacity tests. None is exported from a package entry point.
+- **Diagnostics entry point.** `@ai-agent-manager/agents/diagnostics` exports the raw process supervisor, which spawns any executable **without** any authorization, profile or deny-list check. It is not protected by either security gate. Its only consumer is `packages/cli-diagnostics` (development tooling, fake CLIs only). No application package (`apps/worker`, `apps/web`) depends on `agents`, `orchestrator` or `cli-diagnostics`, so no browser API or worker task path can reach it. ESLint forbids importing it elsewhere, and also forbids reaching into `agents/src` or `agents/dist` by relative path. That is a static rule, not a runtime boundary: dynamic `import()` and `require` are not covered. Closing the subpath export would mean moving the supervisor into the diagnostics package, which is deferred.
 
 **Breaking contract change:** a strict policy now **requires** `mode: 'strict_isolated'`. A policy without a mode is `policy_invalid`, never interpreted as either mode. Strict outcomes are otherwise unchanged; every shipped-profile execution is still denied.
 
@@ -419,7 +443,7 @@ New denial codes:
 - The informational-only role of `riskAcknowledgements`.
 - The worktree lifecycle and cleanup safeguards.
 - The trusted publish flow (§9).
-- Execution is still off until the staged implementation lands.
+- Execution stays off until the staged implementation (including SEC-02d/e) lands and a worker calls it.
 
 **Conversation Mode** (§15) applies the same pattern with its **own** types:
 

@@ -355,7 +355,7 @@ Until then, the limitation stays documented and visible.
 
 ### 9.3 SEC-02 — Trusted Local Execution (personal-use MVP)
 
-> Decided 2026-11-04. Design: `ARCHITECTURE.md` §7.5; product rules: `SPEC.md` §12.1. Only documentation exists so far.
+> Decided 2026-11-04. Design: `ARCHITECTURE.md` §7.5; product rules: `SPEC.md` §12.1. Stages a–c are implemented; d and e are open.
 
 **Decision.** The MVP executes agents in an explicit **Trusted Local Mode**:
 
@@ -373,7 +373,7 @@ The existing fail-closed gate becomes **Strict Isolated Mode**. It stays unchang
 | --- | --- | --- |
 | **SEC-02a — Types** *(done 2026-11-04; see `ARCHITECTURE.md` §7.5 implementation notes)* | `ExecutionSecurityMode`; the discriminated `ExecutionSecurityPolicy` (Strict = today's v1 policy with `mode: 'strict_isolated'`, no default mode); `TrustedLocalPolicy`; the discriminated `ExecutionAuthorization` (Strict keeps `controls`; Trusted Local has `controlAssessments`, `acceptedRisks`, `safeguards`, no `enforced` claim); new denial codes. Strict behavior identical. | `core` |
 | **SEC-02b — Gate** *(done 2026-11-04; `authorizeTrustedLocalExecution`)* | `authorizeTrustedLocalExecution` sharing the existing preflight (worktree, executable, arguments, deny list, version); trusted-repository identity match; non-root; acceptance and disclosure version; mandatory timeout. `authorizeAgentExecution` unchanged. | `orchestrator` (+ `git` for identity) |
-| **SEC-02c — Launch boundary** | `startAgentExecution` checks the authorization per mode (exhaustive switch). Trusted Local: all binding, freshness and single-use checks, timeout required, non-root re-check; no control-enforcement claim. `securityMode` in events and results. | `agents` |
+| **SEC-02c — Launch boundary** *(done 2026-11-04; see `ARCHITECTURE.md` §7.5 SEC-02c notes)* | `startAgentExecution` checks the authorization per mode (exhaustive switch). Trusted Local: all binding, freshness and single-use checks, timeout required, non-root re-check; no control-enforcement claim. `securityMode` in events and results. | `agents` |
 | **SEC-02d — Git integrity check** | Read-only before/after inventory: branch refs, worktree HEADs, remote-tracking refs, common config and hooks digests, main checkout HEAD and status. Result attached to the run. | `git` |
 | **SEC-02e — Trusted Local smoke runs** | Operator-approved, **benign** real runs on the host in a disposable local repository (no VM): compatibility checks C-03 to C-13 from the runbook, with captures checked by `replay`. No adversarial probes. | `cli-diagnostics` runbook |
 | Persistence and UI | Settings (enable flag, acceptance), project `execution_trust`, run security metadata, mode badge, disclosure page, attention banner. | M2, M3, M7 |

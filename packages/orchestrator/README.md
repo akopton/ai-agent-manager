@@ -24,7 +24,7 @@ const decision = await authorizeAgentExecution({
   runtime: 'codex',
   runtimeVersion: installation.version, // detected by the adapter; null when unknown
   profile: codexAdapter.securityProfile, // trusted, code-defined
-  policy: { version: 1 }, // untrusted input; validated here
+  policy: { mode: 'strict_isolated', version: 1 }, // untrusted input; `mode` is required
   invocation: plan.invocation, // executable identity, every argument, environment digest
   workspace: {
     taskId: worktree.taskId,
@@ -112,13 +112,16 @@ a requirement.
 
 `authorizeTrustedLocalExecution(request, trustedState)` is a **separate** entry point for the
 personal-use Trusted Local Mode (`docs/ARCHITECTURE.md` §7.5). It never changes the strict gate,
-and neither gate falls back to the other. Agent execution is still not possible:
-`startAgentExecution` rejects Trusted Local authorizations until SEC-02c.
+and neither gate falls back to the other. Each authorization it issues is registered with the
+launch boundary in `@ai-agent-manager/agents` (SEC-02c). `startAgentExecution` with
+`securityMode: 'trusted_local'` accepts it once, within 60 s, in the same process, for exactly
+`run.runId` and `run.prompt`. No worker calls this yet.
 
 ```ts
 const decision = await authorizeTrustedLocalExecution(
   {
     policy, // { mode: 'trusted_local', version: 1, acceptance, acceptedRisks, interactiveApproval: 'deny', timeoutMs }
+    run: { runId, prompt }, // the launch must use exactly these; only a prompt digest is kept in memory
     runtime: 'codex',
     installation, // from adapter.detect()
     modelId: null,

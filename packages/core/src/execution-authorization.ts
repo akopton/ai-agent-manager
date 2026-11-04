@@ -243,8 +243,8 @@ export const strictExecutionAuthorizationSchema = z
 export type StrictExecutionAuthorization = z.infer<typeof strictExecutionAuthorizationSchema>;
 
 /**
- * The Strict Isolated authorization under its pre-SEC-02 name, consumed by the strict gate and
- * launch boundary. It is never a Trusted Local authorization.
+ * The Strict Isolated authorization under its pre-SEC-02 name, produced by the strict gate. It is
+ * never a Trusted Local authorization. The launch boundary accepts `SecurityModeAuthorization`.
  */
 export type ExecutionAuthorization = StrictExecutionAuthorization;
 

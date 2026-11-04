@@ -14,7 +14,6 @@ import {
   strictExecutionAuthorizationSchema,
   trustedLocalExecutionAuthorizationSchema,
   type AgentRuntime,
-  type ExecutionAuthorization,
   type SecurityDenialCode,
   type TrustedLocalAuthorizationDecision,
 } from '@ai-agent-manager/core';
@@ -134,7 +133,7 @@ const setUp = async (directory: string, runtime: AgentRuntime = 'codex'): Promis
   });
   const request = (overrides: Partial<AuthorizeTrustedLocalExecutionRequest> = {}) => {
     const modelId = overrides.modelId ?? null;
-    // Prepared exactly as the worker would, with a real prompt (the gate never sees it).
+    // Prepared exactly as the worker would, for the run the gate binds the authorization to.
     const preparation = getAgentAdapter(runtime).prepareExecution(
       installation,
       {
@@ -149,6 +148,7 @@ const setUp = async (directory: string, runtime: AgentRuntime = 'codex'): Promis
     if (!preparation.ok) throw new Error(preparation.message);
     return {
       policy: trustedPolicy(),
+      run: { runId: 'run-1', prompt: 'Implement the task.' },
       runtime,
       installation,
       modelId,
@@ -634,28 +634,50 @@ test('Strict Mode is unchanged and never falls back to Trusted Local', async () 
   });
 });
 
-test('the existing strict launch boundary rejects a Trusted Local authorization', async () => {
+test('a Trusted Local authorization is never launched in Strict Mode', async () => {
   await withFixtures(async (directory) => {
     const fixture = await setUp(directory);
     const decision = await gate(fixture.request(), fixture.state());
     assert.ok(decision.authorized);
     if (!decision.authorized) return;
     const result = await startAgentExecution({
+      securityMode: 'strict_isolated',
       adapter: codexAdapter,
       installation: fixture.installation,
       request: {
         runId: 'run-1',
-        prompt: 'p',
+        prompt: 'Implement the task.',
         modelId: null,
         workingDirectory: fixture.workspace.worktreePath,
         timeoutMs: 1_800_000,
       },
-      // Deliberate misuse: the strict launch boundary is typed for strict authorizations only.
-      authorization: decision.authorization as unknown as ExecutionAuthorization,
+      authorization: decision.authorization,
       emit: () => undefined,
       sourceEnvironment: environment,
     });
     assert.equal(result.started, false);
-    assert.equal(!result.started && result.code, 'authorization_mismatch');
+    assert.equal(!result.started && result.code, 'mode_mismatch');
+  });
+});
+
+test('binds the authorization to a valid run', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    for (const run of [
+      { runId: 'run 1', prompt: 'Implement the task.' },
+      { runId: 'run-1', prompt: '   ' },
+    ]) {
+      assertDenied(await gate(fixture.request({ run }), fixture.state()), 'invocation_invalid');
+    }
+    const missing: Record<string, unknown> = { ...fixture.request() };
+    delete missing.run;
+    assertDenied(
+      await gate(missing as AuthorizeTrustedLocalExecutionRequest, fixture.state()),
+      'invalid_request',
+    );
+    // The authorization records neither the prompt nor its digest.
+    const decision = await gate(fixture.request(), fixture.state());
+    assert.ok(decision.authorized);
+    assert.ok(!JSON.stringify(decision).includes('Implement the task.'));
   });
 });

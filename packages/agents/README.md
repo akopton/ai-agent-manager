@@ -3,10 +3,11 @@
 This package holds the `AgentAdapter` contract and the adapters for Claude Code and Codex (M1-02).
 It also holds the launch security profiles that the orchestrator's execution gate (M1-03) uses.
 
-> **No agent can be launched today.** `startAgentExecution` requires an `ExecutionAuthorization`.
-> The gate issues none, because no shipped security profile has been verified, and the launch
-> boundary independently refuses any profile that does not enforce every required control. Every
-> test in this package uses fake CLI scripts. No real agent was run.
+> **No agent is launched today.** `startAgentExecution` requires an explicit security mode and a
+> matching authorization. Strict Isolated authorizations are never issued for the shipped
+> (unverified) profiles. Trusted Local launches (SEC-02c) are possible only with an authorization
+> that the orchestrator's Trusted Local gate issued in the same process, and no worker calls
+> either yet. Every test in this package uses fake CLI scripts. No real agent was run.
 
 ## Runtimes and model selection
 
@@ -58,6 +59,7 @@ const decision = await authorizeAgentExecution({
 });
 if (decision.authorized) {
   const started = await startAgentExecution({
+    securityMode: 'strict_isolated', // explicit; must equal authorization.mode
     adapter,
     installation,
     request: { runId, prompt, modelId: null, workingDirectory, timeoutMs },
@@ -75,7 +77,7 @@ if (decision.authorized) {
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `AgentAdapter`                                           | `runtime`, `securityProfile`, `detect`, `capabilities`, `prepareExecution`, `createOutputParser`, `buildEnvironment` |
 | `claudeAdapter`, `codexAdapter`, `getAgentAdapter`       | The two shipped adapters                                                                                             |
-| `startAgentExecution`                                    | The only function that spawns a CLI (the launch boundary)                                                            |
+| `startAgentExecution`                                    | The only function that spawns a CLI (the launch boundary); per-mode checks, see below                                |
 | `AgentExecutionRequest`                                  | `runId`, `prompt`, `modelId`, `workingDirectory`, `timeoutMs?`, `resumeSessionId?` (always rejected)                 |
 | `UnauthorizedInvocationPlan`                             | Prepared arguments, `cwd`, environment **names**; `authorization: 'required'`                                        |
 | `AgentEvent`, `AgentRunResult`, `AgentHandle`            | Event stream, final result, process handle                                                                           |
@@ -141,7 +143,8 @@ lines that fail to parse. Diagnostics give only the line number and byte length.
 `type` produce `malformed_output`, at most 20 per run. Each unknown event type is reported once.
 A partial last line at exit is still parsed.
 
-**Limits** (`defaultExecutionLimits`, overridable per launch):
+**Limits** (`defaultExecutionLimits`, overridable per launch; in Trusted Local Mode only
+tightening is allowed):
 
 | Limit                   | Default     | Effect                                             |
 | ----------------------- | ----------- | -------------------------------------------------- |
@@ -154,8 +157,10 @@ A partial last line at exit is still parsed.
 
 ## Termination and results
 
-`AgentRunResult` contains the outcome, plus `pid`, `startedAt`/`endedAt`, `sessionId`,
-`reportedModelId`, byte counts and `lingeringProcesses`. The outcome is decided in this order:
+`AgentRunResult` contains the outcome, plus `runId`, `runtime`, `securityMode`, `pid`,
+`startedAt`/`endedAt`, `sessionId`, `reportedModelId`, byte counts, `lingeringProcesses` and
+`processContainment` (always `process_group_only`). The `started` event also carries
+`securityMode` and `processContainment`. The outcome is decided in this order:
 
 1. `stop()` was called → **`stopped`**, whatever the exit code. A CLI that catches SIGTERM and
    exits with 0 or 143 is still `stopped`, never `completed`.
@@ -226,6 +231,30 @@ can persist both for crash recovery. That recovery is not implemented here.
   boundary. Codex's `--sandbox workspace-write` uses macOS Seatbelt but is unverified. Neither
   is claimed as enforced.
 
+## Security modes at the launch boundary (SEC-02c)
+
+`startAgentExecution` validates the authorization against the full contract, requires
+`securityMode` to equal `authorization.mode` (`mode_mismatch` otherwise) and switches on it. See
+`docs/ARCHITECTURE.md` §7.5 for the full list.
+
+- **Strict Isolated:** unchanged. Every required control must be enforced by the authorization
+  and the shipped profile, so every strict launch with the shipped profiles is refused.
+- **Trusted Local:** the authorization is redeemed from an in-process issuance registry, which
+  only the orchestrator's gate can write to. It claims `claimTrustedLocalIssuer` once, from the
+  restricted subpath `@ai-agent-manager/agents/trusted-local-issuer` (ESLint allows it only in the
+  gate; it is not on the main entry point). This
+  establishes provenance and single use (copies and serialized forms are refused; a failed
+  attempt uses the authorization up), and binds it to `request.runId` and `request.prompt` by
+  digest. It then requires the shipped adapter, a supported and matching CLI version, the
+  profile's arguments, honest control assessments, a non-root effective user
+  (`elevated_privileges`), the policy's timeout, non-widened limits and process-group support
+  (`safeguard_unavailable`). It never claims that a control is enforced.
+
+This is **in-process provenance**. It guards against untrusted data (forged, deserialized, copied
+or replayed authorizations), not against hostile code already running in the worker process. The
+gate and the launch must run in the same process, entries expire after 65 s, and a worker restart
+invalidates every outstanding authorization.
+
 ## Remaining gaps (require real-CLI or adversarial validation)
 
 - **Security:** every profile capability is still `unverified`. The M1-03 adversarial runs
@@ -265,10 +294,16 @@ can persist both for crash recovery. That recovery is not implemented here.
 ## Diagnostics entry point
 
 `@ai-agent-manager/agents/diagnostics` exports the process supervisor and `classifyRunOutcome`
-(the terminal-state classifier shared with `startAgentExecution`). It checks no authorization and is
-**not** a way to launch agents. It exists only so the CLI diagnostics harness
-([`packages/cli-diagnostics`](../cli-diagnostics/README.md)) can exercise these pieces against
-harness-generated fake CLIs. ESLint forbids importing it anywhere else.
+(the terminal-state classifier shared with `startAgentExecution`). **It is not protected by any
+security gate:** the supervisor spawns whatever executable, arguments, `cwd` and environment it is
+given, without an authorization, profile or deny-list check. It exists only so the CLI diagnostics
+harness ([`packages/cli-diagnostics`](../cli-diagnostics/README.md)) can exercise these pieces
+against harness-generated fake CLIs. Production code must launch agents only through
+`startAgentExecution`.
+
+ESLint forbids importing it (and reaching into `agents/src` or `agents/dist` by relative path)
+outside the diagnostics package. No application package depends on it. The rule is static: it
+does not cover dynamic `import()` or `require`, so it is a review aid, not a runtime boundary.
 
 ## Future integration
 
