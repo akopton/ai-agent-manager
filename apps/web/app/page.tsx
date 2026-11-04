@@ -5,8 +5,8 @@ export default function HomePage() {
         <p className="eyebrow">Your development workspace</p>
         <h1 id="page-title">AI Agent Manager</h1>
         <p className="lead">
-          Coordinate coding tasks across local repositories and review agent
-          changes before publishing.
+          Coordinate coding tasks across local repositories and review agent changes before
+          publishing.
         </p>
         <p className="status">Application setup is complete. Task management is coming next.</p>
       </section>

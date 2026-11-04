@@ -13,15 +13,15 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
 
-| Workspace | Intended responsibility |
-| --- | --- |
-| `apps/web` | Next.js UI, REST endpoints, and SSE |
-| `apps/worker` | Separate Node.js worker and process lifecycle |
-| `packages/core` | Framework-independent domain types and validation |
-| `packages/database` | SQLite schema, migrations, and access |
-| `packages/agents` | Agent contract and CLI adapters |
-| `packages/git` | Repository, worktree, review, and publishing operations |
-| `packages/orchestrator` | Scheduling and run coordination |
+| Workspace               | Intended responsibility                                 |
+| ----------------------- | ------------------------------------------------------- |
+| `apps/web`              | Next.js UI, REST endpoints, and SSE                     |
+| `apps/worker`           | Separate Node.js worker and process lifecycle           |
+| `packages/core`         | Framework-independent domain types and validation       |
+| `packages/database`     | SQLite schema, migrations, and access                   |
+| `packages/agents`       | Agent contract and CLI adapters                         |
+| `packages/git`          | Repository, worktree, review, and publishing operations |
+| `packages/orchestrator` | Scheduling and run coordination                         |
 
 The worker and shared packages remain private ESM package skeletons. They have
 no source entry points or inter-package dependencies yet.
@@ -33,8 +33,8 @@ Use pnpm 12.16.1, pinned in `package.json`, and Node.js matching
 Next.js 16.4.5 and React 19.3.1, with ESLint 9 and the matching Next.js config.
 ESLint 9 is retained because the bundled React, import, and accessibility plugins
 do not yet declare support for ESLint 10; pnpm reports ESLint 9 as deprecated.
-The web workspace uses TypeScript 6.0.3 for compatibility with typescript-eslint;
-the existing PoC continues using the root TypeScript 7 dependency.
+Both the root and web workspace use TypeScript 6.0.3 for compatibility with
+typescript-eslint. Strict mode remains enabled for the web and PoC checks.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -49,6 +49,7 @@ Both development and production servers bind to `127.0.0.1`.
 ```sh
 pnpm typecheck
 pnpm lint
+pnpm format:check
 pnpm build
 pnpm --filter @ai-agent-manager/web start
 ```
@@ -59,9 +60,28 @@ also works before the first build. Next.js generates ignored `next-env.d.ts`
 and `.next/` files. The web workspace uses its own bundler-oriented TypeScript
 configuration; the PoC retains its NodeNext configuration.
 
-The root scripts dispatch to workspace scripts when present. `pnpm lint` runs
-the web ESLint configuration and `pnpm build` produces its production build.
+`pnpm lint` checks JavaScript and TypeScript across apps, packages, and root
+tooling using `eslint.config.mjs`. Next.js Core Web Vitals rules apply only to
+`apps/web`; TypeScript recommended rules apply throughout the monorepo.
+`pnpm build` dispatches to workspace builds and produces the web production build.
 `pnpm test` currently performs no work: no automated test suite has been added.
+
+## Coding standards and formatting
+
+See `AGENTS.md` for conventions. ESLint enforces arrow-style function declarations,
+arrow callbacks where safe, `const` where possible, type aliases, and no explicit
+`any`. Default-exported framework functions and ambient TypeScript declarations
+are supported; an interface needed for declaration merging or a public contract
+can use a documented local rule suppression. Naming, named exports, early returns,
+async/await, and avoiding unnecessary assertions remain code review conventions.
+
+`pnpm format` applies Prettier; `pnpm format:check` checks without writing. Prettier
+uses single quotes, semicolons, two spaces, width 100, trailing commas, and
+parentheses around arrow parameters. ESLint disables conflicting formatting rules.
+Both tools exclude dependencies, generated output, and local runtime data.
+The existing experimental `poc/` scripts remain outside lint/format migration
+(but are still typechecked). Prettier also preserves baseline `docs/`, the generated
+Next.js instructions, and the generated lockfile to avoid unrelated rewrites.
 
 ## Web structure
 

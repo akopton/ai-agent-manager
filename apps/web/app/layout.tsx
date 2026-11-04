@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
-import "./globals.css";
+import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "AI Agent Manager",
-  description: "A local workspace for coordinating coding tasks and reviewing agent changes.",
+  title: 'AI Agent Manager',
+  description: 'A local workspace for coordinating coding tasks and reviewing agent changes.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

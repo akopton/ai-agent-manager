@@ -7,7 +7,9 @@
     "dev": "pnpm --recursive --parallel --if-present run dev",
     "build": "pnpm --recursive --if-present run build",
     "typecheck": "tsc --noEmit && pnpm --recursive --if-present run typecheck",
-    "lint": "pnpm --recursive --if-present run lint",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm --recursive --if-present run test"
   },
   "keywords": [],
@@ -23,8 +25,15 @@
   "packageManager": "pnpm@12.16.1",
   "type": "module",
   "devDependencies": {
+    "@eslint/js": "9.39.5",
     "@types/node": "^26.6.6",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.4.5",
+    "eslint-config-prettier": "^10",
+    "globals": "^16",
+    "prettier": "^3",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1"
   }
 }
