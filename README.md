@@ -6,8 +6,8 @@ in dedicated Git worktrees. Product requirements and architecture live in
 
 ## Implementation status
 
-M0.2 adds a Next.js App Router web application with a placeholder homepage,
-strict TypeScript, and ESLint. Projects, project boards, and the global dashboard
+M0.3 adds Tailwind CSS and shadcn/ui to the Next.js App Router application,
+with a responsive shell and placeholder overview. Projects, project boards, and dashboard data
 are future features; no data storage, API endpoints, or agents are connected.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
@@ -85,12 +85,40 @@ Next.js instructions, and the generated lockfile to avoid unrelated rewrites.
 
 ## Web structure
 
-`apps/web/app/layout.tsx` provides shared metadata and the page shell;
-`app/page.tsx` is the placeholder homepage. Future routes such as `app/projects`,
+`apps/web/app/layout.tsx` provides shared metadata and uses the reusable
+`components/app-shell.tsx` layout; `app/page.tsx` is the placeholder overview.
+Future routes such as `app/projects`,
 `app/projects/[projectId]`, and `app/overview` can use that same layout. These
-routes do not exist yet. `app/globals.css` provides minimal styling with system
-fonts and no external asset downloads. Tailwind, UI components, and drag/drop
-tooling remain deferred.
+routes do not exist yet. Projects and project boards have disabled navigation
+placeholders; the Add project button is also disabled. No sample task counts or
+agent activity are displayed.
+
+## UI foundation
+
+Tailwind CSS 4.3.4 uses `@tailwindcss/postcss` in the web workspace's
+`postcss.config.mjs`, following the [Next.js setup](https://tailwindcss.com/docs/installation/framework-guides/nextjs).
+`app/globals.css` imports Tailwind, animation utilities, and shadcn styles. It
+defines semantic color and radius tokens, including dark and sidebar variables,
+using Tailwind's CSS-first configuration. The app currently uses the light theme;
+no theme switcher is implemented. Fonts use the system stack, so builds do not
+download font assets.
+
+shadcn/ui was initialized in `apps/web` with the Radix/Nova preset and neutral
+base color. `components.json` and the web TypeScript `@/*` alias keep components
+and utilities local to this workspace; no shared UI package was added. Only
+Button, Card, and Badge are installed in `components/ui/`. Components use named
+exports and arrow functions, and `lib/utils.ts` re-exports the generated `cn`
+utility. Icons use Lucide.
+
+To add a component later, run from the repository root:
+
+```sh
+pnpm dlx shadcn@4.23.0 add <component> --cwd apps/web
+```
+
+Review generated code against `AGENTS.md`, then run formatting, lint, typecheck,
+and build. Drag/drop, real navigation destinations, data storage, and execution
+remain deferred.
 
 Installation permits the existing `esbuild` dependency's build script for the
 PoC's `tsx` tooling.

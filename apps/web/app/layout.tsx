@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { AppShell } from '@/components/app-shell';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -7,16 +8,14 @@ export const metadata: Metadata = {
   description: 'A local workspace for coordinating coding tasks and reviewing agent changes.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+const RootLayout = ({ children }: { children: ReactNode }) => {
   return (
     <html lang="en">
-      <body>
-        <header className="site-header">
-          <span className="brand">AI Agent Manager</span>
-          <span className="badge">Local workspace</span>
-        </header>
-        <main id="main-content">{children}</main>
+      <body className="antialiased">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );
-}
+};
+
+export default RootLayout;
