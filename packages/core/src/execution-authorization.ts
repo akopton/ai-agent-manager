@@ -39,6 +39,10 @@ export const securityDenialCodes = [
   'unsafe_path_relationship',
   /** Git or the filesystem failed unexpectedly; nothing could be verified. */
   'inspection_failed',
+  /** The executable is not a canonical executable file, or differs from the identity in the request. */
+  'executable_not_verified',
+  /** The invocation does not start with the profile's launch arguments, or is malformed. */
+  'invocation_invalid',
 ] as const;
 
 export type SecurityDenialCode = (typeof securityDenialCodes)[number];
@@ -70,6 +74,34 @@ export type VerifiedWorkspace = {
   baseCommit: string;
 };
 
+/**
+ * Identity of an executable file: its canonical path plus the file facts observed at discovery.
+ * A replaced or modified binary has a different identity.
+ */
+export type ExecutableIdentity = {
+  /** Canonical absolute path (no symlinked components); the process is spawned from it. */
+  path: string;
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+};
+
+/** The complete process launch an authorization covers. */
+export type AuthorizedInvocation = {
+  executable: ExecutableIdentity;
+  /**
+   * Every argument after the executable, starting with the profile's `launchArguments`. The prompt
+   * is not part of it: adapters send the prompt via stdin.
+   */
+  arguments: readonly string[];
+  /**
+   * `sha256:<hex>` over the complete child environment (sorted names and values). Binds the
+   * environment without storing its values in the authorization.
+   */
+  environmentDigest: string;
+};
+
 export type AuthorizedControl = {
   control: SecurityControl;
   /** Always `enforced`: an authorization exists only when every required control is enforced. */
@@ -82,16 +114,18 @@ export type AuthorizedControl = {
  * verified, the launch arguments are safe, **and** every required control is enforced; a valid
  * workspace and safe arguments alone never produce one.
  *
- * It is a point-in-time check, not a lasting guarantee: the execution layer must launch exactly
- * `launchArguments` with `workspace.workingDirectory` as `cwd`, must not add arguments that widen
- * permissions, and must re-authorize if anything (worktree, CLI version, policy, profile) changes
- * before launch.
+ * It is a point-in-time check, not a lasting guarantee: the execution layer must spawn exactly
+ * `invocation.executable.path` with exactly `invocation.arguments`, an environment matching
+ * `invocation.environmentDigest`, and `workspace.workingDirectory` as `cwd`, and must
+ * re-authorize if anything (worktree, CLI binary or version, policy, profile, model) changes.
  */
 export type ExecutionAuthorization = {
   runtime: AgentRuntime;
   runtimeVersion: string | null;
   launchProfileId: string;
+  /** The profile's fixed arguments; `invocation.arguments` starts with them. */
   launchArguments: readonly string[];
+  invocation: AuthorizedInvocation;
   workspace: VerifiedWorkspace;
   policy: ExecutionSecurityPolicy;
   controls: readonly AuthorizedControl[];

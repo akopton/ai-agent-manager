@@ -15,14 +15,17 @@ enforce. It denies by default.
 ## API
 
 ```ts
-import { getRuntimeSecurityProfile } from '@ai-agent-manager/agents';
+import { codexAdapter } from '@ai-agent-manager/agents';
 import { authorizeAgentExecution } from '@ai-agent-manager/orchestrator';
 
+// installation = (await codexAdapter.detect()).installation
+// plan = codexAdapter.prepareExecution(installation, request).plan
 const decision = await authorizeAgentExecution({
   runtime: 'codex',
-  runtimeVersion: '0.166.0', // detected by the adapter; null when unknown
-  profile: getRuntimeSecurityProfile('codex'), // trusted, code-defined
+  runtimeVersion: installation.version, // detected by the adapter; null when unknown
+  profile: codexAdapter.securityProfile, // trusted, code-defined
   policy: { version: 1 }, // untrusted input; validated here
+  invocation: plan.invocation, // executable identity, every argument, environment digest
   workspace: {
     taskId: worktree.taskId,
     repositoryPath: worktree.repository.root,
@@ -36,7 +39,7 @@ const decision = await authorizeAgentExecution({
 });
 
 if (decision.authorized) {
-  decision.authorization; // ExecutionAuthorization: launch arguments, verified workspace, controls
+  decision.authorization; // ExecutionAuthorization: invocation, verified workspace, controls
 } else {
   decision.denials; // [{ code, message, control?, issues? }, ...]
 }
@@ -112,23 +115,26 @@ never writes files or Git config, never sets `safe.directory`, and never runs ho
 or filters. Tests check that the whole fixture tree is byte-for-byte unchanged and that a
 repository-configured fsmonitor and hooks do not execute.
 
-| Check                                                                                                                                                                                                   | Denial                                               |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| Request shape: absolute paths, full base SHA, task ID pattern, known runtime                                                                                                                            | `invalid_request`                                    |
-| Policy present, valid, nothing unknown                                                                                                                                                                  | `policy_missing`, `policy_invalid`                   |
-| Profile valid, for the requested runtime; verified capabilities cite evidence                                                                                                                           | `profile_invalid`                                    |
-| Launch arguments contain no bypass/widening options (`--dangerously-*`, `--add-dir`, `--permission-mode bypassPermissions`, `--sandbox danger-full-access`, `-c sandbox_mode=…`, `--approve-for-me`, …) | `unsafe_launch_arguments`                            |
-| Every required control enforced (acknowledgements do not count)                                                                                                                                         | `control_not_enforced`                               |
-| Repository, Git dir, worktree, and working directory paths are canonical (no symlinked components, no `..`)                                                                                             | `path_not_canonical`                                 |
-| The repository is a valid main working tree that Git accepts (including `safe.directory`)                                                                                                               | `repository_invalid`                                 |
-| Its root and common Git directory equal the recorded identity                                                                                                                                           | `repository_mismatch`                                |
-| Git reports the worktree `ready`: registered, linked, same repository, not the main checkout                                                                                                            | `worktree_not_verified`, `unsafe_path_relationship`  |
-| Checked out on the recorded task branch                                                                                                                                                                 | `branch_mismatch`                                    |
-| Locked with the AI Agent Manager marker; the worktree and repository directory are owned by the current user                                                                                            | `ownership_not_verified`                             |
-| HEAD and the task branch still at the recorded base commit (no agent commits from earlier runs)                                                                                                         | `unexpected_head`                                    |
-| Located exactly at `<realpath(worktreeRoot)>/<repository key>/<taskId>`                                                                                                                                 | `path_outside_workspace`                             |
-| No overlap with the main checkout, the Git directory, or any other registered worktree                                                                                                                  | `unsafe_path_relationship`                           |
-| The working directory is inside the worktree and belongs to it, not to a nested repository                                                                                                              | `path_outside_workspace`, `unsafe_path_relationship` |
+| Check                                                                                                                                                                                                                    | Denial                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Request shape: absolute paths, full base SHA, task ID pattern, known runtime                                                                                                                                             | `invalid_request`                                    |
+| Policy present, valid, nothing unknown                                                                                                                                                                                   | `policy_missing`, `policy_invalid`                   |
+| Profile valid, for the requested runtime; verified capabilities cite evidence                                                                                                                                            | `profile_invalid`                                    |
+| Invocation present and well formed: canonical absolute executable path, file identity, at most 200 arguments without NUL, `sha256:` environment digest                                                                   | `invalid_request`                                    |
+| The executable is a canonical, executable regular file whose device, inode, size, and mtime equal the identity recorded at discovery                                                                                     | `executable_not_verified`                            |
+| The invocation arguments start with the profile's `launchArguments`                                                                                                                                                      | `invocation_invalid`                                 |
+| The complete invocation arguments contain no bypass/widening options (`--dangerously-*`, `--add-dir`, `--permission-mode bypassPermissions`, `--sandbox danger-full-access`, `-c sandbox_mode=…`, `--approve-for-me`, …) | `unsafe_launch_arguments`                            |
+| Every required control enforced (acknowledgements do not count)                                                                                                                                                          | `control_not_enforced`                               |
+| Repository, Git dir, worktree, and working directory paths are canonical (no symlinked components, no `..`)                                                                                                              | `path_not_canonical`                                 |
+| The repository is a valid main working tree that Git accepts (including `safe.directory`)                                                                                                                                | `repository_invalid`                                 |
+| Its root and common Git directory equal the recorded identity                                                                                                                                                            | `repository_mismatch`                                |
+| Git reports the worktree `ready`: registered, linked, same repository, not the main checkout                                                                                                                             | `worktree_not_verified`, `unsafe_path_relationship`  |
+| Checked out on the recorded task branch                                                                                                                                                                                  | `branch_mismatch`                                    |
+| Locked with the AI Agent Manager marker; the worktree and repository directory are owned by the current user                                                                                                             | `ownership_not_verified`                             |
+| HEAD and the task branch still at the recorded base commit (no agent commits from earlier runs)                                                                                                                          | `unexpected_head`                                    |
+| Located exactly at `<realpath(worktreeRoot)>/<repository key>/<taskId>`                                                                                                                                                  | `path_outside_workspace`                             |
+| No overlap with the main checkout, the Git directory, or any other registered worktree                                                                                                                                   | `unsafe_path_relationship`                           |
+| The working directory is inside the worktree and belongs to it, not to a nested repository                                                                                                                               | `path_outside_workspace`, `unsafe_path_relationship` |
 
 Ownership is established from Git's records and the lock marker, never from the directory name.
 A manually created worktree at the expected path is rejected. All independent denials are
@@ -146,19 +152,31 @@ returned together. An unexpected error yields `inspection_failed`, never an auth
   database, the API, or the user.
 - **The unsafe-argument list is a deny list** for the assessed CLI versions. It cannot recognize
   options added by future versions; fixed, reviewed launch arguments are the primary control.
-- **The version check trusts the adapter's detection.** It cannot prove which binary will run.
+- **The version check trusts the adapter's detection.** The gate binds the binary's identity
+  (path, device, inode, size, mtime), not its contents or the version it prints. A file
+  rewritten in place with the same size and a restored mtime would not be detected. Neither
+  would libraries, interpreters, or resources the binary loads at run time.
 
 ## Responsibilities outside the gate
 
-**Agent adapters (M1-02, not implemented):**
+**Agent adapters (M1-02, `@ai-agent-manager/agents`):** `startAgentExecution` enforces the
+following before it spawns anything. See `packages/agents/README.md`.
 
-- Launch with exactly `authorization.launchArguments`, `cwd = authorization.workspace.workingDirectory`,
-  `spawn` with an argument array and `shell: false`. Append only the prompt and model, never
-  options that change permissions.
-- Re-authorize immediately before spawning if anything may have changed. Never cache an
-  authorization across runs.
-- Control the child environment: do not pass `GIT_*` overrides or unrelated secrets.
-- Report the CLI version honestly (`runtimeVersion`), or `null`.
+- It spawns exactly `authorization.invocation`. The executable must be the detected
+  installation, with an identical path and file identity. The argument array must be
+  identical, and the child environment's digest must match. The authorized `arguments` must
+  also equal the adapter's freshly prepared plan, so a different model or an extra option is
+  refused. The prompt goes to stdin, and the process runs with
+  `cwd = authorization.workspace.workingDirectory`, through `spawn` with `shell: false`.
+- The authorization must match the detected CLI version and the adapter's own shipped profile.
+  Every required control must be `enforced` both in the authorization and in that profile.
+  Authorizations are single use and refused after 60 s, so the caller must authorize
+  immediately before every launch.
+- The child environment comes from an allow list. `GIT_*` overrides, `SSH_AUTH_SOCK`, and API
+  keys are dropped. `GIT_TERMINAL_PROMPT=0` is set.
+- Immediately before spawning, it re-reads the executable's canonical path and file identity.
+  A window between that check and the operating system's `exec` remains (see the agents
+  README).
 
 **Scheduler / execution layer (M4, not implemented):**
 
@@ -197,7 +215,7 @@ of scope.
 
 The original M1-03 asks to _verify per CLI_ what can be restricted, using adversarial runs that
 try to commit, push, and write outside the workspace. This requires running the real CLIs, and
-the M1-02 adapters do not exist yet. Until both are done:
+the M1-02 adapters exist but have only been exercised against fake CLIs. Until the adversarial runs are done:
 
 - every shipped capability is `unverified` with `assessedVersion: null`;
 - no required control is enforced, so every execution is denied (fail-closed);

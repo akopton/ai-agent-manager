@@ -1,4 +1,5 @@
-import { lstat, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, lstat, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
 import { z } from 'zod';
 import { findUnsafeLaunchArguments } from '@ai-agent-manager/agents';
@@ -10,6 +11,7 @@ import {
   runtimeSecurityProfileSchema,
   type AgentRuntime,
   type AuthorizedControl,
+  type AuthorizedInvocation,
   type ExecutionAuthorization,
   type ExecutionAuthorizationDecision,
   type ExecutionSecurityPolicy,
@@ -54,6 +56,12 @@ export type AuthorizeAgentExecutionRequest = {
   profile: RuntimeSecurityProfile;
   /** Untrusted until validated here. Missing means denial; there is no implicit default. */
   policy: unknown;
+  /**
+   * The complete launch, as prepared by the adapter (`UnauthorizedInvocationPlan.invocation`):
+   * executable identity from discovery, every argument, and the environment digest. The gate
+   * verifies the executable on disk and records the invocation in the authorization.
+   */
+  invocation: AuthorizedInvocation;
   workspace: ExecutionWorkspaceRequest;
   gitOptions?: GitCommandOptions;
   /** Clock for `checkedAt`; injectable for tests. */
@@ -65,9 +73,35 @@ const absolutePathSchema = z
   .min(1)
   .refine((value) => !value.includes('\0') && isAbsolute(value), 'must be an absolute path');
 
+const fileNumberSchema = z.number().finite().nonnegative();
+
+const invocationSchema = z
+  .object({
+    executable: z
+      .object({
+        path: absolutePathSchema,
+        dev: fileNumberSchema,
+        ino: fileNumberSchema,
+        size: fileNumberSchema,
+        mtimeMs: fileNumberSchema,
+      })
+      .strict(),
+    arguments: z
+      .array(
+        z
+          .string()
+          .max(1000)
+          .refine((value) => !value.includes('\0'), 'must not contain NUL characters'),
+      )
+      .max(200),
+    environmentDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/, 'must be a sha256 digest'),
+  })
+  .strict();
+
 const requestSchema = z.object({
   runtime: agentRuntimeSchema,
   runtimeVersion: z.string().trim().min(1).max(100).nullable(),
+  invocation: invocationSchema,
   workspace: z
     .object({
       taskId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
@@ -121,6 +155,46 @@ const issueDenials: Partial<Record<TaskWorktreeIssue, SecurityDenial['code']>> =
   different_repository: 'repository_mismatch',
   main_worktree: 'unsafe_path_relationship',
   path_is_symlink: 'path_not_canonical',
+};
+
+/**
+ * Verifies that the executable is a canonical, executable regular file whose identity still
+ * equals the one observed at discovery. Read-only.
+ */
+const verifyExecutable = async (
+  executable: AuthorizedInvocation['executable'],
+): Promise<SecurityDenial[]> => {
+  const deny = (message: string): SecurityDenial[] => [
+    { code: 'executable_not_verified', message },
+  ];
+  const canonical = await realpathOrNull(executable.path);
+  if (canonical === null) {
+    return deny(`The executable ${executable.path} does not exist.`);
+  }
+  if (canonical !== executable.path) {
+    return deny(
+      `The executable ${executable.path} resolves to ${canonical}; only canonical paths are accepted.`,
+    );
+  }
+  const stats = await stat(canonical).catch(() => null);
+  const runnable = await access(canonical, constants.X_OK).then(
+    () => true,
+    () => false,
+  );
+  if (stats === null || !stats.isFile() || !runnable) {
+    return deny(`The executable ${canonical} is not an executable regular file.`);
+  }
+  if (
+    stats.dev !== executable.dev ||
+    stats.ino !== executable.ino ||
+    stats.size !== executable.size ||
+    stats.mtimeMs !== executable.mtimeMs
+  ) {
+    return deny(
+      `The executable ${canonical} changed since it was detected; detect the CLI again before authorizing.`,
+    );
+  }
+  return [];
 };
 
 const assessPolicy = (
@@ -365,7 +439,7 @@ export const authorizeAgentExecution = async (
       denials: [{ code: 'invalid_request', message: describeIssues(parsedRequest.error) }],
     };
   }
-  const { runtime, runtimeVersion, workspace } = parsedRequest.data;
+  const { runtime, runtimeVersion, invocation, workspace } = parsedRequest.data;
   const denials: SecurityDenial[] = [];
 
   let policy: ExecutionSecurityPolicy | null = null;
@@ -394,10 +468,24 @@ export const authorizeAgentExecution = async (
     });
   } else {
     profile = parsedProfile.data;
-    for (const problem of findUnsafeLaunchArguments(runtime, profile.launchArguments)) {
+    const { launchArguments } = profile;
+    const startsWithProfile =
+      invocation.arguments.length >= launchArguments.length &&
+      launchArguments.every((argument, index) => invocation.arguments[index] === argument);
+    if (!startsWithProfile) {
+      denials.push({
+        code: 'invocation_invalid',
+        message: `The invocation arguments do not start with the launch arguments of profile "${profile.id}".`,
+      });
+    }
+    // Check the complete invocation, so options appended after the profile arguments are covered.
+    const checkedArguments = startsWithProfile ? invocation.arguments : launchArguments;
+    for (const problem of findUnsafeLaunchArguments(runtime, checkedArguments)) {
       denials.push({ code: 'unsafe_launch_arguments', message: problem });
     }
   }
+
+  denials.push(...(await verifyExecutable(invocation.executable)));
 
   let assessment: ReturnType<typeof assessPolicy> | null = null;
   if (policy !== null && profile !== null) {
@@ -429,6 +517,11 @@ export const authorizeAgentExecution = async (
     runtimeVersion,
     launchProfileId: profile.id,
     launchArguments: [...profile.launchArguments],
+    invocation: {
+      executable: { ...invocation.executable },
+      arguments: [...invocation.arguments],
+      environmentDigest: invocation.environmentDigest,
+    },
     workspace: workspaceResult.verified,
     policy,
     controls: assessment.controls,

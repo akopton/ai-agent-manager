@@ -16,6 +16,8 @@ export {
 export {
   securityDenialCodes,
   type AuthorizedControl,
+  type AuthorizedInvocation,
+  type ExecutableIdentity,
   type ExecutionAuthorization,
   type ExecutionAuthorizationDecision,
   type SecurityDenial,

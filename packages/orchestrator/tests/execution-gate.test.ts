@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, symlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { getRuntimeSecurityProfile } from '@ai-agent-manager/agents';
@@ -8,6 +8,7 @@ import {
   defaultExecutionSecurityPolicy,
   securityControls,
   type AgentRuntime,
+  type AuthorizedInvocation,
   type ControlCapability,
   type ExecutionAuthorizationDecision,
   type RuntimeSecurityProfile,
@@ -44,8 +45,19 @@ const verifiedProfile = (
   })),
 });
 
+const environmentDigest = `sha256:${'0'.repeat(64)}`;
+
+/** Creates an executable file standing in for the CLI binary and returns its identity. */
+const createExecutable = (path: string): AuthorizedInvocation['executable'] => {
+  writeFileSync(path, '#!/bin/sh\nexit 0\n');
+  chmodSync(path, 0o755);
+  const stats = statSync(path);
+  return { path, dev: stats.dev, ino: stats.ino, size: stats.size, mtimeMs: stats.mtimeMs };
+};
+
 type Fixture = {
   directory: string;
+  executable: AuthorizedInvocation['executable'];
   root: string;
   worktreeRoot: string;
   workspace: ExecutionWorkspaceRequest;
@@ -70,19 +82,36 @@ const setUp = async (directory: string, taskId = 'task-1'): Promise<Fixture> => 
     branchName: worktree.branch,
     baseCommit: worktree.baseCommit,
   };
+  const executable = createExecutable(join(directory, 'cli binary'));
   return {
     directory,
+    executable,
     root,
     worktreeRoot,
     workspace,
-    request: (overrides = {}) => ({
-      runtime: 'codex',
-      runtimeVersion: testVersion,
-      profile: verifiedProfile(),
-      policy: { version: 1 },
-      workspace,
-      ...overrides,
-    }),
+    request: (overrides = {}) => {
+      const profile = overrides.profile ?? verifiedProfile();
+      // By default the invocation is the profile's arguments plus a model option.
+      const profileArguments: unknown = (profile as { launchArguments?: unknown }).launchArguments;
+      const invocation: AuthorizedInvocation = {
+        executable,
+        arguments: [
+          ...(Array.isArray(profileArguments) ? profileArguments.map(String) : []),
+          '--model',
+          'test-model',
+        ],
+        environmentDigest,
+      };
+      return {
+        runtime: 'codex',
+        runtimeVersion: testVersion,
+        profile,
+        policy: { version: 1 },
+        invocation,
+        workspace,
+        ...overrides,
+      };
+    },
   };
 };
 
@@ -652,5 +681,136 @@ test('preserves Git hardening: repository-configured fsmonitor and hooks never r
     writeFile(join(directory, 'post-checkout'), `#!/bin/sh\ntouch "${marker}"\n`);
     assert.equal((await authorizeAgentExecution(fixture.request())).authorized, true);
     assert.equal(existsSync(marker), false);
+  });
+});
+
+test('binds the complete invocation into the authorization', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    const decision = await authorizeAgentExecution(fixture.request());
+    assert.equal(decision.authorized, true, JSON.stringify(decision));
+    if (!decision.authorized) return;
+    const { invocation } = decision.authorization;
+    assert.deepEqual(invocation, {
+      executable: fixture.executable,
+      arguments: ['exec', '--sandbox', 'workspace-write', '--model', 'test-model'],
+      environmentDigest: `sha256:${'0'.repeat(64)}`,
+    });
+    assert.ok(Object.isFrozen(invocation.executable) && Object.isFrozen(invocation.arguments));
+  });
+});
+
+test('denies an executable that is missing, symlinked, not executable, or changed', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    const link = join(directory, 'cli link');
+    symlinkSync(fixture.executable.path, link);
+    const notExecutable = join(directory, 'plain file');
+    writeFileSync(notExecutable, 'x');
+    const cases: Array<Partial<AuthorizedInvocation['executable']>> = [
+      { path: join(directory, 'missing') },
+      { path: link },
+      { path: directory },
+      { size: fixture.executable.size + 1 },
+      { ino: fixture.executable.ino + 1 },
+      { mtimeMs: fixture.executable.mtimeMs - 1_000 },
+    ];
+    for (const executable of cases) {
+      const request = fixture.request();
+      assertDenied(
+        await authorizeAgentExecution({
+          ...request,
+          invocation: {
+            ...request.invocation,
+            executable: { ...fixture.executable, ...executable },
+          },
+        }),
+        'executable_not_verified',
+      );
+    }
+    const stats = statSync(notExecutable);
+    const request = fixture.request();
+    assertDenied(
+      await authorizeAgentExecution({
+        ...request,
+        invocation: {
+          ...request.invocation,
+          executable: {
+            path: notExecutable,
+            dev: stats.dev,
+            ino: stats.ino,
+            size: stats.size,
+            mtimeMs: stats.mtimeMs,
+          },
+        },
+      }),
+      'executable_not_verified',
+    );
+    // Modifying the binary after detection invalidates the recorded identity.
+    writeFileSync(fixture.executable.path, '#!/bin/sh\nexit 1\n');
+    assertDenied(await authorizeAgentExecution(fixture.request()), 'executable_not_verified');
+  });
+});
+
+test('denies invocations that do not start with the profile or append unsafe options', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    const withArguments = (args: string[]) => {
+      const request = fixture.request();
+      return authorizeAgentExecution({
+        ...request,
+        invocation: { ...request.invocation, arguments: args },
+      });
+    };
+    assertDenied(await withArguments(['exec', '--sandbox']), 'invocation_invalid');
+    assertDenied(
+      await withArguments(['--json', 'exec', '--sandbox', 'workspace-write']),
+      'invocation_invalid',
+    );
+    for (const appended of [
+      ['--dangerously-bypass-approvals-and-sandbox'],
+      ['--add-dir', '/'],
+      ['--sandbox', 'danger-full-access'],
+      ['-c', 'sandbox_mode=danger-full-access'],
+    ]) {
+      assertDenied(
+        await withArguments(['exec', '--sandbox', 'workspace-write', ...appended]),
+        'unsafe_launch_arguments',
+      );
+    }
+  });
+});
+
+test('denies a missing or malformed invocation', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    const request = fixture.request();
+    const malformed: unknown[] = [
+      undefined,
+      { ...request.invocation, environmentDigest: 'abc' },
+      { ...request.invocation, executable: { ...fixture.executable, path: 'relative/cli' } },
+      { ...request.invocation, arguments: ['exec\0'] },
+      { ...request.invocation, extra: true },
+    ];
+    for (const invocation of malformed) {
+      assertDenied(
+        await authorizeAgentExecution({
+          ...request,
+          invocation: invocation as AuthorizedInvocation,
+        }),
+        'invalid_request',
+      );
+    }
+  });
+});
+
+test('a verified executable and invocation never compensate for unenforced controls', async () => {
+  await withFixtures(async (directory) => {
+    const fixture = await setUp(directory);
+    const decision = await authorizeAgentExecution(
+      fixture.request({ profile: getRuntimeSecurityProfile('codex') }),
+    );
+    assertDenied(decision, 'control_not_enforced');
+    assert.ok(!denialCodes(decision).includes('executable_not_verified'));
   });
 });
