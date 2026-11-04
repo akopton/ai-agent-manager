@@ -290,6 +290,22 @@ type TrustedLocalExecutionAuthorization = {
 type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecutionAuthorization;
 ```
 
+**SEC-02a implementation notes (shared contracts, `packages/core`).** The contracts above exist as Zod schemas with inferred types. They differ from the sketch in four deliberate ways:
+
+- **Naming.**
+  - `ExecutionSecurityPolicy`, `executionSecurityPolicySchema` and `ExecutionAuthorization` keep their pre-SEC-02 names as **strict-only** aliases of `StrictIsolatedPolicy` and `StrictExecutionAuthorization`, so the strict gate and launch boundary did not change.
+  - The unions are `SecurityModePolicy` / `securityModePolicySchema` and `SecurityModeAuthorization` / `securityModeAuthorizationSchema`.
+- **The Trusted Local policy lists `acceptedRisks`** (what the operator accepted). The authorization's `acceptedRisks` (the controls actually not enforced) must be a subset.
+- **Both authorizations carry an `authorizationId` (UUID)** besides `checkedAt`. The strict gate generates it. Single-use is still enforced by object identity in the launch boundary; ID-based single-use tracking follows with SEC-02c.
+- **Schema invariants:**
+  - every control is assessed exactly once;
+  - accepted risks equal the unenforced assessments;
+  - the mandatory safeguards are present (`post_run_git_integrity_check` stays optional until SEC-02d);
+  - the workspace matches the trusted repository identity;
+  - the invocation starts with the launch arguments.
+
+**Breaking contract change:** a strict policy now **requires** `mode: 'strict_isolated'`. A policy without a mode is `policy_invalid`, never interpreted as either mode. Strict outcomes are otherwise unchanged; every shipped-profile execution is still denied.
+
 **Mode selection and no silent downgrade.**
 
 - The worker builds the policy only from persisted operator state:

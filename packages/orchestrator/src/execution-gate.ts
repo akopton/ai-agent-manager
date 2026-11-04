@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, lstat, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
@@ -513,6 +514,9 @@ export const authorizeAgentExecution = async (
   }
 
   const authorization: ExecutionAuthorization = {
+    // SEC-02a: explicit mode discriminant and a unique identity; the decision above is unchanged.
+    mode: 'strict_isolated',
+    authorizationId: randomUUID(),
     runtime,
     runtimeVersion,
     launchProfileId: profile.id,

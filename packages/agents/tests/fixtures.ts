@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -203,6 +204,8 @@ export const authorizationFor = (
     throw new Error(`fixture invocation could not be prepared: ${preparation.message}`);
   }
   return {
+    mode: 'strict_isolated',
+    authorizationId: randomUUID(),
     runtime: adapter.runtime,
     runtimeVersion: installation.version,
     launchProfileId: adapter.securityProfile.id,

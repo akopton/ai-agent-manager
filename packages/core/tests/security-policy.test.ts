@@ -32,6 +32,7 @@ const profileWith = (capability: Partial<ControlCapability>): RuntimeSecurityPro
 
 test('defaults every policy field to the restrictive value', () => {
   assert.deepEqual(defaultExecutionSecurityPolicy, {
+    mode: 'strict_isolated',
     version: 1,
     workspaceAccess: 'task_worktree_only',
     network: 'deny',
@@ -47,13 +48,18 @@ test('rejects policies that request unsupported or permissive behavior', () => {
   for (const policy of [
     {},
     { version: 2 },
-    { version: 1, gitMutations: 'allow' },
-    { version: 1, interactiveApproval: 'allow' },
-    { version: 1, workspaceAccess: 'any' },
-    { version: 1, allowPush: true },
-    { version: 1, riskAcknowledgements: [{ control: 'git_push_denied' }] },
-    { version: 1, riskAcknowledgements: [{ control: 'unknown_control', reason: 'x' }] },
+    { mode: 'strict_isolated', version: 1, gitMutations: 'allow' },
+    { mode: 'strict_isolated', version: 1, interactiveApproval: 'allow' },
+    { mode: 'strict_isolated', version: 1, workspaceAccess: 'any' },
+    { mode: 'strict_isolated', version: 1, allowPush: true },
+    { mode: 'strict_isolated', version: 1, riskAcknowledgements: [{ control: 'git_push_denied' }] },
     {
+      mode: 'strict_isolated',
+      version: 1,
+      riskAcknowledgements: [{ control: 'unknown_control', reason: 'x' }],
+    },
+    {
+      mode: 'strict_isolated',
       version: 1,
       riskAcknowledgements: [
         { control: 'network_denied', reason: 'a' },
@@ -70,7 +76,11 @@ test('rejects policies that request unsupported or permissive behavior', () => {
 });
 
 test('allowing network removes only the network control', () => {
-  const policy = executionSecurityPolicySchema.parse({ version: 1, network: 'allow' });
+  const policy = executionSecurityPolicySchema.parse({
+    mode: 'strict_isolated',
+    version: 1,
+    network: 'allow',
+  });
   assert.deepEqual(
     requiredSecurityControls(policy),
     securityControls.filter((control) => control !== 'network_denied'),

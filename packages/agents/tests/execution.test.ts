@@ -10,6 +10,12 @@ import {
   type CliInstallation,
   type ExecutionLimits,
 } from '../src/index.js';
+import {
+  securityControls,
+  trustedLocalExecutionAuthorizationSchema,
+  trustedLocalSafeguards,
+  type ExecutionAuthorization,
+} from '@ai-agent-manager/core';
 import type { AgentAdapter, AgentEvent, AgentRunResult } from '../src/contract.js';
 import { claudeAdapterSpecification } from '../src/claude-adapter.js';
 import { codexAdapterSpecification } from '../src/codex-adapter.js';
@@ -547,6 +553,56 @@ test('refuses to launch without a matching, fresh, single-use authorization', as
     const later = new Date(Date.now() + 5_000);
     utimesSync(context.fake.executablePath, later, later);
     assert.equal(await codeOf({}), 'executable_changed');
+  });
+});
+
+test('the strict launch boundary refuses a Trusted Local authorization (SEC-02a)', async () => {
+  // Trusted Local launches are not implemented (SEC-02c). Until then, a Trusted Local authorization
+  // that reaches startAgentExecution, for example through an unchecked cast, must be refused
+  // before anything is spawned, even with a test adapter whose profile claims enforcement.
+  await withFakeRuntime('codex', [], async (context) => {
+    const { adapter, installation, workspace } = context;
+    const strict = authorizationFor(adapter, installation, workspace);
+    const binding: Record<string, unknown> = { ...strict };
+    delete binding.controls;
+    const trusted = {
+      ...binding,
+      mode: 'trusted_local',
+      policy: {
+        mode: 'trusted_local',
+        version: 1,
+        acceptance: { disclosureVersion: '1', acceptedAt: new Date().toISOString() },
+        acceptedRisks: [...securityControls],
+        interactiveApproval: 'deny',
+        timeoutMs: 60_000,
+      },
+      trustedRepository: {
+        root: strict.workspace.repositoryRoot,
+        commonDir: strict.workspace.commonDir,
+        trustedAt: new Date().toISOString(),
+      },
+      controlAssessments: securityControls.map((control) => ({
+        control,
+        status: 'unverified',
+        mechanism: 'os_sandbox',
+        notes: 'fixture',
+      })),
+      acceptedRisks: [...securityControls],
+      safeguards: [...trustedLocalSafeguards],
+      processContainment: 'process_group_only',
+    };
+    assert.equal(trustedLocalExecutionAuthorizationSchema.safeParse(trusted).success, true);
+    const result = await startAgentExecution({
+      adapter,
+      installation,
+      request: { runId: 'run-trusted', prompt: 'p', modelId: null, workingDirectory: workspace },
+      // Deliberate misuse: the strict launch boundary is typed for strict authorizations only.
+      authorization: trusted as unknown as ExecutionAuthorization,
+      emit: () => undefined,
+    });
+    assert.equal(result.started, false);
+    assert.equal(!result.started && result.code, 'authorization_mismatch');
+    assert.throws(() => context.fake.invocation(), 'the fake CLI must never have been started');
   });
 });
 

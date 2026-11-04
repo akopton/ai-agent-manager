@@ -48,14 +48,32 @@ const riskAcknowledgementSchema = z
   .strict();
 
 /**
- * Security policy requested by AI Agent Manager for one agent execution.
+ * Execution security modes (SEC-02, `ARCHITECTURE.md` §7.5).
  *
- * Every field defaults to the restrictive value, and unknown fields are rejected, so a policy can
- * never request a capability the gate does not understand. Values that cannot be honoured (such
- * as allowing pushes) are deliberately not representable.
+ * - `strict_isolated`: every required control must be enforced by a verified mechanism. The gate
+ *   is fail-closed. Nothing is currently verified, so every strict execution is denied.
+ * - `trusted_local`: a single trusted operator explicitly accepts disclosed risks for trusted local
+ *   repositories. It never claims that unverified controls are enforced.
+ *
+ * The mode is always explicit. There is no default and no fallback from one mode to the other.
  */
-export const executionSecurityPolicySchema = z
+export const executionSecurityModes = ['strict_isolated', 'trusted_local'] as const;
+
+export const executionSecurityModeSchema = z.enum(executionSecurityModes);
+
+export type ExecutionSecurityMode = z.infer<typeof executionSecurityModeSchema>;
+
+/**
+ * Strict Isolated policy requested by AI Agent Manager for one agent execution.
+ *
+ * `mode` is required: a policy without it is invalid, never interpreted as either mode. Every other
+ * field defaults to the restrictive value, and unknown fields are rejected, so a policy can never
+ * request a capability the gate does not understand. Values that cannot be honoured (such as
+ * allowing pushes) are deliberately not representable.
+ */
+export const strictIsolatedPolicySchema = z
   .object({
+    mode: z.literal('strict_isolated'),
     version: z.literal(1),
     /** Agents may only write inside the verified task worktree; no additional directories. */
     workspaceAccess: z.literal('task_worktree_only').default('task_worktree_only'),
@@ -81,15 +99,87 @@ export const executionSecurityPolicySchema = z
   })
   .strict();
 
-export type ExecutionSecurityPolicy = z.output<typeof executionSecurityPolicySchema>;
-export type ExecutionSecurityPolicyInput = z.input<typeof executionSecurityPolicySchema>;
+export type StrictIsolatedPolicy = z.output<typeof strictIsolatedPolicySchema>;
+export type StrictIsolatedPolicyInput = z.input<typeof strictIsolatedPolicySchema>;
 
-export const defaultExecutionSecurityPolicy: ExecutionSecurityPolicy = Object.freeze(
-  executionSecurityPolicySchema.parse({ version: 1 }),
+/**
+ * The Strict Isolated policy under its pre-SEC-02 name, used by the strict gate and launch
+ * boundary. It is the **strict** schema, never a union and never Trusted Local.
+ */
+export const executionSecurityPolicySchema = strictIsolatedPolicySchema;
+export type ExecutionSecurityPolicy = StrictIsolatedPolicy;
+export type ExecutionSecurityPolicyInput = StrictIsolatedPolicyInput;
+
+export const defaultExecutionSecurityPolicy: StrictIsolatedPolicy = Object.freeze(
+  strictIsolatedPolicySchema.parse({ mode: 'strict_isolated', version: 1 }),
 );
 
-/** Controls the policy requires to be enforced. All are mandatory; none can be waived. */
-export const requiredSecurityControls = (policy: ExecutionSecurityPolicy): SecurityControl[] =>
+/** Upper bound for any execution timeout (24 hours). */
+export const maxExecutionTimeoutMs = 24 * 60 * 60 * 1000;
+
+/** Identifier of the disclosure text the operator accepted, for example `2026-11-04.1`. */
+export const disclosureVersionSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+
+/**
+ * The operator's explicit acceptance of the Trusted Local disclosure. It is a different concept
+ * from the strict policy's `riskAcknowledgements`, which are informational and never authorize.
+ */
+export const operatorAcceptanceSchema = z
+  .object({
+    disclosureVersion: disclosureVersionSchema,
+    /** ISO-8601 UTC timestamp of the acceptance. */
+    acceptedAt: z.iso.datetime(),
+  })
+  .strict();
+
+export type OperatorAcceptance = z.infer<typeof operatorAcceptanceSchema>;
+
+const uniqueControls = (controls: readonly SecurityControl[]): boolean =>
+  new Set(controls).size === controls.length;
+
+/**
+ * Trusted Local policy (SEC-02). It has no defaults, so every field states the operator's explicit
+ * choice:
+ *
+ * - `acceptance`: the versioned disclosure the operator accepted.
+ * - `acceptedRisks`: the strict controls the operator accepts as **not enforced**. An
+ *   authorization may only proceed with unenforced controls listed here.
+ * - `interactiveApproval: 'deny'`: runs stay unattended and non-interactive.
+ * - `timeoutMs`: mandatory, finite, positive and bounded.
+ *
+ * It deliberately has no `riskAcknowledgements`, network or workspace fields. Nothing in it
+ * restricts the agent; it records what is accepted.
+ */
+export const trustedLocalPolicySchema = z
+  .object({
+    mode: z.literal('trusted_local'),
+    version: z.literal(1),
+    acceptance: operatorAcceptanceSchema,
+    acceptedRisks: z
+      .array(securityControlSchema)
+      .max(securityControls.length)
+      .refine(uniqueControls, 'Each control may be listed at most once.')
+      .readonly(),
+    interactiveApproval: z.literal('deny'),
+    timeoutMs: z.number().int().positive().max(maxExecutionTimeoutMs),
+  })
+  .strict();
+
+export type TrustedLocalPolicy = z.output<typeof trustedLocalPolicySchema>;
+
+/** Either policy, discriminated by the required `mode`. Unknown modes are rejected. */
+export const securityModePolicySchema = z.discriminatedUnion('mode', [
+  strictIsolatedPolicySchema,
+  trustedLocalPolicySchema,
+]);
+
+export type SecurityModePolicy = z.output<typeof securityModePolicySchema>;
+
+/**
+ * Controls a Strict Isolated policy requires to be enforced. All are mandatory; none can be waived.
+ * Trusted Local policies have no required controls; they list accepted risks instead.
+ */
+export const requiredSecurityControls = (policy: StrictIsolatedPolicy): SecurityControl[] =>
   securityControls.filter((control) => control !== 'network_denied' || policy.network === 'deny');
 
 /**
@@ -184,12 +274,19 @@ export const controlEnforcementStatuses = [
 
 export type ControlEnforcementStatus = (typeof controlEnforcementStatuses)[number];
 
-export type ControlAssessment = {
-  control: SecurityControl;
-  status: ControlEnforcementStatus;
-  mechanism: EnforcementMechanism;
-  notes: string;
-};
+export const controlEnforcementStatusSchema = z.enum(controlEnforcementStatuses);
+
+/** The gate's assessment of one control; also serialized in Trusted Local authorizations. */
+export const controlAssessmentSchema = z
+  .object({
+    control: securityControlSchema,
+    status: controlEnforcementStatusSchema,
+    mechanism: enforcementMechanismSchema,
+    notes: z.string().max(4000),
+  })
+  .strict();
+
+export type ControlAssessment = z.infer<typeof controlAssessmentSchema>;
 
 /** Classifies a control for a launch. Only `enforced` satisfies a policy requirement. */
 export const assessControl = (

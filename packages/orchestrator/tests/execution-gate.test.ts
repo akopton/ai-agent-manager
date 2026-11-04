@@ -7,6 +7,8 @@ import {
   requiredSecurityControls,
   defaultExecutionSecurityPolicy,
   securityControls,
+  strictExecutionAuthorizationSchema,
+  trustedLocalExecutionAuthorizationSchema,
   type AgentRuntime,
   type AuthorizedInvocation,
   type ControlCapability,
@@ -106,7 +108,7 @@ const setUp = async (directory: string, taskId = 'task-1'): Promise<Fixture> => 
         runtime: 'codex',
         runtimeVersion: testVersion,
         profile,
-        policy: { version: 1 },
+        policy: { mode: 'strict_isolated', version: 1 },
         invocation,
         workspace,
         ...overrides,
@@ -134,6 +136,15 @@ test('authorizes a verified worktree when every required control is enforced', a
     assert.equal(decision.authorized, true, JSON.stringify(decision));
     if (!decision.authorized) return;
     const { authorization } = decision;
+    // SEC-02a: strict authorizations carry an explicit mode and a unique identity, and satisfy
+    // only the strict schema.
+    assert.equal(authorization.mode, 'strict_isolated');
+    assert.equal(strictExecutionAuthorizationSchema.safeParse(authorization).success, true);
+    assert.equal(trustedLocalExecutionAuthorizationSchema.safeParse(authorization).success, false);
+    const second = await authorizeAgentExecution(fixture.request());
+    assert.ok(
+      second.authorized && second.authorization.authorizationId !== authorization.authorizationId,
+    );
     assert.deepEqual(authorization.workspace, {
       repositoryRoot: fixture.root,
       commonDir: fixture.workspace.commonDir,
@@ -176,6 +187,7 @@ test('acknowledging every risk cannot authorize the unverified shipped profiles'
   await withFixtures(async (directory) => {
     const fixture = await setUp(directory);
     const policy = {
+      mode: 'strict_isolated',
       version: 1,
       riskAcknowledgements: securityControls.map((control) => ({
         control,
@@ -223,6 +235,7 @@ test('an acknowledgement cannot waive an unsupported, unverified, or partial man
           fixture.request({
             profile: verifiedProfile('codex', { [control]: weakness }),
             policy: {
+              mode: 'strict_isolated',
               version: 1,
               riskAcknowledgements: [{ control, reason: 'acknowledged by user' }],
             },
@@ -245,6 +258,7 @@ test('an acknowledgement for an enforced control is harmless and not part of the
     const decision = await authorizeAgentExecution(
       fixture.request({
         policy: {
+          mode: 'strict_isolated',
           version: 1,
           riskAcknowledgements: [{ control: 'git_push_denied', reason: 'n/a' }],
         },
@@ -270,9 +284,21 @@ test('missing or invalid security configuration fails closed', async () => {
     for (const policy of [
       {},
       'deny',
-      { version: 1, gitMutations: 'allow' },
-      { version: 1, allowPush: true },
-      { version: 1, sandbox: 'none' },
+      { mode: 'strict_isolated', version: 1, gitMutations: 'allow' },
+      { mode: 'strict_isolated', version: 1, allowPush: true },
+      { mode: 'strict_isolated', version: 1, sandbox: 'none' },
+      // SEC-02a: the mode is explicit; a missing or unknown mode is never interpreted.
+      { version: 1 },
+      { mode: 'unknown', version: 1 },
+      // A Trusted Local policy is not a strict policy: the strict gate refuses it outright.
+      {
+        mode: 'trusted_local',
+        version: 1,
+        acceptance: { disclosureVersion: '1', acceptedAt: '2026-11-04T10:00:00.000Z' },
+        acceptedRisks: [...securityControls],
+        interactiveApproval: 'deny',
+        timeoutMs: 60_000,
+      },
     ]) {
       assertDenied(await authorizeAgentExecution(fixture.request({ policy })), 'policy_invalid');
     }
@@ -288,7 +314,10 @@ test('allowing network only drops the network requirement', async () => {
       'control_not_enforced',
     );
     const decision = await authorizeAgentExecution(
-      fixture.request({ profile, policy: { version: 1, network: 'allow' } }),
+      fixture.request({
+        profile,
+        policy: { mode: 'strict_isolated', version: 1, network: 'allow' },
+      }),
     );
     assert.equal(decision.authorized, true, JSON.stringify(decision));
   });
