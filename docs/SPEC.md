@@ -1,7 +1,7 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.3 — agent/model selection clarified  
-**Date:** 2026-11-03  
+**Status:** Draft v0.4 — AI Conversations specified as a planned extension (§18)  
+**Date:** 2026-11-04 (v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
 
@@ -13,6 +13,8 @@ AI Agent Manager is a local control center for software development tasks execut
 
 **Primary workflow:** select project → create task with prompt and agent → enqueue → create dedicated branch and Git worktree → execute → review → approve → commit and push to the task branch.
 
+A planned **AI Conversations** capability adds project-scoped (**Project AI**) and project-independent (**Global AI**) discussion, planning, architecture decisions and task proposals. It is specified in §18 and is not part of the MVP acceptance criteria in §14.
+
 Core principles:
 
 1. The application runs locally. Its metadata database and managed worktrees are stored on the user's computer.
@@ -23,6 +25,7 @@ Core principles:
 6. Stopping an agent, closing the application, or discarding a result must not silently delete generated files.
 7. Tasks are independent in MVP. The user manually controls task ordering and branch selection; automatic task dependencies are out of scope.
 8. User-facing discussions may be in Polish, while product documentation, agent instructions, technical prompts, code, and the application's UI are written in **English**.
+9. AI conversations (§18) are advisory: they never start agents, modify repositories, or publish changes. Their proposals take effect only after explicit user approval.
 
 ## 2. MVP scope
 
@@ -48,7 +51,7 @@ Core principles:
 - Multi-user accounts, permissions, collaboration, and shared boards.
 - Hosted execution, remote runners, or internet-accessible control of the application.
 - Automatically detecting, enforcing, or scheduling task dependencies.
-- Live conversational input or answering agent questions **while a task runs**. Follow-up prompts are provided after execution, during review.
+- Live conversational input or answering agent questions **while a task runs**. Follow-up prompts are provided after execution, during review. (AI Conversations, §18, are separate from task execution and do not change this.)
 - Automated code review by another agent or side-by-side solution comparison.
 - Automatic merges, pull request creation, and GitHub/Gitea API integrations.
 - User-installable adapters for new agent CLIs, arbitrary custom providers, and multiple named configuration profiles for the same CLI. The implementation should remain adapter-extensible without a plugin-management UI.
@@ -69,6 +72,10 @@ Core principles:
 | **Base branch / base SHA** | The selected starting branch and the precise commit used to create a task branch. |
 | **Review** | The stage where the user inspects generated changes and decides what happens next. |
 | **Scheduler** | The global component that selects eligible queued tasks for available agents. |
+| **Conversation** *(planned, §18)* | A persisted AI discussion with scope `global` (no project) or `project` (exactly one project). |
+| **Execution Mode / Conversation Mode** *(planned, §18)* | Execution Mode performs a Kanban task in a worktree; Conversation Mode discusses and plans, with no repository write access by default. |
+| **Architecture decision** *(planned, §18)* | A user-approved, durable project knowledge record that is independent of the conversation it came from. |
+| **Task proposal** *(planned, §18)* | An AI-drafted task that becomes a `Backlog` task only after user review and approval. |
 
 ## 4. Screens and navigation
 
@@ -314,6 +321,7 @@ These decisions do not change MVP scope but must be resolved before implementati
 - UX for auxiliary states (`Failed`, `Stopped`, `Interrupted`, `Discarded`).
 - How to maintain candidate model lists, validate model identifiers, and capture verifiable effective-model metadata for each CLI.
 - Review snapshot integrity checks and staging rules for untracked files.
+- AI Conversations technical questions are tracked separately in §18.12.
 
 ## 17. Agreed technology direction
 
@@ -332,6 +340,154 @@ These decisions do not change MVP scope but must be resolved before implementati
 | Live updates | Server-Sent Events (SSE) |
 | Queue | Durable SQLite-backed queue |
 | Repository organization | pnpm workspaces |
+
+## 18. AI Conversations (planned extension)
+
+### 18.1 Status and scope
+
+AI Conversations is an agreed product capability, specified here so that the MVP's data model and adapter boundaries do not block it. It is **not part of the MVP acceptance criteria in §14**. It is delivered as a separate workstream (`IMPLEMENTATION_PLAN.md` §8) and has its own acceptance criteria (§18.11).
+
+AI Agent Manager then has three complementary capabilities:
+
+| Capability | Purpose |
+|---|---|
+| **Projects & Kanban** | Manage local Git projects, delegate tasks to Claude Code or Codex, execute them in isolated worktrees, review, approve and publish (§1–§17). |
+| **Project AI** | Discuss, plan, evaluate architecture, record decisions and propose tasks **within one project's context**. |
+| **Global AI** | General conversations, analysis, brainstorming, research and summaries **without any project association**. |
+
+Project AI and Global AI are two **scopes** (`project` and `global`) of one shared **AI Conversations** module, not separate implementations.
+
+Nothing in this section changes the existing requirements for Kanban, scheduling, agent execution, Git safety, worktrees, review, approval or publishing. In particular, conversations never start agent execution, never modify repositories and never publish changes.
+
+The "no live conversational input while a task runs" exclusion (§2) still applies. AI Conversations are not a channel into a running task.
+
+### 18.2 Execution Mode and Conversation Mode
+
+| | **Execution Mode** (existing) | **Conversation Mode** (new) |
+|---|---|---|
+| Purpose | Perform a Kanban task | Discuss, plan, analyze, propose |
+| Trigger | Scheduler claims a queued task | User sends a message |
+| Workspace | Dedicated task worktree | No repository workspace; the application supplies context |
+| Repository write access | Within the task worktree only | **None by default** |
+| Results | Worktree changes → review → approve → publish | Messages, proposed decisions, proposed tasks; all require user approval |
+| Lifecycle | Task runs (§7) | Conversation turns (§18.9) |
+| Capacity | One active task per CLI (§6) | Not yet decided (§18.12) |
+
+Both modes may share adapter infrastructure (CLI discovery, process execution, model selection, event normalization). Each mode has its own runtime policy and lifecycle.
+
+**Conversation Mode is not described as read-only, sandboxed or isolated unless that is actually enforced** by verified runtime isolation for the selected CLI, as required for Execution Mode by M1-03. Instructions to the model are defense in depth, not enforcement.
+
+### 18.3 User stories
+
+1. As the user, I start a global conversation to brainstorm or analyze something unrelated to my projects, choosing Claude Code or Codex and optionally a model.
+2. As the user, I keep several global conversations and return to any of them later.
+3. As the user, I open a project's AI section and start a conversation that already knows the project's approved documentation and accepted decisions.
+4. As the user, I add specific source files to a project conversation so the agent can analyze them, without letting it change the repository.
+5. As the user, I run several conversations for one project (for example "auth redesign" and "test strategy"), each with its own history and shared project knowledge.
+6. As the user, I turn a conclusion from a conversation into an architecture decision, review it and accept it so it becomes project knowledge.
+7. As the user, I ask the AI to break a feature into tasks, edit the proposals, and create the ones I approve in the project's Backlog.
+8. As the user, I ask a global conversation to propose tasks and explicitly choose which project they belong to before anything is created.
+9. As the user, I switch a conversation to another agent or model for future messages without losing its history.
+10. As the user, I stop a response that is taking too long, and see a clear error when a CLI fails.
+
+### 18.4 Agent and model selection
+
+- Conversations use the **locally installed CLIs supported by AI Agent Manager**: Claude Code and Codex initially, through the same adapter abstraction as Execution Mode.
+- Direct provider APIs, separate API keys or separate API billing are **not required**. Authentication reuses the CLIs' official local login, as in §12.
+- Each conversation has a current agent runtime and model selection (`Default` or an explicit model identifier), with the same rules as tasks (§5, §8). `Default` passes no model override; unsupported models fail visibly, with no silent fallback.
+- The user may change the runtime or model for **future** messages. Past messages keep the runtime and model that produced them.
+- Each assistant message records the requested runtime and model, and the effective model only when the CLI reports it trustworthily.
+- Claude Code and Codex are **not assumed** to offer identical streaming, session persistence, model switching, context limits or security controls. These are capabilities to verify per CLI (§18.12).
+
+### 18.5 Global AI
+
+- The user can create, list, rename, archive and delete multiple global conversations.
+- A global conversation is **not associated with any project**.
+- It is suitable for general discussion, technical analysis, brainstorming, summaries and research.
+- Its history is stored locally in SQLite.
+- It **never automatically receives** project repositories, project documents, decisions, task history or other private project context. Including project material in a global conversation requires an explicit user action for that specific content.
+- The user chooses the agent runtime and model.
+
+### 18.6 Project AI
+
+- Each project conversation belongs to **exactly one project**; a project can have many conversations.
+- Project conversations share relevant **project knowledge** but keep separate message histories.
+- Project context may include, as selected or configured by the user:
+  - project instructions and approved project documentation;
+  - accepted architecture decisions (§18.7);
+  - task history (titles, prompts, outcomes, review notes);
+  - **explicitly selected** source files from the project's repository.
+- File access is **read-only by default**. Files are read by AI Agent Manager and passed as context. The agent is not given a repository or worktree path to work in. This describes what the application grants; it is not a claim of enforced isolation (§18.2).
+- The user can see what context is sent with each message.
+- Project conversations **never modify repository code**. Implementation happens only through tasks (§18.8) in Execution Mode.
+- Context from one project is never included in another project's conversations or in a global conversation without explicit user authorization.
+- The user chooses the agent runtime and model.
+
+### 18.7 Architecture decisions
+
+- From a project conversation, the user (or the AI, on request) can draft an **architecture decision**: title, context, decision, consequences and alternatives considered.
+- A draft becomes project knowledge **only after explicit user approval** (`Proposed` → `Accepted`). The user can edit it before accepting, or reject it.
+- Accepted decisions are stored as project knowledge **independently of the conversation**. They remain available, and may be included in future project context, even if the originating conversation is deleted.
+- Deleting a conversation never deletes accepted decisions. A decision keeps a reference to its origin while that conversation exists.
+- A later decision can supersede an accepted one. History is retained; the superseded decision is marked, not deleted.
+- Decisions are stored in the application database. Exporting them to repository files (for example ADR Markdown) is not automatic. Any export would go through the normal reviewed and approved change flow.
+
+### 18.8 Planning-to-Kanban workflow
+
+```text
+Conversation → Proposed Plan → Task Proposals → User Approval → Project Backlog
+            → Manual Queueing → Agent Execution → Review → Approve & Push
+```
+
+- The AI can propose a plan and **one or more task proposals**.
+- Each proposal has the fields required to create a task (§5): title, prompt, agent runtime, model (`Default` or explicit), priority and optional base branch.
+- The user can review, edit, reject or accept each proposal individually before any task is created.
+- An accepted proposal creates a task through the **same validation and creation rules as manual task creation**. It belongs to the selected project and **enters `Backlog`, never `Queued`**.
+- Conversations **never queue tasks, start agents, create worktrees, commit, push or publish**. Queueing remains an explicit user action (§4.2, §6).
+- Tasks created from proposals keep a reference to their originating conversation and proposal while those exist. Deleting the conversation does not delete the tasks; it only removes the reference.
+- A project conversation proposes tasks for its own project.
+- A **global conversation** may propose tasks only after the user **explicitly chooses and confirms the target project**. Choosing a target project does not automatically add that project's context to the global conversation.
+
+### 18.9 Conversation persistence and context
+
+- Conversations, messages, summaries, decisions and proposals are stored locally in SQLite, as metadata alongside the rest of the application data (§13).
+- **Permanent conversation history is separate from the context sent to a CLI.** The context for a turn is assembled per message, from a selection of history, summaries and project knowledge, and may be much smaller than the full history.
+- Conversations support summaries, so long histories can be condensed for future context while the full history stays available to the user.
+- Changing the agent runtime does **not** transfer native CLI sessions between Claude Code and Codex. The new runtime receives context assembled by AI Agent Manager from the stored history.
+- Responses stream to the UI. The user can cancel a response; a cancelled or failed response is stored with that status and never silently lost or presented as complete.
+- Credentials, tokens and secrets are not stored. Content the user deliberately sends to a conversation is stored as conversation history.
+- Project data stays scoped to its project unless the user explicitly authorizes otherwise.
+
+### 18.10 Safety and privacy
+
+- Conversations are advisory. Every effect outside the conversation (accepting a decision, creating tasks) requires an explicit user action.
+- Conversation Mode runs only after its runtime policy for the selected CLI has been checked before launch. As with Execution Mode, required restrictions are fail-closed: if they are not enforced, the turn is refused with an actionable explanation rather than run with weaker protection.
+- Repository content and documents passed as context are **untrusted input**: they may contain instructions aimed at the model. They must never be able to trigger application actions without user approval.
+- Sending a message sends its assembled context to the provider behind the selected CLI, under the user's account. The UI must make this visible, especially for project source files.
+- Deleting a conversation requires confirmation. It removes the conversation's messages and pending proposals, but not accepted decisions or created tasks.
+
+### 18.11 Acceptance criteria (AI Conversations)
+
+1. **Global conversations:** create two global conversations, exchange messages with Claude Code in one and Codex in the other, and see both histories after an application restart.
+2. **No project leakage:** a global conversation's context never contains project data unless explicitly added.
+3. **Project conversations:** two conversations in one project share accepted decisions but have separate histories. A conversation in another project sees none of the first project's context.
+4. **Read-only files:** a selected source file is included as context. The conversation cannot change the repository or any worktree, and no claim of isolation is shown unless it is enforced.
+5. **Model selection:** `Default` and explicit models work as for tasks; an unsupported model fails visibly without fallback; switching the runtime keeps history and starts a fresh native session.
+6. **Streaming and cancellation:** a response streams. Cancelling stops the CLI and stores the partial response as cancelled.
+7. **Decisions:** a drafted decision becomes project knowledge only after acceptance, and survives deletion of its conversation.
+8. **Task proposals:** proposals can be edited. Accepted proposals create tasks in `Backlog` with an origin reference. Nothing is queued or executed automatically.
+9. **Global-to-project proposals:** proposals from a global conversation require explicit selection and confirmation of a target project.
+
+### 18.12 Open technical questions (to verify during implementation)
+
+These are **not** confirmed capabilities:
+
+- Per CLI: streaming output format, native session persistence and resume, model switching within a session, context-window limits and reporting, structured output for proposals, and effective-model metadata.
+- Per CLI: whether Conversation Mode can run with **no tools** or read-only tools, whether that can be verified as enforced, and whether repository instruction files or settings are loaded from the working directory.
+- Whether web search or browsing (useful for Global AI research) can be enabled safely, and how it is controlled.
+- Whether conversation turns share the per-CLI execution capacity of §6 or use separate limits, and how provider rate limits affect concurrent use.
+- How large selected files and histories are bounded, summarized and presented.
+- What happens to a project's conversations and decisions when the project is disconnected (§4.1 requires an explicit decision about associated resources).
 
 ---
 

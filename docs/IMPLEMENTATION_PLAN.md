@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.1  
-**Date:** 2026-11-03  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.3 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.1  
+**Status:** Draft v0.2 — AI Conversations workstream added (§8)  
+**Date:** 2026-11-04 (v0.1: 2026-11-03)  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.4 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.2  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -30,6 +30,8 @@ This is the executable plan for implementing AI Agent Manager. Product behavior 
 | **M7 — Dashboard and polish** | Cross-project overview, settings, SSE, robust end-to-end checks | M3–M6 |
 
 M1 and M2 can proceed independently after M0. Do not connect real work repositories until the security gate in M1 is understood and accepted.
+
+The planned AI Conversations workstream (C1–C5) is defined separately in §8. It does not change M0–M7.
 
 ## 3. Detailed work packages
 
@@ -199,10 +201,104 @@ M1 and M2 can proceed independently after M0. Do not connect real work repositor
 - GUI installation of arbitrary agent runtimes or multiple named agent profiles.
 - Automated cross-task dependencies and automatic merge/PR creation.
 - Cloud runners, multi-user accounts, remote control, second-agent review and comparative runs.
-- Real-time mid-run agent chat, advanced analytics and cost tracking.
+- Real-time mid-run agent chat, advanced analytics and cost tracking. (Mid-run chat with a running task is distinct from AI Conversations, which are planned in §8.)
 
 ## 7. Tracking
 
 Use this file as the high-level milestone plan. When implementation starts, track detailed issue state in GitHub issues or a lightweight `docs/PROGRESS.md` if needed; **do not** turn this document into an unstructured activity log.
 
 **Next action:** start **M0 — Foundation**, then perform the **M1 safety gate** before connecting real repositories.
+
+## 8. Future workstream: AI Conversations (C1–C5)
+
+> A separate workstream for `SPEC.md` §18 and `ARCHITECTURE.md` §15. It does **not** renumber or change M0–M7, and it is not part of the MVP "Done when" criteria. The milestones use the `C` prefix to stay distinct from the `M` milestones.
+
+### 8.1 Milestones and dependencies
+
+| Milestone | Outcome | Depends on |
+|---|---|---|
+| **C1 — AI Conversations Foundation** | Conversation domain, persistence, Conversation Mode adapter entry point, fail-closed conversation gate, turn lifecycle | M1-02, M1-03 verification method, M2, M4-03 (event log + SSE) |
+| **C2 — Global AI** | Multiple global conversations with agent/model selection and no project context | C1 |
+| **C3 — Project AI** | Project-scoped conversations with controlled, read-only context assembly | C1, M3-01 |
+| **C4 — Architecture Decisions** | User-approved decisions as durable project knowledge | C3 |
+| **C5 — Planning-to-Kanban Integration** | Structured task proposals → user approval → `Backlog` | C3 (C2 for global proposals), M3-02 |
+
+**Recommended position:** start C1 after **M4** (adapters, persistence and SSE exist and are exercised by task runs). Preferably finish **M6** first, because the safety-critical review and publish path is the MVP's core value. C2–C5 can then proceed in order, alongside or after M7. Changing this order is a planning decision for the user.
+
+### 8.2 Work packages
+
+#### C1 — AI Conversations Foundation
+
+**C1-01 — Conversation domain and persistence**
+
+- Types and Zod schemas in `core`: conversation scopes, message and turn states, conversation runtime policy.
+- Drizzle tables and migrations: `conversations`, `conversation_messages`, `conversation_turns`, `conversation_summaries`, `conversation_native_sessions` (ARCHITECTURE §15.3), with the scope/project `CHECK`, foreign keys and indexes.
+- Commands with idempotency keys: create, rename, archive, delete (confirmed), send message, cancel turn.
+
+**C1-02 — Conversation Mode CLI capability investigation and gate**
+
+- For each CLI and installed version, verify:
+  - streaming format;
+  - native session resume;
+  - per-turn model switching;
+  - effective-model metadata;
+  - structured output;
+  - context limits;
+  - which settings, instructions or memory files are loaded.
+- Define Conversation Mode launch profiles, preferring no tools. Verify them adversarially with disposable fixtures, using the M1-03 method: no writes, no commands, no Git, no reads outside the scratch directory.
+- Implement the conversation pre-launch gate: fail-closed, acknowledgements informational only, no claims of isolation unless enforced.
+
+**C1-03 — Turn lifecycle and context**
+
+- Worker-owned turns: claim, context assembly with a manifest, launch in the scratch directory, persisted and bounded events over SSE, cancel via process-group stop, structured errors, `interrupted` on restart without automatic retry.
+- Summaries, context budget, and switching runtime or model for future messages. Native sessions are never transferred across CLIs.
+
+**Done when:** a conversation can exchange messages with both CLIs under a verified conversation profile, or is refused with an actionable reason. Streaming, cancellation and restart behave as specified. No repository is touched. Tests use fake CLIs; live-CLI verification is recorded separately.
+
+#### C2 — Global AI
+
+- Global conversation list: create, rename, archive, delete; chat view with streaming; agent and model selector with `Default`.
+- Context assembly includes **no project data**. Attaching any project material is an explicit, recorded action.
+
+**Done when:** SPEC §18.11 criteria 1, 2, 5 and 6 pass.
+
+#### C3 — Project AI
+
+- Project-scoped conversation list and chat inside each project.
+- Context sources:
+  - project instructions and approved documentation;
+  - accepted decisions;
+  - task history;
+  - explicitly selected files, read through `packages/git` from a resolved commit (hardened, read-only, size-limited, binary-aware).
+- Visible per-turn context manifest; cross-project isolation in queries and context assembly.
+
+**Done when:** SPEC §18.11 criteria 3 and 4 pass, including a test that one project's context never appears in another project's or a global conversation.
+
+#### C4 — Architecture Decisions
+
+- Draft decisions from user actions or validated structured model output; edit; accept, reject or supersede through explicit commands.
+- Decision list per project; accepted decisions available to project context assembly.
+- Origin references use `ON DELETE SET NULL`; decisions survive conversation deletion.
+
+**Done when:** SPEC §18.11 criterion 7 passes.
+
+#### C5 — Planning-to-Kanban Integration
+
+- Structured plan and task proposals parsed and validated into `draft` proposals; edit, reject, accept individually.
+- Acceptance reuses the M3 task creation command; tasks enter `Backlog` with origin references.
+- Global conversations require an explicit, confirmed target project.
+- Architectural check, backed by tests: the conversations module has no access to queueing, scheduling, worktree, Git mutation or publish commands.
+
+**Done when:** SPEC §18.11 criteria 8 and 9 pass, and no conversation path can queue, run or publish a task.
+
+### 8.3 Open questions to resolve during C1
+
+Listed in SPEC §18.12 and ARCHITECTURE §15.11:
+
+- per-CLI conversation capabilities and enforceable no-tool profiles;
+- web search for Global AI;
+- capacity sharing with the execution slots;
+- summary and context budgeting;
+- project disconnect behavior for conversations and decisions.
+
+Resolve each with a documented decision before building the dependent UI.

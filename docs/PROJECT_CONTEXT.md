@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.1  
-**Date:** 2026-11-03  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.3, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.1, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.1
+**Status:** Context snapshot v0.2 — AI Conversations decisions recorded (§10)  
+**Date:** 2026-11-04 (v0.1: 2026-11-03)  
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.4, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.2, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.2
 
 ## 1. Why this project exists
 
@@ -75,6 +75,9 @@ The following outcomes were manually observed; they are not production automated
 7. **Model availability:** CLI model support varies by installed version/account; `Default` is safest. An unsupported explicit model should cause a clear recoverable error, never silent substitution.
 8. **Runtime versions:** Check Node and pnpm requirements when scaffolding Next.js/Drizzle and lock supported versions.
 9. **Storage:** Choose a user-writable data root and explicit cleanup/backup processes for SQLite WAL and managed worktrees.
+10. **Conversation isolation (planned AI Conversations):** Running a CLI outside a repository is not confinement. Conversation Mode needs its own verified, fail-closed runtime policy before it can be described as read-only.
+11. **Context leakage and privacy:** Project data must not reach global conversations or other projects. Selected source files are sent to the provider behind the chosen CLI, and CLI-side memory or settings could leak context across projects.
+12. **Prompt injection through context:** Repository files, documents and model output are untrusted. Decisions and task proposals must only take effect after explicit user approval.
 
 ## 7. Current repository/document status
 
@@ -85,6 +88,12 @@ At the point of writing this snapshot:
 - Small scripts exist in `poc/` for agent execution and stop testing.
 - The next document and implementation steps are described in `docs/IMPLEMENTATION_PLAN.md`.
 - Actual app scaffolding, SQLite/Drizzle models, scheduler, web UI and production adapters have **not yet been confirmed implemented**.
+
+**Update 2026-11-04** (from Git history):
+
+- Implemented and committed: monorepo foundation (core package, worker, SQLite/Drizzle initialization, runtime path configuration); safe Git repository inspection; safe task worktree lifecycle; read-only task change inspection; and the fail-closed execution security gate (M1-03 foundation).
+- Not yet done: M1-02 Claude/Codex adapters, and the adversarial per-CLI verification that M1-03 requires. Until then, the gate denies every execution. Scheduler, web UI flows and publishing are not implemented.
+- AI Conversations has been specified (§10); no implementation exists.
 
 This document is a **context snapshot**, not an authoritative record of future implementation progress. Update it when major decisions or verified milestones change; prefer Git history and tests for detailed evidence.
 
@@ -97,3 +106,36 @@ When opening the repository in VS Code, ask the coding agent to read `AGENTS.md`
 - A third runtime may be added later through a new code-level adapter; a plugin installation UI is out of scope.
 - Automatic task dependencies, cloud runners, automatic merges/PRs and multi-user access remain out of scope.
 - If requirements change, update `SPEC.md` first, then reconcile `ARCHITECTURE.md`, this file and the plan.
+
+## 10. AI Conversations — agreed product decisions (2026-11-04)
+
+Specified in `SPEC.md` §18, with the architecture in `ARCHITECTURE.md` §15 and the workstream in `IMPLEMENTATION_PLAN.md` §8.
+
+| Area | Decision |
+|---|---|
+| Product shape | Three capabilities: **Projects & Kanban** (existing), **Project AI** and **Global AI**. Project AI and Global AI are two scopes of **one** AI Conversations module. |
+| Scope in plan | Planned extension, delivered as workstream C1–C5. It is not part of the MVP acceptance criteria (`SPEC.md` §14) and does not change M0–M7. |
+| Agents | Reuse the locally installed Claude Code and Codex CLIs through the shared adapter layer. Per-conversation runtime and optional model (`Default` = no override). No mandatory provider APIs, API keys or separate billing. |
+| Modes | **Execution Mode** (Kanban task in a worktree) and **Conversation Mode** (discussion and planning) share adapter infrastructure but have separate runtime policies and lifecycles. |
+| Conversation authority | No repository write access by default. Conversations never start agents, queue tasks, create worktrees, commit, push or publish. |
+| Security claims | Conversation Mode is not called read-only or sandboxed unless runtime isolation is verified as enforced. It uses a fail-closed pre-launch gate, as M1-03 does. |
+| Global AI | Multiple conversations, no project association, no automatic project context. |
+| Project AI | Exactly one project per conversation, many conversations per project, shared project knowledge, separate histories. Selected files are read by the application, read-only, from a resolved commit. |
+| Decisions | Architecture decisions require explicit user approval. Accepted decisions are project knowledge that survives conversation deletion. |
+| Planning-to-Kanban | AI proposes tasks; the user edits and approves them; created tasks enter **Backlog** (never Queued) and keep an origin reference. Global conversations require an explicitly confirmed target project. |
+| Persistence | SQLite. Permanent history is separate from the per-turn context sent to a CLI. Summaries and selective context. Native CLI sessions are never transferred between Claude Code and Codex. No stored credentials. |
+
+**Implementation priority (recommended, pending confirmation):**
+
+1. Continue the core MVP path: M1-02 adapters and M1-03 CLI verification, then M2–M6.
+2. Start C1 (Foundation) after M4.
+3. Then C2 Global AI → C3 Project AI → C4 Decisions → C5 Planning-to-Kanban.
+
+**Open technical questions** (`SPEC.md` §18.12, `ARCHITECTURE.md` §15.11):
+
+- per-CLI streaming, session resume, model switching, context limits and structured output;
+- whether no-tool or read-only Conversation Mode profiles can be verified as enforced;
+- web search for Global AI;
+- whether conversations share the per-CLI execution capacity;
+- context budgeting;
+- conversation and decision handling on project disconnect.

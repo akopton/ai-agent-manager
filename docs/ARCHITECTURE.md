@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.1  
-**Date:** 2026-11-03  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.3  
+**Status:** Draft v0.2 — AI Conversations architecture added (§15)  
+**Date:** 2026-11-04 (v0.1: 2026-11-03)  
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.4  
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -17,6 +17,7 @@
 6. Support selecting an agent runtime and optional model **per task**; do not create named agent profiles in MVP.
 7. Keep the web UI independent of provider-specific agent output and execution details.
 8. Avoid unnecessary infrastructure: no hosted database, Redis, Docker, or remote workers required for MVP.
+9. *(Planned, §15.)* Support AI Conversations in a global or project scope through the same adapters, with separate runtime policies, and without giving conversations authority to modify repositories, start agents, or publish.
 
 ## 2. Runtime topology
 
@@ -79,9 +80,13 @@ ai-agent-manager/
 
 `packages/core` must not import framework or infrastructure code. Agent adapters must not import Next.js, Drizzle, or UI components. The worker composes the adapters, Git services, scheduler, and repositories.
 
+The planned AI Conversations module (§15.1) initially reuses these packages. This is the preferred starting point, not a prohibition: a dedicated package may be introduced later if clear modularity or dependency boundaries justify it.
+
 ## 4. Domain model and SQLite tables
 
 Use Drizzle ORM with SQLite. Generate IDs in the application (e.g., UUID or ULID); do not use user-facing task numbers as primary keys. Store timestamps consistently (Unix milliseconds or ISO-8601 UTC; choose one and apply everywhere). Add foreign keys, indexed status columns, and unique constraints.
+
+Planned conversation, decision and task-proposal tables are described in §15.3 and are not part of the MVP schema.
 
 | Table | Essential fields | Notes |
 |---|---|---|
@@ -268,6 +273,8 @@ Illustrative route surface (final endpoints and exact payloads will be refined d
 
 Validate all bodies, route params, and query params with Zod. Use structured errors (`code`, `message`, `details`) and request/command IDs for deduplication. Never trust a browser-supplied filesystem path after project registration; resolve server-side from the database.
 
+Planned conversation routes are listed in §15.10.
+
 SSE is **one-way** for live task events. Mutations (Stop, Retry, Approve) use REST. Event IDs allow replay after browser reconnection. The DB event log is authoritative; live SSE is a projection, not state storage.
 
 ## 11. UI modules
@@ -278,6 +285,7 @@ SSE is **one-way** for live task events. Mutations (Stop, Retry, Approve) use RE
 - **Review:** change list, text/binary indication, diff, test outcomes, feedback, discard, approve and push.
 - **Overview:** active runs across projects, remaining slots, queue order, tasks requiring attention, Pause Queue.
 - **Settings:** global instructions, capacity limits, scheduler mode, worktree/data locations.
+- *(Planned, §15.)* **Global AI:** global conversation list and chat. **Project AI:** per-project conversations, context selection, decisions and task proposals.
 
 UI state should be refreshed from server-authoritative records; drag-and-drop is a request to transition a task, not an independent change to local state.
 
@@ -315,8 +323,171 @@ UI state should be refreshed from server-authoritative records; drag-and-drop is
 4. Detailed rules for session resumption and retry-worktree generation.
 5. Log redaction, file size limits, and retention defaults.
 6. Local process supervision for a packaged release (development uses two terminal processes).
+7. AI Conversations verification gates and open questions are listed separately in §15.11.
 
 These are **explicit validation tasks**, not implied guarantees. The architecture should evolve based on their results without widening the MVP feature list.
+
+## 15. AI Conversations (planned extension)
+
+> Conceptual architecture for `SPEC.md` §18. It is not implemented and does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
+
+### 15.1 Module placement
+
+One **conversations** module serves both scopes (`global` and `project`). It is not split into a Global AI and a Project AI implementation.
+
+| Concern | Location | Notes |
+|---|---|---|
+| Conversation, message, decision and proposal types; Zod schemas; conversation runtime policy types | `packages/core` | Framework-free, like the existing domain and security types. |
+| Tables, migrations and queries | `packages/database` | Same SQLite database, WAL, foreign keys. |
+| CLI invocation in Conversation Mode; per-CLI conversation capabilities | `packages/agents` | Reuses the adapter abstraction from §7 with a separate conversation entry point and separate launch profiles. |
+| Turn lifecycle, context assembly, conversation pre-launch gate, proposal and decision commands | conversations module, in the worker | Preferred initial approach: start inside `packages/orchestrator`. A dedicated conversations package may be introduced later, through a documented decision, when clear modularity or dependency boundaries justify it (for example, to keep conversation code from depending on scheduler or publish modules). |
+| Selected source file reads | `packages/git` | Read-only; see §15.4. |
+| Screens, REST and SSE | `apps/web` | Same loopback binding and origin checks as §2 and §10. |
+
+The **worker** owns conversation turns, as it owns task runs. CLI processes are never started by the Next.js process. The web process persists commands such as "send message" and "cancel turn", and streams persisted events.
+
+### 15.2 Execution Mode versus Conversation Mode
+
+Both modes use the same adapter infrastructure: CLI discovery and version detection, `spawn` with argument arrays and `shell: false`, bounded output, event normalization and model selection (§7.2). They differ in everything that concerns authority:
+
+| Aspect | Execution Mode | Conversation Mode |
+|---|---|---|
+| Entry point | `start(AgentStartInput)` with a verified worktree | Separate conversation entry point; no worktree |
+| `cwd` | Verified task worktree | A per-conversation **scratch directory** under the application data root. It is outside all connected repositories, the worktree root and the app source, contains no repository content, and is never registered as a Git worktree. |
+| Runtime policy | `ExecutionSecurityPolicy` and gate (M1-03) | A separate **conversation runtime policy** and pre-launch gate |
+| Launch profiles | Execution profiles | Separate conversation profiles, for example with tools disabled or read-only. They must never reuse an execution profile implicitly. |
+| Lifecycle | Task run state machine (§5) | Conversation turn state machine (§15.6) |
+| Capacity | Scheduler slots per CLI (§6) | Not yet decided (§15.11) |
+| Output | Worktree changes, reviewed and published | Messages; draft decisions and task proposals that need user approval |
+
+**Conversation runtime policy (conceptual).** It requires, at minimum, that the CLI process tree:
+
+- cannot write to connected repositories, task worktrees, the worktree root or application data;
+- cannot run Git mutations or pushes;
+- loads no repository-controlled CLI settings, hooks or MCP servers;
+- never waits for interactive approval.
+
+Network access to the provider is inherent to the CLI. Additional network or web tools are denied unless a policy explicitly allows them and the control is verified.
+
+Like M1-03, the gate is **fail-closed**. A required control that is unenforced, unsupported or unverified for the detected CLI version refuses the turn, and acknowledgements never waive it. Running the CLI in a scratch directory **reduces exposure but is not confinement**: without verified isolation, a CLI with file or command tools could still read or write elsewhere. The UI must not call a conversation read-only or sandboxed unless the gate reports the corresponding control as enforced.
+
+### 15.3 Domain model and tables (conceptual)
+
+| Table | Essential fields | Notes |
+|---|---|---|
+| `conversations` | `id`, `scope` (`global`/`project`), `project_id` nullable, `title`, `agent_runtime`, `model_id` nullable, `status` (`active`/`archived`), timestamps | `CHECK ((scope = 'project') = (project_id IS NOT NULL))`. Runtime and model are the selection for future messages. |
+| `conversation_messages` | `id`, `conversation_id`, `sequence`, `role` (`user`/`assistant`/`system_note`), `content`, `status` (`complete`/`streaming`/`cancelled`/`failed`), `agent_runtime`, `requested_model_id`, `effective_model_id` nullable, `error_code` nullable, timestamps | `(conversation_id, sequence)` unique. The runtime and model snapshot is per assistant message. |
+| `conversation_turns` | `id`, `conversation_id`, `user_message_id`, `assistant_message_id`, `status`, `context_manifest_json`, `native_session_id` nullable, `exit_code`, `signal`, timestamps | Records **what context was sent** (§15.4) and process outcome, separately from the message text. |
+| `conversation_summaries` | `id`, `conversation_id`, `covers_until_sequence`, `content`, `agent_runtime`, `model_id`, `created_at` | Derived context; the full history is never replaced. |
+| `conversation_native_sessions` | `conversation_id`, `agent_runtime`, `native_session_id`, `last_sequence`, `status` | At most one active native session per conversation and runtime; never reused across runtimes. |
+| `architecture_decisions` | `id`, `project_id`, `title`, `context`, `decision`, `consequences`, `alternatives`, `status` (`proposed`/`accepted`/`rejected`/`superseded`), `superseded_by_id` nullable, `origin_conversation_id` nullable, `origin_message_id` nullable, `accepted_at`, timestamps | Origin foreign keys use `ON DELETE SET NULL`, so accepted decisions survive conversation deletion. |
+| `task_proposals` | `id`, `conversation_id`, `target_project_id` nullable, task fields (`title`, `prompt`, `agent_runtime`, `model_id`, `priority`, `base_branch`), `status` (`draft`/`accepted`/`rejected`), `created_task_id` nullable, timestamps | Pending proposals are deleted with their conversation. Accepted proposals point to the created task. |
+| `tasks` (existing) | add nullable `origin_conversation_id`, `origin_proposal_id` | `ON DELETE SET NULL`. Tasks never depend on conversations. |
+
+Rules:
+
+- Project scoping is enforced in queries and commands. Every project-scoped read is filtered by `project_id`, and a global conversation's queries never join project tables.
+- Messages store content the user deliberately sent and model output. CLI credentials, tokens and environment values are never stored. Logged events are redacted and size-bounded, as for `run_events`.
+- Deleting a conversation (explicitly confirmed) deletes its messages, turns, summaries, native session records and pending proposals. Decisions and tasks keep their data with nulled origin references.
+
+### 15.4 Context assembly and isolation
+
+The permanent history is the source of truth. The **context sent to a CLI is assembled per turn** by a trusted **context builder** in the worker, never by the agent:
+
+1. Start from the conversation's own messages, using summaries for older parts and recent messages verbatim, within a size budget.
+2. For `project` scope only, add selected project knowledge:
+   - project instructions;
+   - accepted architecture decisions;
+   - task history (titles, prompts, outcomes, review notes);
+   - files the user explicitly selected.
+3. For `global` scope, add **no project data** unless the user attached a specific item to that conversation, which is recorded as such.
+4. Record a **context manifest** for the turn (item kinds, IDs, file paths and commit, sizes, truncation) in `conversation_turns.context_manifest_json`. The UI shows it.
+
+**Selected source files** are read by AI Agent Manager, not by the agent:
+
+- From the project's registered repository, at a **resolved commit** (for example the default base branch), using Git object reads such as `cat-file` on a blob. This uses the same hardened environment as `packages/git`: no hooks, filters, fsmonitor or textconv, `safe.directory` respected.
+- Reading from a resolved commit is the **safe, deterministic default**: the content is immutable, reproducible from the manifest, and cannot be changed by a running agent or by uncommitted local edits.
+- Uncommitted files from the primary checkout or a task worktree are **not supported**. A future option may allow explicit, user-selected access to uncommitted working-tree files. It would need to be separately designed, with containment and security checks equivalent to `packages/git` (canonical paths, no symlink escapes, no hooks or filters, size and type limits). The UI and the context manifest would have to state clearly that the content came from the working tree and not from a commit.
+- Path-validated, size-limited, binary-aware, and recorded in the manifest with path, commit and blob ID.
+
+All assembled context is **untrusted data** for the model and for the application. Repository files, documents, decisions and prior model output may contain prompt injection. The application never executes instructions found in context, and model output can only *propose* decisions or tasks (§15.7, §15.8).
+
+### 15.5 Native CLI sessions and agent/model switching
+
+- Native CLI sessions (if a CLI supports resuming them) are an **optimization**, not the source of truth. Whether and how each CLI supports resume, and what it stores locally, is a verification target.
+- A native session is bound to one conversation and one runtime. **Sessions are never transferred between Claude Code and Codex.**
+- Changing the runtime starts a new native session for the new runtime, seeded from assembled context (§15.4). Changing the model within a runtime either continues the session, if the CLI verifiably supports a per-turn model change, or starts a new one.
+- If a native session cannot be resumed (expired, missing, CLI upgraded), the turn falls back to a new session with assembled context and records this in the turn, rather than failing silently or replaying stale state.
+
+### 15.6 Turn lifecycle, streaming, cancellation and errors
+
+`Turn`: `pending → starting → streaming → completed | cancelled | failed | interrupted`.
+
+1. The web process persists the user message and a `pending` turn (an idempotent command), then the worker claims it.
+2. The worker assembles context, runs the conversation gate, and records a refusal as a `failed` turn with an actionable reason. It then launches the CLI in the scratch directory with the authorized conversation profile.
+3. Normalized output events are persisted (size-bounded) and forwarded over SSE. The assistant message stays `streaming` until the CLI exits.
+4. **Cancel** persists intent, then stops the process using the same process-group strategy and escalation as task Stop (§7.3). The partial message is kept as `cancelled`.
+5. CLI errors (unsupported model, authentication, rate limit, crash, non-zero exit) mark the turn `failed` with a structured error. There is no automatic fallback to another model or runtime.
+6. After a worker restart, unreconciled turns become `interrupted`. They are never retried automatically.
+
+At most **one active turn per conversation**. Turns never preempt or delay task runs; capacity accounting is an open question (§15.11).
+
+### 15.7 Architecture decisions
+
+- Drafts are created from a user action, or from a structured model proposal that is shown to the user and validated with Zod. They are never written directly by the agent.
+- `proposed → accepted | rejected`; `accepted → superseded` (by a newer accepted decision). Accepting requires an explicit user command. Edits to an accepted decision create a superseding decision instead of rewriting history.
+- Accepted decisions are project knowledge. They are available to all conversations of that project through context assembly and independent of any conversation's lifetime.
+
+### 15.8 Task proposals to Backlog
+
+- The model produces proposals in a **structured format** (for example a JSON schema). The worker parses and validates them into `draft` task proposals; invalid output is shown as text, not turned into proposals. Which CLIs support schema-constrained output is a verification target.
+- Accepting a proposal calls the **same domain command as manual task creation** (M2/M3), with the same validation of runtime, model and base branch. The task is created in `Backlog`. The proposal stores `created_task_id`, and the task stores its origin references.
+- For a `global` conversation, acceptance requires an explicit `target_project_id` chosen and confirmed by the user. Choosing a project does not add its context to the conversation.
+- No conversation code path can enqueue a task, start a run, create a worktree or call the publish service. This is enforced by module boundaries: the conversations module only has access to task creation, never to queue, scheduler or Git mutation commands.
+
+### 15.9 Security boundaries and trust
+
+| Boundary | Trust |
+|---|---|
+| User actions in the UI (approve decision, accept proposal, select files, choose target project) | Trusted intent. Validated server-side; mutations guarded against untrusted origins. |
+| Worker: context builder, gate, proposal parser | Trusted code; the only component that reads repositories for conversations. |
+| CLI process in Conversation Mode | **Untrusted.** Restricted only by what the conversation gate reports as enforced. |
+| Model output, repository files, documents | Untrusted data; never executed and never acted upon without user approval. |
+| Provider behind the CLI | Receives the assembled context under the user's account; this data leaves the machine. |
+
+Residual risks while Conversation Mode isolation is unverified:
+
+- A CLI with tools enabled could read files outside the scratch directory.
+- Context sent to the provider may include sensitive source code chosen by the user.
+- Prompt injection could produce misleading proposals.
+
+These must be visible in the UI and are mitigated by fail-closed gating, no-tool profiles where verifiable, explicit file selection and mandatory user approval.
+
+### 15.10 API and events (illustrative)
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET/POST` | `/api/conversations?scope=global` | List / create global conversations |
+| `GET/POST` | `/api/projects/:id/conversations` | List / create project conversations |
+| `GET/PATCH/DELETE` | `/api/conversations/:id` | Details, rename, archive, change runtime/model, delete (confirmed) |
+| `POST` | `/api/conversations/:id/messages` | Send a message (creates a turn command) |
+| `POST` | `/api/conversations/:id/turns/:turnId/cancel` | Cancel an active turn |
+| `PUT` | `/api/conversations/:id/context` | Selected files and knowledge items for project scope |
+| `GET/POST/PATCH` | `/api/projects/:id/decisions` | Project decisions; accept, reject, supersede |
+| `GET/PATCH` | `/api/conversations/:id/proposals` | Review and edit task proposals |
+| `POST` | `/api/proposals/:id/accept` | Create a `Backlog` task (requires a target project for global scope) |
+
+Conversation events use the same durable event log and SSE replay as run events (§10).
+
+### 15.11 Verification gates and open questions
+
+1. Per CLI: streaming format, native session resume, per-turn model switching, context limits, effective-model metadata and structured output.
+2. Per CLI: a Conversation Mode launch profile with no tools or read-only tools, and adversarial verification that it cannot write files, run commands, use Git or read outside the scratch directory, using the M1-03 verification method.
+3. Per CLI: whether repository instruction files, settings or memory are read from the working directory or user configuration, and how to prevent cross-project leakage through CLI-side memory.
+4. Whether web search or browsing can be offered for Global AI under a verifiable policy.
+5. Capacity: shared with the §6 execution slots or a separate conversation limit, and the effect of provider rate limits.
+6. Context budgeting: token estimation per CLI, summary generation (which runtime and model), file size limits.
+7. Project disconnect: archive, keep or delete conversations and decisions (explicit user decision per `SPEC.md` §4.1).
 
 ---
 
