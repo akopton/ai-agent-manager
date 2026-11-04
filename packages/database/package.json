@@ -7,6 +7,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@ai-agent-manager/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }

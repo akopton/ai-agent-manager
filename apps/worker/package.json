@@ -2,5 +2,25 @@
   "name": "@ai-agent-manager/worker",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "scripts": {
+    "dev": "tsx watch --conditions=@ai-agent-manager/source src/main.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "tsx --conditions=@ai-agent-manager/source --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@ai-agent-manager/core": "workspace:*",
+    "@ai-agent-manager/database": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "6.0.3"
+  }
 }

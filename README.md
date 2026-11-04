@@ -7,8 +7,10 @@ in dedicated Git worktrees. Product requirements and architecture live in
 ## Implementation status
 
 M0.4 adds an explicit SQLite/Drizzle database foundation alongside the web shell.
-Projects, project boards, and dashboard data remain future features. The web app
-is not connected to the database, and no API endpoints or agents are implemented.
+M0.5 adds shared `core` contracts and a standalone Node.js worker process that opens
+the configured database and shuts down gracefully. Projects, project boards, and
+dashboard data remain future features. The web app is not connected to the database,
+and no scheduling, API endpoints, or agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -23,8 +25,9 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 | `packages/git`          | Repository, worktree, review, and publishing operations |
 | `packages/orchestrator` | Scheduling and run coordination                         |
 
-The worker and shared packages other than `database` remain private ESM package
-skeletons. The database package exports a connection factory and migration helper.
+The database package exports a connection factory and migration helper; `core`
+exports framework-independent types and Zod schemas. `agents`, `git`, and
+`orchestrator` remain private ESM package skeletons.
 
 ## Development commands
 
@@ -42,8 +45,8 @@ pnpm list --recursive --depth -1
 pnpm dev
 ```
 
-Open <http://127.0.0.1:3000>. Stop the development server with Ctrl+C. Only the web
-workspace currently has a development command; the worker is not implemented.
+Open <http://127.0.0.1:3000>. `pnpm dev` also starts the worker in watch mode;
+stop both with Ctrl+C.
 Both development and production servers bind to `127.0.0.1`.
 
 ```sh
@@ -55,7 +58,7 @@ pnpm --filter @ai-agent-manager/web start
 ```
 
 `pnpm typecheck` checks the existing PoC using the root strict TypeScript config,
-then checks the web and database workspaces. The web check runs `next typegen` first, so it
+then checks the web, core, database, and worker workspaces. The web check runs `next typegen` first, so it
 also works before the first build. Next.js generates ignored `next-env.d.ts`
 and `.next/` files. The web workspace uses its own bundler-oriented TypeScript
 configuration; the PoC retains its NodeNext configuration.
@@ -63,8 +66,33 @@ configuration; the PoC retains its NodeNext configuration.
 `pnpm lint` checks JavaScript and TypeScript across apps, packages, and root
 tooling using `eslint.config.mjs`. Next.js Core Web Vitals rules apply only to
 `apps/web`; TypeScript recommended rules apply throughout the monorepo.
-`pnpm build` produces the web production build and database ESM/declaration files.
-`pnpm test` runs the database smoke tests against disposable temporary databases.
+`pnpm build` produces the web production build, core and database ESM/declaration
+files, and the compiled worker. `pnpm test` runs the core, database, and worker tests;
+database and worker tests use disposable temporary databases.
+
+## Worker and shared packages
+
+`apps/worker` is a separate Node.js process. It never imports Next.js; it opens SQLite
+only through `createDatabase()` from `@ai-agent-manager/database`, so the default path
+and the `AI_AGENT_MANAGER_DATABASE_PATH` override behave exactly as described below.
+It does not apply migrations, poll, or run jobs yet. A single idle timer keeps it alive
+until SIGINT or SIGTERM, which stop the worker, close the database connection, and exit
+with code 0.
+
+```sh
+AI_AGENT_MANAGER_DATABASE_PATH=/tmp/ai-agent-manager-dev/database.sqlite pnpm --filter @ai-agent-manager/worker dev
+pnpm build && pnpm --filter @ai-agent-manager/worker start
+```
+
+`packages/core` holds framework-independent domain contracts (currently the agent
+runtime and model-selection schemas plus worker lifecycle enums) and depends only on Zod.
+
+Workspace packages export `dist/` for production. They also declare a
+`@ai-agent-manager/source` export condition pointing at `src/index.ts`. The worker's
+`dev`, `test`, and `typecheck` use that condition (through `tsx --conditions` and
+TypeScript `customConditions`), so they work without building dependencies first. The
+worker build clears the condition and compiles against the built packages; `pnpm build`
+builds dependencies first in topological order.
 
 ## Database foundation
 
