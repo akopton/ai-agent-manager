@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { constants } from 'node:os';
 import { parseArgs } from 'node:util';
 import { getAgentAdapter } from '@ai-agent-manager/agents';
 import { agentRuntimes, agentRuntimeSchema, type AgentRuntime } from '@ai-agent-manager/core';
@@ -14,6 +15,7 @@ import {
 } from './fixture.js';
 import { startLoopbackEndpoint } from './evidence.js';
 import { endpointHitsFile, evaluateRealProbe, prepareRealProbe, runFakeProbe } from './probes.js';
+import { replayCapturedOutput, type ReplayTermination } from './replay.js';
 import { createReport, writeReport, type CompatibilityResult, type ProbeResult } from './report.js';
 import { probeScenarioIdSchema, probeScenarioIds, probeScenarios } from './scenarios.js';
 
@@ -25,13 +27,17 @@ Commands:
   scenarios                       Print the security probe scenario catalog (JSON).
   static [--runtime r]            Inspect installed CLIs with --version/--help only; print a report.
   self-test [--runtime r]         Fake-CLI compatibility checks and probes in a disposable fixture.
-  prepare --runtime r --scenario s
+  prepare --runtime r --scenario s [--parent dir]
                                   Create a preserved fixture and operator instructions for a future
                                   supervised real run. Starts no agent; the probe is reported blocked.
   serve-endpoint --manifest m     Run the loopback endpoint for a prepared network probe (Ctrl+C).
   evaluate --manifest m --runtime r --scenario s --cli-version v --isolation text [--events f]
            [--operator-stopped-run]
                                   Collect evidence after an operator-performed real run.
+  replay --runtime r --events f (--exit-code n | --signal SIG) [--stopped] [--explicit-model]
+         [--max-stdout-bytes n]
+                                  Offline: parse captured CLI stdout with the production parser
+                                  and outcome classifier. Starts no process.
   cleanup --manifest m [--include-results]
                                   Remove a fixture after ownership checks.
 `;
@@ -42,6 +48,37 @@ const parseRuntimes = (value: string | undefined): AgentRuntime[] =>
 const required = (value: string | undefined, name: string): string => {
   if (value === undefined || value.trim() === '') throw new Error(`--${name} is required.`);
   return value;
+};
+
+const parseInteger = (value: string, name: string): number => {
+  if (!/^\d{1,12}$/.test(value)) throw new Error(`--${name} must be a non-negative integer.`);
+  return Number(value);
+};
+
+/** Parses how the captured process ended. Exactly one of --exit-code and --signal is required. */
+const parseTermination = (values: {
+  'exit-code'?: string;
+  signal?: string;
+  stopped?: boolean;
+}): ReplayTermination => {
+  const exitCode =
+    values['exit-code'] === undefined ? null : parseInteger(values['exit-code'], 'exit-code');
+  if (exitCode !== null && exitCode > 255) throw new Error('--exit-code must be 0-255.');
+  let signal: NodeJS.Signals | null = null;
+  if (values.signal !== undefined) {
+    const name = values.signal;
+    if (!Object.hasOwn(constants.signals, name)) {
+      throw new Error(`--signal must be a signal name such as SIGTERM.`);
+    }
+    signal = name as NodeJS.Signals;
+  }
+  if ((exitCode === null) === (signal === null)) {
+    throw new Error('Give exactly one of --exit-code and --signal.');
+  }
+  if (values.stopped === true) return { kind: 'stop_requested', exitCode, signal };
+  if (exitCode !== null) return { kind: 'exited', exitCode };
+  if (signal !== null) return { kind: 'signaled', signal };
+  throw new Error('Give exactly one of --exit-code and --signal.');
 };
 
 const summarize = (compatibility: CompatibilityResult[], probes: ProbeResult[]): string => {
@@ -68,6 +105,12 @@ const main = async (): Promise<number> => {
       isolation: { type: 'string' },
       'include-results': { type: 'boolean' },
       'operator-stopped-run': { type: 'boolean' },
+      parent: { type: 'string' },
+      'exit-code': { type: 'string' },
+      signal: { type: 'string' },
+      stopped: { type: 'boolean' },
+      'explicit-model': { type: 'boolean' },
+      'max-stdout-bytes': { type: 'string' },
       help: { type: 'boolean' },
     },
   });
@@ -130,7 +173,9 @@ const main = async (): Promise<number> => {
       const runtime = agentRuntimeSchema.parse(required(values.runtime, 'runtime'));
       const scenario = probeScenarioIdSchema.parse(required(values.scenario, 'scenario'));
       const adapter = getAgentAdapter(runtime);
-      const fixture = await createDiagnosticFixture();
+      const fixture = await createDiagnosticFixture(
+        values.parent === undefined ? {} : { parentDirectory: values.parent },
+      );
       fixture.manifest.preserved = true;
       await writeManifest(fixture);
       const detection = await adapter.detect();
@@ -191,6 +236,21 @@ const main = async (): Promise<number> => {
         createReport({ fixtureId: fixture.manifest.fixtureId, probes: [probe] }),
       );
       process.stdout.write(`${summarize([], [probe])}\nReport: ${path}\n`);
+      return 0;
+    }
+
+    case 'replay': {
+      const runtime = agentRuntimeSchema.parse(required(values.runtime, 'runtime'));
+      const result = await replayCapturedOutput({
+        adapter: getAgentAdapter(runtime),
+        eventsFile: required(values.events, 'events'),
+        termination: parseTermination(values),
+        explicitModel: values['explicit-model'] === true,
+        ...(values['max-stdout-bytes'] === undefined
+          ? {}
+          : { maxStdoutBytes: parseInteger(values['max-stdout-bytes'], 'max-stdout-bytes') }),
+      });
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
     }
 

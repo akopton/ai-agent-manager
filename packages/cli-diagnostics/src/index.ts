@@ -37,8 +37,16 @@ export {
   assertSafeHarnessLocation,
   defaultProtectedRoots,
   DiagnosticsPathError,
+  validateExplicitParent,
   type ProtectedRoot,
 } from './paths.js';
+export {
+  replayCapturedOutput,
+  ReplayInputError,
+  type ReplayOptions,
+  type ReplayResult,
+  type ReplayTermination,
+} from './replay.js';
 export {
   evaluateRealProbe,
   prepareRealProbe,

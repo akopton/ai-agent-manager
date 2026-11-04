@@ -20,6 +20,7 @@ import {
   defaultProtectedRoots,
   DiagnosticsPathError,
   isWithin,
+  validateExplicitParent,
   type ProtectedRoot,
 } from './paths.js';
 import { probeHelperSource, type ProbeHelperConfig } from './probe-helper.js';
@@ -96,7 +97,10 @@ export type DiagnosticFixture = {
 };
 
 export type CreateFixtureOptions = {
-  /** Directory the fixture and results directories are created in; defaults to the OS temp dir. */
+  /**
+   * Directory the fixture and results directories are created in. Defaults to the OS temporary
+   * directory; an explicit value must pass `validateExplicitParent`.
+   */
   parentDirectory?: string;
   /** Overrides the protected roots (tests only); defaults to the real application roots. */
   protectedRoots?: readonly ProtectedRoot[];
@@ -165,7 +169,11 @@ export const createDiagnosticFixture = async (
   options: CreateFixtureOptions = {},
 ): Promise<DiagnosticFixture> => {
   const protectedRoots = options.protectedRoots ?? (await defaultProtectedRoots());
-  const parentDirectory = await realpath(options.parentDirectory ?? tmpdir());
+  // The default (the OS temporary directory) is unchanged; an explicit parent is validated strictly.
+  const parentDirectory =
+    options.parentDirectory === undefined
+      ? await realpath(tmpdir())
+      : await validateExplicitParent(options.parentDirectory, protectedRoots);
   const root = await createOwnedDirectory(parentDirectory, fixturePrefix, protectedRoots);
   const fixtureId = randomBytes(16).toString('hex');
   // The marker is written first, so cleanup can prove ownership even if setup fails later.
