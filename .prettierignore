@@ -1,0 +1,33 @@
+# Dependencies and generated output
+**/node_modules/**
+**/.git/**
+**/.next/**
+**/next-env.d.ts
+**/dist/**
+**/build/**
+**/out/**
+**/coverage/**
+**/.nyc_output/**
+**/.pnpm-store/**
+**/*.tsbuildinfo
+pnpm-lock.yaml
+
+# Local runtime data and configuration
+**/data/**
+**/logs/**
+**/tmp/**
+**/temp/**
+**/.agent-sessions/**
+**/.agent-worktrees/**
+**/.agent-logs/**
+**/.env*
+**/*.local
+**/*.log
+**/*.sqlite*
+**/*.db*
+
+# Preserve the existing experiments and baseline documentation.
+poc/**
+docs/**
+# Managed by Next.js; do not rewrite its generated instruction block.
+apps/web/AGENTS.md

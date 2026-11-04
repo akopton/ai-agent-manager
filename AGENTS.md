@@ -20,6 +20,14 @@ If docs conflict, flag the mismatch and propose a focused resolution rather than
 - Write code, identifiers, comments, tests, commit messages, technical documentation, prompts and UI copy **in English**.
 - Keep changes small and targeted. Follow existing project conventions; prefer simple TypeScript over unnecessary abstractions.
 - Use TypeScript strict mode and Zod for untrusted inputs. Maintain clear module boundaries.
+- Prefer arrow functions assigned to `const` over function declarations. Allow function declarations when framework conventions, overloads, or ambient TypeScript declarations require them.
+- Prefer named exports. Use default exports when a framework or tool requires them (for example, Next.js pages, layouts, and configuration files).
+- Prefer `type` over `interface`; use interfaces when declaration merging or an extensible public contract makes them more appropriate. Document intentional lint exceptions locally.
+- Avoid `any` and unnecessary type assertions. Narrow unknown values and let TypeScript infer types where possible.
+- Prefer early returns to deeply nested branches, and async/await for asynchronous control flow.
+- Use kebab-case for filenames and directories, camelCase for variables and functions, and PascalCase for components and types. Preserve framework filenames, dynamic route segments, and established documentation names such as `AGENTS.md`.
+- Use Prettier for formatting: single quotes, semicolons, two-space indentation, a print width of 100, trailing commas, and parentheses around all arrow function parameters.
+- Run `pnpm lint`, `pnpm typecheck`, and `pnpm format:check` before handing off changes. Existing experimental `poc/` scripts and baseline `docs/` documents are excluded from lint/format migration; do not refactor them incidentally.
 - Work within the selected milestone; do not implement speculative post-MVP features.
 - Report what was **actually tested**. Never claim tests pass if they were not run.
 
