@@ -1,7 +1,8 @@
-# Git inspection and task worktrees
+# Git inspection, task worktrees, and change review
 
-Read-only inspection of existing local Git repositories, plus a safe lifecycle for
-task worktrees, through the native Git CLI.
+Read-only inspection of existing local Git repositories, a safe lifecycle for task
+worktrees, and read-only change inventories and diffs for review, through the
+native Git CLI.
 Works with any hosting provider (GitHub, Gitea, plain SSH, local paths): no provider
 SDKs or network access. Requires Git 2.36 or newer (`worktree list -z`,
 `worktree add --reason`, `GIT_CONFIG_COUNT`); validated with Git 2.54.
@@ -89,7 +90,8 @@ repository as `cwd`; the process working directory is never changed. In addition
   NUL-separated `config` and `for-each-ref` output), so paths with spaces, newlines,
   leading dashes, or non-ASCII characters are handled.
 
-The only mutating operations are the task worktree functions below. Committing,
+The only mutating operations are the task worktree functions below; change review
+is read-only. Committing,
 pushing, fetching, merging, and deleting branches are not implemented.
 
 ## Task worktrees
@@ -229,6 +231,113 @@ that `post-checkout`, `reference-transaction`, and `post-index-change` hooks (fr
 clean/smudge filters do not run, while plain Git runs all of them in the same
 fixture. Mutating commands default to a 120 s timeout. Consequently, files that
 depend on filters (for example Git LFS) are checked out as their raw blobs.
+
+## Change review
+
+```ts
+import { getTaskFileDiff, inspectTaskChanges } from '@ai-agent-manager/git';
+
+const target = {
+  repositoryPath: worktree.repository.root,
+  worktreePath: worktree.path,
+  branchName: worktree.branch,
+  baseCommit: worktree.baseCommit, // recorded at creation; never substituted
+  // limits: { maxFiles, maxFileBytes, maxDiffBytes, maxTotalReadBytes },
+};
+
+const changes = await inspectTaskChanges(target);
+// { files: ChangedFile[], headCommit, baseIsAncestor, totalFiles, filesTruncated,
+//   totals, ignoredPaths, revision, consistency, ... }
+
+const diff = await getTaskFileDiff({ ...target, path: changes.files[0].path });
+// { file, patch: string | null, omitted: DiffOmissionReason | null, revision, consistency }
+```
+
+Both functions first verify the worktree with `inspectTaskWorktree` (it must be
+`ready`: registered, locked by AI Agent Manager, on the expected branch, of the
+expected repository; detached HEAD is rejected) and then require `baseCommit` to be
+a full SHA that resolves to a commit. Otherwise they throw `TaskWorktreeError`
+(`NOT_VERIFIED`, `BASE_COMMIT_NOT_FOUND`) or `GitInputError`.
+
+### Comparison semantics
+
+Each changed path appears once and describes **the recorded base commit versus the
+current working tree**: the combined effect of commits on the task branch, staged
+changes, unstaged changes, and untracked files. HEAD, the main branch, or a merge
+base are never substituted for the base commit.
+
+- Tracked changes: `git diff-index --raw --numstat -z -M <base>` (base tree versus the
+  working tree, through the index). Renames are detected among tracked paths only; an
+  unstaged `mv` without `git mv` appears as a deletion plus an untracked file.
+- Untracked files: `git status --porcelain=v2 -z --untracked-files=all`, which
+  respects `.gitignore` and `.git/info/exclude`. A path both removed from the index
+  and still on disk is reported once, as the tracked deletion (`existsInWorktree`).
+- Flags per file: `staged` (index differs from HEAD), `unstaged` (working tree differs
+  from the index; always true for untracked files), `committed` (commits after the base
+  changed it, from `diff-tree <base> HEAD`), and `change: 'conflicted'` for unmerged
+  paths. `baseIsAncestor` is false when the branch was reset or rebased away from the base.
+- Ignored files are listed in `ignoredPaths` (paths only, directories collapsed);
+  their content is never read. Agents can edit ignore rules, so ignored paths stay visible.
+
+### Diffs
+
+`getTaskFileDiff` accepts only a path listed by the inventory (current or previous
+path), so it cannot be used to read other files.
+
+- Tracked files: `git diff-index --patch <base> -- <paths>` with explicit prefixes,
+  context, and rename detection.
+- Untracked files: a new-file patch generated from the file content (Git-compatible
+  headers and C-style path quoting), without staging anything. Symlinks are shown as
+  their target text, as Git does, and never followed.
+- Binary content (NUL bytes, `-diff`/`binary` attributes, or Git's own detection),
+  invalid UTF-8, submodules, nested repositories, FIFOs, devices, files over
+  `maxFileBytes`, and patches over `maxDiffBytes` return `patch: null` with an
+  `omitted` reason. A truncated patch is never returned.
+
+### Limits
+
+| Limit                             | Default | Effect                                                                                                                      |
+| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `maxOutputBytes` (command option) | 16 MiB  | Any Git command producing more fails with `GIT_OUTPUT_LIMIT`.                                                               |
+| `maxFiles`                        | 2000    | Files returned; `filesTruncated` and `totalFiles` report the rest.                                                          |
+| `maxFileBytes`                    | 1 MiB   | Larger files are not read and are passed to Git as `core.bigFileThreshold`, so Git does not diff them either (`too_large`). |
+| `maxDiffBytes`                    | 1 MiB   | Larger patches are withheld (`diff_too_large`).                                                                             |
+| `maxTotalReadBytes`               | 32 MiB  | Untracked content read by one inventory; later files get `read_budget_exhausted` and can still be diffed individually.      |
+
+### Security
+
+In addition to the inspection environment (no inherited `GIT_*`, no prompts, no lazy
+fetch, hooks disabled, `core.fsmonitor=false`, filters neutralized):
+
+- Only plumbing (`diff-index`, `diff-tree`, `status`, `check-attr`, `cat-file`,
+  `rev-parse`, `merge-base`) runs. Porcelain `git diff` was rejected because it
+  refreshes and rewrites the index even with `GIT_OPTIONAL_LOCKS=0`; a test checks
+  that every file in both the main repository and the worktree, including the index,
+  is byte-for-byte unchanged.
+- `--no-ext-diff --no-textconv` disable `diff.external`, `diff.<driver>.command`, and
+  textconv. Output-affecting settings are explicit (`--no-color`, `--no-relative`,
+  `--src-prefix=a/`, `--dst-prefix=b/`, `--unified=3`, `--find-renames`,
+  `core.quotePath=true`), and `--literal-pathspecs` stops pathspec magic in file names.
+  A test configures all of these hostile settings and confirms that plain Git runs the
+  external driver while inspection does not.
+- Untracked files are read by Node.js, not Git: parent directories must resolve to
+  themselves inside the worktree (no symlinked components, checked before and after
+  reading), the file is opened with `O_NOFOLLOW | O_NONBLOCK`, must be a regular file
+  with the `lstat` inode, and is read only up to the limit.
+- Symlink targets are reported with `symlinkEscapesWorktree` (lexical check) and
+  never resolved.
+
+### Consistency
+
+Inspection is **best-effort, not a snapshot**: agents may still be writing. Each result
+has a `revision`, a SHA-256 over the base and HEAD commits, the raw status output, the
+index file's metadata, and `lstat` metadata (including ctime, which ordinary processes
+cannot set) of every path status lists. It is computed before and after the inspection;
+if they differ, `consistency` is `changed_during_inspection`. Two results with the same
+revision saw the same state as far as these signals can detect, so an approval workflow
+should re-inspect and compare revisions before committing. This is change detection,
+not a content hash: the approval snapshot with content hashes (ARCHITECTURE §9) is
+still to be built, and agents must be stopped before approval.
 
 ## Tests
 

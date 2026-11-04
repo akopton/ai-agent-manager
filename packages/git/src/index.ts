@@ -1,4 +1,18 @@
 export {
+  getTaskFileDiff,
+  inspectTaskChanges,
+  type ChangedFile,
+  type ChangeInspectionLimits,
+  type DiffOmissionReason,
+  type FileChangeType,
+  type FileKind,
+  type ReviewConsistency,
+  type TaskChanges,
+  type TaskChangesOptions,
+  type TaskFileDiff,
+  type TaskFileDiffOptions,
+} from './changes.js';
+export {
   GitCommandError,
   GitInputError,
   TaskWorktreeError,

@@ -30,13 +30,14 @@ const afterFields = (record: string, count: number): string => {
  * Read-only: optional locks are disabled, so the index is not refreshed or rewritten. Modified
  * content inside submodules is not inspected; changed submodule commits are reported.
  */
-export const getWorkingTreeStatus = async (
+/** Raw `git status --porcelain=v2 -z` output used by the parsers below. Internal. */
+export const readStatusOutput = async (
   root: string,
   options: GitCommandOptions = {},
-): Promise<WorkingTreeStatus> => {
+): Promise<string> => {
   const cwd = parseAbsolutePath(root, 'Repository root');
   const config = await readFilterOverrides(cwd, options);
-  const output = await runGitChecked(
+  return runGitChecked(
     [
       'status',
       '--porcelain=v2',
@@ -47,7 +48,15 @@ export const getWorkingTreeStatus = async (
     ],
     { ...options, cwd, config },
   );
+};
 
+export const getWorkingTreeStatus = async (
+  root: string,
+  options: GitCommandOptions = {},
+): Promise<WorkingTreeStatus> => parseStatusOutput(await readStatusOutput(root, options));
+
+/** Parses `readStatusOutput` records. Internal. */
+export const parseStatusOutput = (output: string): WorkingTreeStatus => {
   const status: WorkingTreeStatus = {
     isClean: true,
     staged: [],

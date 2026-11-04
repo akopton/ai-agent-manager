@@ -12,7 +12,8 @@ the configured database and shuts down gracefully. Projects, project boards, and
 dashboard data remain future features. M0-03 adds validated runtime configuration for
 the data root, database file, and managed worktree root. M1-01 adds read-only Git
 repository inspection in `packages/git`, and M1-02 adds the task worktree lifecycle
-(create, inspect, and safely remove locked worktrees on task branches).
+(create, inspect, and safely remove locked worktrees on task branches), and M1-03 adds read-only
+change inventories and file diffs against the recorded base commit for review.
 The web app is not connected to the database, and no scheduling, API endpoints, or
 agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.

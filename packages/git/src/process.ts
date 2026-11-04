@@ -2,7 +2,13 @@ import { spawn } from 'node:child_process';
 import { GitCommandError } from './errors.js';
 import { parseCommandOptions, type GitCommandOptions } from './schemas.js';
 
-export type ProcessResult = { stdout: string; stderr: string; exitCode: number };
+export type ProcessResult = {
+  stdout: string;
+  /** Raw stdout bytes, for callers that must validate the encoding. */
+  stdoutBytes: Buffer;
+  stderr: string;
+  exitCode: number;
+};
 
 type RunProcessOptions = {
   cwd: string;
@@ -105,7 +111,8 @@ export const runProcess = (
         );
         return;
       }
-      resolve({ stdout: Buffer.concat(stdout).toString('utf8'), stderr: stderrText, exitCode });
+      const stdoutBytes = Buffer.concat(stdout);
+      resolve({ stdout: stdoutBytes.toString('utf8'), stdoutBytes, stderr: stderrText, exitCode });
     });
   });
 

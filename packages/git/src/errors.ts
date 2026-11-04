@@ -47,6 +47,8 @@ export type TaskWorktreeErrorCode =
   /** The repository path is not a valid main working tree. */
   | 'INVALID_REPOSITORY'
   | 'BASE_BRANCH_NOT_FOUND'
+  /** The recorded base commit does not exist in the repository or is not a commit. */
+  | 'BASE_COMMIT_NOT_FOUND'
   /** The task branch already exists; it was not touched. */
   | 'BRANCH_EXISTS'
   /** The destination path exists or is registered; it was not touched. */

@@ -1,12 +1,13 @@
 import { execFileSync } from 'node:child_process';
 import {
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -70,11 +71,11 @@ export const snapshot = (directory: string): Map<string, string> => {
         visit(child);
         continue;
       }
-      const stats = statSync(child);
-      entries.set(
-        relative(directory, child),
-        `${stats.size}:${stats.mtimeMs}:${readFileSync(child).toString('base64')}`,
-      );
+      const stats = lstatSync(child);
+      const content = entry.isSymbolicLink()
+        ? `link:${readlinkSync(child)}`
+        : readFileSync(child).toString('base64');
+      entries.set(relative(directory, child), `${stats.size}:${stats.mtimeMs}:${content}`);
     }
   };
   visit(directory);
