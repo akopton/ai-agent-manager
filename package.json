@@ -5,6 +5,7 @@
   "description": "Local-first orchestration for coding agents",
   "scripts": {
     "dev": "pnpm --recursive --parallel --if-present run dev",
+    "build": "pnpm --recursive --if-present run build",
     "typecheck": "tsc --noEmit && pnpm --recursive --if-present run typecheck",
     "lint": "pnpm --recursive --if-present run lint",
     "test": "pnpm --recursive --if-present run test"
