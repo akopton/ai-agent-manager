@@ -10,8 +10,10 @@ M0.4 adds an explicit SQLite/Drizzle database foundation alongside the web shell
 M0.5 adds shared `core` contracts and a standalone Node.js worker process that opens
 the configured database and shuts down gracefully. Projects, project boards, and
 dashboard data remain future features. M0-03 adds validated runtime configuration for
-the data root, database file, and managed worktree root. The web app is not connected to the database,
-and no scheduling, API endpoints, or agents are implemented.
+the data root, database file, and managed worktree root. M1-01 adds read-only Git
+repository inspection in `packages/git`; no Git operation modifies a repository yet.
+The web app is not connected to the database, and no scheduling, API endpoints, or
+agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -27,8 +29,9 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 | `packages/orchestrator` | Scheduling and run coordination                         |
 
 The database package exports a connection factory and migration helper; `core`
-exports framework-independent types and Zod schemas. `agents`, `git`, and
-`orchestrator` remain private ESM package skeletons.
+exports framework-independent types and Zod schemas; `git` provides read-only
+repository inspection (see [`packages/git/README.md`](packages/git/README.md)).
+`agents` and `orchestrator` remain private ESM package skeletons.
 
 ## Development commands
 
@@ -59,7 +62,7 @@ pnpm --filter @ai-agent-manager/web start
 ```
 
 `pnpm typecheck` checks the existing PoC using the root strict TypeScript config,
-then checks the web, core, database, and worker workspaces. The web check runs `next typegen` first, so it
+then checks the web, core, database, git, and worker workspaces. The web check runs `next typegen` first, so it
 also works before the first build. Next.js generates ignored `next-env.d.ts`
 and `.next/` files. The web workspace uses its own bundler-oriented TypeScript
 configuration; the PoC retains its NodeNext configuration.
@@ -68,8 +71,8 @@ configuration; the PoC retains its NodeNext configuration.
 tooling using `eslint.config.mjs`. Next.js Core Web Vitals rules apply only to
 `apps/web`; TypeScript recommended rules apply throughout the monorepo.
 `pnpm build` produces the web production build, core and database ESM/declaration
-files, and the compiled worker. `pnpm test` runs the core, database, and worker tests;
-database and worker tests use disposable temporary databases.
+files, git ESM/declaration files, and the compiled worker. `pnpm test` runs the core, database, git, and worker tests;
+they use disposable temporary databases and Git repositories only.
 
 ## Worker and shared packages
 

@@ -314,7 +314,21 @@ importers:
         specifier: 6.0.3
         version: 6.0.3
 
-  packages/git: {}
+  packages/git:
+    dependencies:
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/orchestrator: {}
 
