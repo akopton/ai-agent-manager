@@ -19,9 +19,13 @@ build/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.sqlite-journal
+*.sqlite3
+*.sqlite3-*
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
 
 # Local application data
 data/

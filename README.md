@@ -6,9 +6,9 @@ in dedicated Git worktrees. Product requirements and architecture live in
 
 ## Implementation status
 
-M0.3 adds Tailwind CSS and shadcn/ui to the Next.js App Router application,
-with a responsive shell and placeholder overview. Projects, project boards, and dashboard data
-are future features; no data storage, API endpoints, or agents are connected.
+M0.4 adds an explicit SQLite/Drizzle database foundation alongside the web shell.
+Projects, project boards, and dashboard data remain future features. The web app
+is not connected to the database, and no API endpoints or agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -23,8 +23,8 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 | `packages/git`          | Repository, worktree, review, and publishing operations |
 | `packages/orchestrator` | Scheduling and run coordination                         |
 
-The worker and shared packages remain private ESM package skeletons. They have
-no source entry points or inter-package dependencies yet.
+The worker and shared packages other than `database` remain private ESM package
+skeletons. The database package exports a connection factory and migration helper.
 
 ## Development commands
 
@@ -55,7 +55,7 @@ pnpm --filter @ai-agent-manager/web start
 ```
 
 `pnpm typecheck` checks the existing PoC using the root strict TypeScript config,
-then checks the web workspace. The web check runs `next typegen` first, so it
+then checks the web and database workspaces. The web check runs `next typegen` first, so it
 also works before the first build. Next.js generates ignored `next-env.d.ts`
 and `.next/` files. The web workspace uses its own bundler-oriented TypeScript
 configuration; the PoC retains its NodeNext configuration.
@@ -63,8 +63,22 @@ configuration; the PoC retains its NodeNext configuration.
 `pnpm lint` checks JavaScript and TypeScript across apps, packages, and root
 tooling using `eslint.config.mjs`. Next.js Core Web Vitals rules apply only to
 `apps/web`; TypeScript recommended rules apply throughout the monorepo.
-`pnpm build` dispatches to workspace builds and produces the web production build.
-`pnpm test` currently performs no work: no automated test suite has been added.
+`pnpm build` produces the web production build and database ESM/declaration files.
+`pnpm test` runs the database smoke tests against disposable temporary databases.
+
+## Database foundation
+
+See [`packages/database/README.md`](packages/database/README.md) for client usage,
+path configuration, native build requirements, and the versioned migration workflow.
+The default file is `~/Library/Application Support/ai-agent-manager/database.sqlite`.
+Importing the package does not open a connection or run migrations.
+
+```sh
+pnpm --filter @ai-agent-manager/database db:init
+pnpm --filter @ai-agent-manager/database db:generate
+pnpm --filter @ai-agent-manager/database db:migrate
+pnpm --filter @ai-agent-manager/database db:smoke
+```
 
 ## Coding standards and formatting
 
