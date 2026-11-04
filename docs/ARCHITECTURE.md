@@ -1,6 +1,6 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.2 — AI Conversations architecture added (§15)  
+**Status:** Draft v0.3 — platform strategy (§16) and process containment follow-up SEC-01 (§7.4) added; v0.2 added AI Conversations (§15)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
 **Product specification:** [`SPEC.md`](./SPEC.md) v0.4  
 **Scope:** Single-user, local-first MVP
@@ -215,9 +215,22 @@ The contract is illustrative, not yet production API. Adapter-specific stdout/st
 
 Run CLI processes with `spawn` argument arrays (`shell: false`) and the worktree as `cwd`. Do not shell-interpolate user prompts, paths, branch names, or model IDs.
 
-On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed by `SIGKILL` after a grace period. Production logic must confirm process-tree termination, handle races and retries, persist stop intent first, and release runtime capacity only after final reconciliation.
+On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed by `SIGKILL` after a grace period. Production logic must confirm process-group termination, handle races and retries, persist stop intent first, and release runtime capacity only after final reconciliation. Process-group termination is **not** complete descendant containment; see §7.4.
 
 **Security gate:** Worktrees are *not* sandboxes. CLI flags and prompt-level instructions do not conclusively prevent an agent from running Git commits/pushes or accessing files outside its worktree. Before using company repositories, determine and test actual permission enforcement for each CLI (including tool policies, sandboxing, network and Git credential access). If hard guarantees cannot be established locally, document the limitation clearly and require explicit user acknowledgement rather than claiming full enforcement. Keep publication logic in a separate trusted service; reduce credentials/external side effects where practical.
+
+### 7.4 Process containment beyond process groups (SEC-01)
+
+**Current guarantee.** The supervisor in `packages/agents` starts each CLI as the leader of its own process group. Stop, timeout and output-limit termination send `SIGTERM` and then `SIGKILL` to that group. After the CLI exits, anything left in the group is terminated the same way. This is reliable for descendants that **stay in the group**.
+
+**Limitation.** A descendant that creates its own session or process group (`setsid`, `setpgid`; for example a daemonizing tool, a background server or a deliberately evasive agent) is outside the group. It survives stop and timeout, and the supervisor neither sees nor reports it. M1-04A demonstrated this with fake CLIs. After a requested stop, the supervisor reports `lingeringProcesses: 'none'` (its group is empty) while the escaped descendant is still running. On macOS there is no unprivileged mechanism to contain a process tree (no cgroups; PID scans are racy and evadable).
+
+**Rules until SEC-01 is resolved:**
+
+- Execution results must keep this limitation visible. `AgentRunResult.processContainment` is always `process_group_only`, and `lingeringProcesses` describes the process group only. UI, logs and docs must not describe a stopped run as "all processes terminated" or call process-group cleanup complete descendant containment.
+- Do not add speculative process-tree tracking (PID scans, name matching, broad kills) that would create a false sense of security.
+- Unattended execution of untrusted agent workloads requires a **verifiable** containment strategy first. Candidates to evaluate include a dedicated OS user per runtime, whose processes can all be ended, an OS sandbox policy, or a VM. Each would need a documented decision, especially where it touches the "no Docker" direction in `AGENTS.md`. A candidate counts as verified only when supervised real runs of the `stop_with_subprocesses` probe (`packages/cli-diagnostics`) show no surviving descendant, including those in a new session.
+- The mechanism lives behind the process-supervision boundary in `packages/agents` and is platform-specific (§16).
 
 ## 8. Git repository and worktree management
 
@@ -303,7 +316,7 @@ UI state should be refreshed from server-authoritative records; drag-and-drop is
 - Strict TypeScript, ESLint, unit tests for domain transitions and queue ordering, integration tests for SQLite claims, and end-to-end tests against disposable Git repos.
 - Test Git operations with temporary repositories and remotes. Never run destructive integration tests against real company repositories.
 - Gate 1: verify both CLI adapters can be launched via the unified interface, with explicit model selection and recoverable unsupported-model errors.
-- Gate 2: verify stop and process-tree cleanup for both CLIs; retain partial files.
+- Gate 2: verify stop and process-group cleanup for both CLIs; retain partial files. Containment of descendants that leave the process group is tracked separately as SEC-01 (§7.4).
 - Gate 3: verify Git restrictions/sandbox limitations and document precise guarantees.
 - Gate 4: verify review snapshot integrity (including untracked files) and commit/push idempotency.
 - Gate 5: simulate web/worker restart during task execution and publish failures.
@@ -324,6 +337,7 @@ UI state should be refreshed from server-authoritative records; drag-and-drop is
 5. Log redaction, file size limits, and retention defaults.
 6. Local process supervision for a packaged release (development uses two terminal processes).
 7. AI Conversations verification gates and open questions are listed separately in §15.11.
+8. A verifiable process containment mechanism beyond process groups (SEC-01, §7.4), and the platform-specific mechanisms any future platform would need (§16).
 
 These are **explicit validation tasks**, not implied guarantees. The architecture should evolve based on their results without widening the MVP feature list.
 
@@ -488,6 +502,20 @@ Conversation events use the same durable event log and SSE replay as run events 
 5. Capacity: shared with the §6 execution slots or a separate conversation limit, and the effect of provider rate limits.
 6. Context budgeting: token estimation per CLI, summary generation (which runtime and model), file size limits.
 7. Project disconnect: archive, keep or delete conversations and decisions (explicit user decision per `SPEC.md` §4.1).
+
+## 16. Platform strategy
+
+**macOS-first, cross-platform-ready.**
+
+- macOS is the only currently targeted and tested platform. Existing macOS behavior is preserved: data root defaults (`~/Library/Application Support/ai-agent-manager`), POSIX process groups and signals, and the Seatbelt-based sandbox assumptions in the security profiles.
+- Windows (native or WSL2) and Linux are possible future platforms, **not** MVP commitments. They are not implemented, tested or supported now.
+- Avoid unnecessary cross-platform abstraction layers. Do not build interfaces for platforms that do not exist yet.
+- Keep platform-specific behavior behind the existing module boundaries where practical:
+  - filesystem paths and runtime roots in the runtime-path resolver (`packages/database`);
+  - process supervision and termination in the supervisor (`packages/agents`);
+  - sandboxing assumptions in the code-defined security profiles and the execution gate.
+- Shared domain types and business logic (`packages/core`, scheduler and state machines, review and publish rules) must not assume macOS. Platform facts are inputs (for example resolved paths), not hard-coded paths or signal names in domain code.
+- Security facts are platform-specific. A profile capability verified on macOS says nothing about another OS. Any new platform needs its own compatibility and adversarial security verification (the M1-03/M1-04A method) before it is supported, and SEC-01 (§7.4) must be re-assessed for it.
 
 ---
 

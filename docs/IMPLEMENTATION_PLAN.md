@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.2 — AI Conversations workstream added (§8)  
+**Status:** Draft v0.3 — platform strategy and security follow-up SEC-01 added (§9); v0.2 added AI Conversations (§8)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.4 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.2  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.4 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.3  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -15,6 +15,7 @@ This is the executable plan for implementing AI Agent Manager. Product behavior 
 - Every milestone closes with working tests, manual verification instructions, and a commit. Keep documentation synchronized.
 - Track the distinction between **confirmed** (PoC) and **not yet verified** (provider permissions, resume, crash recovery, review integrity).
 - The application must never silently delete generated files and must never publish changes without explicit user approval.
+- **macOS-first, cross-platform-ready** (§9.1): implement and test for macOS only; keep platform-specific code behind module boundaries; do not add Windows, WSL2 or Linux support or speculative abstraction layers.
 
 ## 2. Milestones and dependencies
 
@@ -131,6 +132,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 **M5-01 — Stop**
 - Persist stop intent, request graceful shutdown, then escalate after a timeout when necessary.
 - Confirm process-group/child termination as far as the platform permits; do not infer full termination from a single parent exit alone.
+- Report containment truthfully: process-group cleanup is not complete descendant containment (SEC-01, §9.2).
 - Mark `Stopped`, free slot only after reconciliation, retain all changes and logs.
 
 **M5-02 — Retry and conditional Resume**
@@ -202,6 +204,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Automated cross-task dependencies and automatic merge/PR creation.
 - Cloud runners, multi-user accounts, remote control, second-agent review and comparative runs.
 - Real-time mid-run agent chat, advanced analytics and cost tracking. (Mid-run chat with a running task is distinct from AI Conversations, which are planned in §8.)
+- Windows (native or WSL2) and Linux support. Possible future platforms, each requiring its own compatibility and security verification (§9.1).
 
 ## 7. Tracking
 
@@ -302,3 +305,40 @@ Listed in SPEC §18.12 and ARCHITECTURE §15.11:
 - project disconnect behavior for conversations and decisions.
 
 Resolve each with a documented decision before building the dependent UI.
+
+## 9. Platform strategy and security follow-ups
+
+> Recorded 2026-11-04. These do not renumber or change M0–M7 or C1–C5.
+
+### 9.1 Platform strategy
+
+**macOS-first, cross-platform-ready** (`ARCHITECTURE.md` §16):
+
+- macOS is the only targeted and tested platform. Windows, WSL2 and Linux are possible future platforms, not MVP commitments, and are not implemented now.
+- No cross-platform abstraction layers beyond what the code needs today. Platform-specific filesystem behavior, process supervision and sandboxing stay behind their current module boundaries (`packages/database` runtime paths, the `packages/agents` supervisor, security profiles and the gate).
+- Shared domain types and business logic must not assume macOS.
+- Supporting another platform would be a separate, explicitly planned workstream. It needs its own compatibility and adversarial security verification, and SEC-01 must be re-assessed for that platform.
+
+### 9.2 SEC-01 — Process containment beyond process groups
+
+**Problem.** The supervisor reliably manages the agent CLI's process group, but it cannot guarantee termination of descendants that create their own process group or session. They survive stop and timeout and are not reported. M1-04A demonstrated this with fake CLIs (`ARCHITECTURE.md` §7.4).
+
+**Already in place (M1-04A):**
+
+- `AgentRunResult.processContainment` is always `process_group_only`, and `lingeringProcesses` describes the process group only.
+- A regression test documents that a new-session descendant survives stop.
+- The `stop_with_subprocesses` diagnostic probe reports survivors explicitly.
+
+**Requirements:**
+
+- Keep the limitation visible in execution results, and later in run events and the UI. Never describe process-group cleanup as complete descendant containment.
+- No speculative process-tree tracking (PID scans, name matching, broad kills).
+- Choose and verify a containment strategy before **unattended execution of untrusted agent workloads**, at the latest before automatic scheduling (M4) runs agents against real repositories without supervision. Candidate mechanisms (dedicated OS user per runtime, OS sandbox policy, VM) need a documented decision, especially where they touch the "no Docker" direction in `AGENTS.md`.
+
+**Done when:**
+
+- A containment mechanism is chosen and documented.
+- Supervised real-CLI runs of the `stop_with_subprocesses` probe show no surviving descendants, including new-session ones, for each supported runtime and CLI version.
+- Results report the stronger containment scope only once that verification exists.
+
+Until then, the limitation stays documented and visible.

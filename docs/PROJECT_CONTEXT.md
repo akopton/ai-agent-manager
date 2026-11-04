@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.2 — AI Conversations decisions recorded (§10)  
+**Status:** Context snapshot v0.3 — platform strategy and SEC-01 recorded; v0.2 recorded AI Conversations decisions (§10)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.4, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.2, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.2
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.4, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.3, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.3
 
 ## 1. Why this project exists
 
@@ -30,6 +30,7 @@ The tool's own source may be hosted on GitHub while managed repositories may liv
 | Publish | After explicit review approval, commit and push **to the task branch only**. No automatic merge or PR. |
 | Stop and recovery | Stop a run without deleting changes; retry safely; resume only when verified supported; unexpected shutdowns require manual reconciliation. |
 | Language | Conversations can be Polish; technical docs, prompts, UI, code and commits are English. |
+| Platform | **macOS-first, cross-platform-ready.** macOS is the only targeted and tested platform. Windows/WSL2/Linux are possible future platforms, not MVP commitments, each needing its own compatibility and security verification. Platform-specific behavior stays behind module boundaries; shared domain logic must not assume macOS (`ARCHITECTURE.md` §16). |
 
 ## 3. Agreed technologies
 
@@ -68,7 +69,7 @@ The following outcomes were manually observed; they are not production automated
 
 1. **Permission boundary:** Prompt instructions are not enough to prevent agent commits, pushes or access outside a worktree. Test actual tool restrictions, sandboxing, subprocesses, network and credential exposure per runtime.
 2. **Session continuation:** Resuming a saved Claude/Codex run is not yet verified; implement as a capability-dependent option, not an assumption.
-3. **Process supervision:** Verify child process cleanup, cancellation races and accurate slot release after stop or crash.
+3. **Process supervision:** Verify child process cleanup, cancellation races and accurate slot release after stop or crash. M1-04A showed that process-group stop does not reach descendants that create their own session or process group; tracked as **SEC-01** (`ARCHITECTURE.md` §7.4, `IMPLEMENTATION_PLAN.md` §9.2). Results report `process_group_only` containment, and a verifiable strategy is required before unattended execution of untrusted agent workloads.
 4. **Restart recovery:** Reconcile durable run records, OS processes and retained worktrees without duplicate launches.
 5. **Review integrity:** Collect tracked and untracked files and compare immutable snapshot hashes before staging.
 6. **Publishing retries:** A commit followed by failed push must be recoverable without duplicate commits or wrong-branch pushes.
@@ -78,6 +79,7 @@ The following outcomes were manually observed; they are not production automated
 10. **Conversation isolation (planned AI Conversations):** Running a CLI outside a repository is not confinement. Conversation Mode needs its own verified, fail-closed runtime policy before it can be described as read-only.
 11. **Context leakage and privacy:** Project data must not reach global conversations or other projects. Selected source files are sent to the provider behind the chosen CLI, and CLI-side memory or settings could leak context across projects.
 12. **Prompt injection through context:** Repository files, documents and model output are untrusted. Decisions and task proposals must only take effect after explicit user approval.
+13. **Platform portability:** Security and process facts verified on macOS do not transfer to other platforms. Future Windows, WSL2 or Linux support needs its own verification, including SEC-01.
 
 ## 7. Current repository/document status
 
@@ -107,6 +109,7 @@ When opening the repository in VS Code, ask the coding agent to read `AGENTS.md`
 - A third runtime may be added later through a new code-level adapter; a plugin installation UI is out of scope.
 - Automatic task dependencies, cloud runners, automatic merges/PRs and multi-user access remain out of scope.
 - If requirements change, update `SPEC.md` first, then reconcile `ARCHITECTURE.md`, this file and the plan.
+- Windows, WSL2 and Linux support may be planned later as separate work with its own verification (decision recorded 2026-11-04: macOS-first, cross-platform-ready).
 
 ## 10. AI Conversations — agreed product decisions (2026-11-04)
 
