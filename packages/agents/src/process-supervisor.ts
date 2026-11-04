@@ -60,6 +60,9 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
  *   the first reason wins.
  * - After the main process exits, processes still in its group are terminated the same way and
  *   reported as `lingeringProcesses: 'terminated'` (or `'unknown'` if they survive SIGKILL).
+ *   `'none'` only means the group is empty: a descendant that called `setsid`/`setpgid` (for
+ *   example a daemonizing tool) survives stop and timeout and is reported nowhere. There is no
+ *   process-tree tracking; containing such descendants needs an OS-level mechanism.
  * - Hook exceptions terminate the process with `event_handler_failed`.
  * - `exited` never rejects.
  */

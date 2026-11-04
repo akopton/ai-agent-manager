@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, realpathSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -416,6 +418,44 @@ test('terminates processes left in the process group after the CLI exits', async
       assert.ok(
         events.some((event) => event.type === 'diagnostic' && event.code === 'lingering_processes'),
       );
+    },
+  );
+});
+
+test('stop reaches only the process group; a descendant in its own session survives', async () => {
+  // Documents a known limitation, not desired behavior: there is no process-tree tracking, so the
+  // result must not claim more than process-group containment.
+  const tag = `aam-escaped-${randomBytes(16).toString('hex')}`;
+  await withFakeRuntime(
+    'claude',
+    [{ spawnDetachedChild: tag }, { spawnLingeringChild: true }, { hang: true }],
+    async (context) => {
+      const { handle } = await start(context);
+      const pidReady = (read: () => number) => () => {
+        try {
+          return read() > 0;
+        } catch {
+          return false;
+        }
+      };
+      await waitFor(pidReady(context.fake.detachedChildPid));
+      await waitFor(pidReady(context.fake.lingeringChildPid));
+      const detachedPid = context.fake.detachedChildPid();
+      const result = await handle.stop();
+      try {
+        assert.equal(result.status, 'stopped');
+        assert.equal(result.processContainment, 'process_group_only');
+        // The group was signalled during stop, so nothing was left in it to report.
+        assert.equal(result.lingeringProcesses, 'none');
+        assert.equal(isAlive(context.fake.lingeringChildPid()), false);
+        assert.equal(isAlive(detachedPid), true, 'the escaped descendant is expected to survive');
+      } finally {
+        // Clean up exactly that PID, and only after confirming its command line carries the tag.
+        const command = execFileSync('ps', ['-o', 'command=', '-p', String(detachedPid)], {
+          encoding: 'utf8',
+        });
+        if (command.includes(tag)) process.kill(detachedPid, 'SIGKILL');
+      }
     },
   );
 });

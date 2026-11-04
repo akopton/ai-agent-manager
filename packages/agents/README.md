@@ -179,6 +179,17 @@ is terminated the same way, and the result reports `lingeringProcesses` as `term
 `unknown` if something survived SIGKILL. Stdio held open by descendants does not block
 completion. `completed` never rejects.
 
+**Containment is process-group only.** Every result carries
+`processContainment: 'process_group_only'`. `lingeringProcesses: 'none'` means the process group
+was empty, not that every descendant has ended. A descendant that calls `setsid` or `setpgid`
+(daemonizing tools, some package managers or language servers) is outside the group. It
+survives `stop()` and timeouts, and is reported nowhere. A regression test documents this
+(`stop reaches only the process group…`). No process-tree tracking is attempted. PID scans on
+macOS are racy and could be evaded, so they would give a false sense of security. Reliable
+containment needs an OS-level mechanism (for example running the CLI as a dedicated user, or a
+sandbox that forbids `setsid`), which is out of scope here. Do not describe a stopped run as
+"all processes terminated".
+
 The handle exposes `pid` and the `started` event carries `processGroupId`, so the future worker
 can persist both for crash recovery. That recovery is not implemented here.
 
@@ -220,6 +231,8 @@ can persist both for crash recovery. That recovery is not implemented here.
 - **Security:** every profile capability is still `unverified`. The M1-03 adversarial runs
   (commit, push, writes outside the worktree, credential reads, network) must be done with the
   real CLIs before any capability can be marked `verified`.
+  `packages/cli-diagnostics` prepares these runs (fixtures, scenarios, evidence, verdict rules)
+  but does not perform them.
 - **Executable binding and the check-to-spawn race:** the authorization binds the executable's
   path and file identity (device, inode, size, mtime), every argument, the working directory,
   and a digest of the child environment. These are verified by the gate and again just before
@@ -248,6 +261,14 @@ can persist both for crash recovery. That recovery is not implemented here.
     at all.
 - **Not implemented:** session resume, retries, redaction of secrets in model output or stderr,
   and persistence of events (that belongs to the worker, M4).
+
+## Diagnostics entry point
+
+`@ai-agent-manager/agents/diagnostics` exports the process supervisor and `classifyRunOutcome`
+(the terminal-state classifier shared with `startAgentExecution`). It checks no authorization and is
+**not** a way to launch agents. It exists only so the CLI diagnostics harness
+([`packages/cli-diagnostics`](../cli-diagnostics/README.md)) can exercise these pieces against
+harness-generated fake CLIs. ESLint forbids importing it anywhere else.
 
 ## Future integration
 

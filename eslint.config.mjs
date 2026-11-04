@@ -61,6 +61,29 @@ export default defineConfig([
     rules: { '@typescript-eslint/consistent-type-definitions': ['error', 'type'] },
   },
   {
+    // The diagnostics harness and the supervisor entry point it uses are development tooling.
+    // Production code launches agents only through `startAgentExecution`.
+    files: ['**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
+    ignores: ['packages/cli-diagnostics/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@ai-agent-manager/agents/diagnostics',
+              message: 'Diagnostics-only entry point; launch agents through startAgentExecution.',
+            },
+            {
+              name: '@ai-agent-manager/cli-diagnostics',
+              message: 'The CLI diagnostics harness is development tooling, not production code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['apps/web/**/*.{js,mjs,cjs,ts,tsx}'],
     extends: [nextVitals],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },

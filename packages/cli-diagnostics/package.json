@@ -1,0 +1,31 @@
+{
+  "name": "@ai-agent-manager/cli-diagnostics",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local CLI compatibility and security diagnostics harness. Not part of the production execution path.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ai-agent-manager/source": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "tsx --conditions=@ai-agent-manager/source --test tests/*.test.ts",
+    "diagnostics": "tsx --conditions=@ai-agent-manager/source src/cli.ts"
+  },
+  "dependencies": {
+    "@ai-agent-manager/agents": "workspace:*",
+    "@ai-agent-manager/core": "workspace:*",
+    "@ai-agent-manager/database": "workspace:*",
+    "@ai-agent-manager/git": "workspace:*",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "6.0.3"
+  }
+}

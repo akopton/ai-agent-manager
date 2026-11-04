@@ -216,8 +216,18 @@ export type AgentRunOutcome =
       signal: NodeJS.Signals | null;
     };
 
-/** How descendants left in the process group were handled after the main process exited. */
+/**
+ * How processes still in the CLI's **process group** were handled after the main process exited.
+ * `none` means the process group was empty. It does **not** mean that no descendant is running:
+ * descendants that created their own session or process group are never seen or signalled.
+ */
 export type LingeringProcessState = 'none' | 'terminated' | 'unknown';
+
+/**
+ * Scope of process containment for a run. Only `process_group_only` exists: stop, timeout and
+ * cleanup act on the CLI's process group, and no claim is made about descendants outside it.
+ */
+export type ProcessContainment = 'process_group_only';
 
 export type AgentRunResult = AgentRunOutcome & {
   runId: string;
@@ -229,7 +239,10 @@ export type AgentRunResult = AgentRunOutcome & {
   reportedModelId?: string;
   stdoutBytes: number;
   stderrBytes: number;
+  /** Process-group state only; see `LingeringProcessState` and `processContainment`. */
   lingeringProcesses: LingeringProcessState;
+  /** Always `process_group_only`: escaped descendants are not covered by this result. */
+  processContainment: ProcessContainment;
 };
 
 export type AgentLifecycleEvent =

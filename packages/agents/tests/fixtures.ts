@@ -45,6 +45,8 @@ export type FakeStep =
   | { sleepMs: number }
   /** Starts a long-running child in the same process group (inheriting stdio) and records its PID. */
   | { spawnLingeringChild: true }
+  /** Starts a tagged child in its own session (escapes the process group) and records its PID. */
+  | { spawnDetachedChild: string }
   | { exit: number }
   | { killSelf: 'SIGTERM' | 'SIGKILL' }
   /** Waits until killed. */
@@ -101,6 +103,10 @@ process.stdin.on('end', async () => {
       const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' });
       fs.writeFileSync(path.join(dir, 'child.pid'), String(child.pid));
       child.unref();
+    } else if ('spawnDetachedChild' in step) {
+      const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)', step.spawnDetachedChild], { detached: true, stdio: 'ignore' });
+      fs.writeFileSync(path.join(dir, 'detached.pid'), String(child.pid));
+      child.unref();
     } else if ('exit' in step) process.exit(step.exit);
     else if ('killSelf' in step) process.kill(process.pid, step.killSelf);
     else if ('hang' in step) setInterval(() => {}, 1000);
@@ -121,6 +127,7 @@ export type FakeCli = {
     stdin: string;
   };
   lingeringChildPid: () => number;
+  detachedChildPid: () => number;
 };
 
 export const createFakeCli = (
@@ -140,6 +147,7 @@ export const createFakeCli = (
     setScenario,
     invocation: () => JSON.parse(readFileSync(join(directory, 'invocation.json'), 'utf8')),
     lingeringChildPid: () => Number(readFileSync(join(directory, 'child.pid'), 'utf8')),
+    detachedChildPid: () => Number(readFileSync(join(directory, 'detached.pid'), 'utf8')),
   };
 };
 

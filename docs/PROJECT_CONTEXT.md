@@ -94,6 +94,7 @@ At the point of writing this snapshot:
 - Implemented and committed: monorepo foundation (core package, worker, SQLite/Drizzle initialization, runtime path configuration); safe Git repository inspection; safe task worktree lifecycle; read-only task change inspection; and the fail-closed execution security gate (M1-03 foundation).
 - Implemented (uncommitted at the time of writing): M1-02 adapter contract and the Claude Code and Codex adapters (`packages/agents`), tested only against fake CLIs. Not yet done: live validation of the adapters' assumptions and the adversarial per-CLI verification that M1-03 requires. Until then, the gate denies every execution, and the adapters refuse to launch without an authorization. Scheduler, web UI flows and publishing are not implemented.
 - AI Conversations has been specified (§10); no implementation exists.
+- M1-04A (CLI compatibility and security test harness) adds `packages/cli-diagnostics`: disposable fixtures, fake-CLI compatibility checks, security probe scenarios with conservative verdict rules, and preparation of supervised real-CLI probes. No real CLI was run beyond `--version`/`--help`. No security control has been verified; the shipped profiles and the gate are unchanged.
 
 This document is a **context snapshot**, not an authoritative record of future implementation progress. Update it when major decisions or verified milestones change; prefer Git history and tests for detailed evidence.
 

@@ -20,15 +20,16 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
 
-| Workspace               | Intended responsibility                                 |
-| ----------------------- | ------------------------------------------------------- |
-| `apps/web`              | Next.js UI, REST endpoints, and SSE                     |
-| `apps/worker`           | Separate Node.js worker and process lifecycle           |
-| `packages/core`         | Framework-independent domain types and validation       |
-| `packages/database`     | SQLite schema, migrations, and access                   |
-| `packages/agents`       | Agent contract and CLI adapters                         |
-| `packages/git`          | Repository, worktree, review, and publishing operations |
-| `packages/orchestrator` | Scheduling and run coordination                         |
+| Workspace                  | Intended responsibility                                 |
+| -------------------------- | ------------------------------------------------------- |
+| `apps/web`                 | Next.js UI, REST endpoints, and SSE                     |
+| `apps/worker`              | Separate Node.js worker and process lifecycle           |
+| `packages/core`            | Framework-independent domain types and validation       |
+| `packages/database`        | SQLite schema, migrations, and access                   |
+| `packages/agents`          | Agent contract and CLI adapters                         |
+| `packages/git`             | Repository, worktree, review, and publishing operations |
+| `packages/orchestrator`    | Scheduling and run coordination                         |
+| `packages/cli-diagnostics` | CLI compatibility/security diagnostics (dev tooling)    |
 
 The database package exports a connection factory and migration helper; `core`
 exports framework-independent types and Zod schemas; `git` provides read-only
@@ -73,8 +74,13 @@ configuration; the PoC retains its NodeNext configuration.
 tooling using `eslint.config.mjs`. Next.js Core Web Vitals rules apply only to
 `apps/web`; TypeScript recommended rules apply throughout the monorepo.
 `pnpm build` produces the web production build, core and database ESM/declaration
-files, git ESM/declaration files, and the compiled worker. `pnpm test` runs the core, database, git, and worker tests;
-they use disposable temporary databases and Git repositories only.
+files, git ESM/declaration files, and the compiled worker. `pnpm test` runs the core, database, git, agents,
+orchestrator, worker, and CLI diagnostics tests; they use disposable temporary databases, Git
+repositories and fake CLIs only, and never need an authenticated Claude Code or Codex session.
+
+`packages/cli-diagnostics` is a separate development harness for checking the real CLIs' compatibility
+and security behavior. It is not part of the production execution path and never authorizes runs.
+See [`packages/cli-diagnostics/README.md`](packages/cli-diagnostics/README.md).
 
 ## Worker and shared packages
 

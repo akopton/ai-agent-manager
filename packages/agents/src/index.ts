@@ -24,6 +24,7 @@ export {
   type InvocationErrorCode,
   type InvocationPreparation,
   type LingeringProcessState,
+  type ProcessContainment,
   type ProviderOutcome,
   type SessionResumeSupport,
   type UnauthorizedInvocationPlan,

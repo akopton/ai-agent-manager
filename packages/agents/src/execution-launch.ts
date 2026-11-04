@@ -13,15 +13,15 @@ import type {
   AgentHandle,
   AgentLifecycleEvent,
   AgentOutputEvent,
-  AgentRunOutcome,
   AgentRunResult,
   CliInstallation,
   InvocationErrorCode,
 } from './contract.js';
 import { fingerprintExecutable } from './discovery.js';
 import { digestEnvironment } from './environment.js';
-import { isModelUnavailableMessage, shortText } from './output-parsing.js';
-import { startSupervisedProcess, type ProcessExit } from './process-supervisor.js';
+import { shortText } from './output-parsing.js';
+import { startSupervisedProcess } from './process-supervisor.js';
+import { classifyRunOutcome } from './run-outcome.js';
 
 export type ExecutionLimits = {
   /** SIGTERM → SIGKILL grace period. Default 10 s (as in the PoC). */
@@ -130,87 +130,6 @@ type RunState = {
   stderrEventBytes: number;
   stderrTruncationReported: boolean;
   lastStderrLine: string | null;
-};
-
-const classify = (
-  exit: ProcessExit,
-  input: StartAgentExecutionInput,
-  parser: ReturnType<AgentAdapter['createOutputParser']>,
-  lastStderrLine: string | null,
-): AgentRunOutcome => {
-  const { exitCode, signal } = exit;
-  const failed = (
-    code: Extract<AgentRunOutcome, { status: 'failed' }>['code'],
-    message: string,
-  ) => ({
-    status: 'failed' as const,
-    code,
-    message,
-    exitCode,
-    signal,
-  });
-  if (exit.spawnError !== null) {
-    return failed('spawn_failed', `The CLI could not be started: ${exit.spawnError.message}`);
-  }
-  switch (exit.termination) {
-    case 'requested':
-      return { status: 'stopped', exitCode, signal };
-    case 'timeout':
-      return failed(
-        'timeout',
-        `The run exceeded ${input.request.timeoutMs ?? 0} ms and was terminated.`,
-      );
-    case 'output_limit':
-      return failed(
-        'output_limit_exceeded',
-        'The CLI output exceeded the limit; the run was terminated.',
-      );
-    case 'event_handler_failed':
-      return failed(
-        'event_handler_failed',
-        'An event could not be delivered; the run was terminated.',
-      );
-    case null:
-      break;
-  }
-  if (signal !== null) {
-    return failed(
-      'terminated_by_signal',
-      `The CLI was terminated by ${signal}, which AI Agent Manager did not send.`,
-    );
-  }
-  const outcome = parser.outcome();
-  const explicitModel = input.request.modelId !== null;
-  if (outcome.status === 'failed') {
-    return failed(
-      explicitModel && isModelUnavailableMessage(outcome.message)
-        ? 'model_unavailable'
-        : 'provider_error',
-      outcome.message,
-    );
-  }
-  if (exitCode !== 0) {
-    const notice = parser.lastNotice() ?? lastStderrLine;
-    const detail = notice === null ? '' : `: ${notice}`;
-    // 128 + n is how a CLI that handled signal n reports it, for example 143 after SIGTERM.
-    const signalNote =
-      exitCode !== null && exitCode > 128 && exitCode < 160 ? ' (likely signal-initiated)' : '';
-    return failed(
-      explicitModel && notice !== null && isModelUnavailableMessage(notice)
-        ? 'model_unavailable'
-        : 'non_zero_exit',
-      shortText(`The CLI exited with code ${exitCode ?? 'unknown'}${signalNote}${detail}`, 2_048),
-    );
-  }
-  if (outcome.status !== 'succeeded') {
-    return failed('incomplete_output', 'The CLI exited with code 0 without reporting a result.');
-  }
-  return {
-    status: 'completed',
-    exitCode: 0,
-    signal: null,
-    ...(outcome.summary === undefined ? {} : { summary: outcome.summary }),
-  };
 };
 
 /**
@@ -388,7 +307,10 @@ export const startAgentExecution = async (
   );
 
   const completed = supervised.exited.then((exit): AgentRunResult => {
-    const outcome = classify(exit, input, parser, state.lastStderrLine);
+    const outcome = classifyRunOutcome(exit, parser, state.lastStderrLine, {
+      timeoutMs: request.timeoutMs,
+      explicitModel: request.modelId !== null,
+    });
     const result: AgentRunResult = Object.freeze({
       ...outcome,
       runId: request.runId,
@@ -401,6 +323,7 @@ export const startAgentExecution = async (
       stdoutBytes: exit.stdoutBytes,
       stderrBytes: exit.stderrBytes,
       lingeringProcesses: exit.lingeringProcesses,
+      processContainment: 'process_group_only',
     });
     try {
       if (exit.lingeringProcesses !== 'none') {
