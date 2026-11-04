@@ -57,3 +57,4 @@ export {
   type TaskWorktreeIssue,
   type TaskWorktreeTarget,
 } from './task-worktree.js';
+export { listWorktrees, type WorktreeEntry } from './worktree-list.js';

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    // Resolve workspace packages to their TypeScript sources so a fresh checkout can typecheck
+    // and test without building them first.
+    "customConditions": ["@ai-agent-manager/source"]
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}
