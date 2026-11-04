@@ -1,6 +1,6 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.4 — AI Conversations specified as a planned extension (§18)  
+**Status:** Draft v0.5 — execution security modes (Trusted Local / Strict Isolated, §12.1) added; v0.4 specified AI Conversations (§18)  
 **Date:** 2026-11-04 (v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
@@ -230,6 +230,7 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 - The user can stop a task only while it has an active run.
 - Request graceful agent termination, then force termination after a defined timeout when necessary.
 - Release an agent slot only after confirming that the run is no longer active; consider child processes as well as the parent process.
+- Stop terminates the agent CLI's **process group**. Descendants that started their own process group or session may survive (SEC-01). The UI describes Stop accordingly and never claims that every descendant process was terminated.
 - **Never delete the worktree or partial output automatically.**
 - Move the task to `Stopped` and allow inspection of remaining changes.
 
@@ -250,12 +251,57 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 ## 12. Safety and data integrity
 
 - The product is **single-user and local-first**, but coding agents can execute commands on a real machine. A Git worktree **is not a security sandbox**.
-- Enforce permissions that prevent agents from independently committing, pushing, switching branches, writing outside authorized workspaces, or accessing sensitive files. **Prompt instructions alone are insufficient**; implementation must enforce supported restrictions or explicitly communicate limitations.
+- Agents must not commit, push, switch branches, write outside authorized workspaces or access sensitive files. **Prompt instructions alone are insufficient.** How this is handled depends on the execution security mode (§12.1):
+  - In **Strict Isolated Mode**, the required restrictions must be enforced and independently verified.
+  - In **Trusted Local Mode**, they are **not** enforced. The limitation is communicated explicitly, and unexpected Git mutations are detected after each run.
 - Verify actual tool permissions/sandbox guarantees for both adapters during implementation. Do not claim protections that cannot be enforced.
 - Do not store provider passwords or authentication tokens in SQLite. Reuse official local CLI login flows and existing Git authentication.
 - Validate paths, Git refs, branch names, and execution arguments. Avoid interpolating untrusted values into shell command strings.
 - Destructive operations (including discarding files or removing worktrees) require explicit confirmation and must never target a primary repository checkout implicitly.
 - Keep the local API bound to localhost by default, with appropriate protections against untrusted origins and cross-site requests.
+
+### 12.1 Execution security modes (SEC-02, decided 2026-11-04)
+
+**Personal-use MVP threat model.**
+
+- **Who and what.** One trusted human operator on their own macOS account. Repositories are owned by the operator or come from trusted collaborators. Claude Code and Codex are the CLIs the operator already uses manually. There is no multi-user or hosted execution.
+- **What is still not trusted:**
+  - The agent's behavior: model mistakes, overreach, and prompt injection from repository content, dependencies, tool output or fetched web content.
+  - Third-party code the agent runs, such as package installs and build scripts.
+
+  The agent therefore runs with the operator's account permissions but is **not** treated as trusted.
+
+**Trusted Local Mode** (MVP execution mode):
+
+- **Explicit opt-in.**
+  - The operator enables it in Settings after reading a versioned disclosure. It is off by default.
+  - Each repository must be marked trusted for local execution.
+  - A changed disclosure requires renewed acceptance.
+- **Safeguards that still apply:**
+  - the verified repository and task worktree;
+  - the verified CLI binary and version, the exact arguments, working directory and environment bound to the authorization;
+  - no elevated privileges;
+  - mandatory timeouts, output limits and cancellation;
+  - the existing worktree lifecycle safeguards;
+  - publishing (commit and push of the task branch) only through the trusted Approve & Push flow.
+- **The UI states plainly, before enabling and on every run:**
+  - The worktree is the agent's working directory, **not** an OS-enforced boundary.
+  - The agent may read and write other files, use local credentials (SSH keys, Git credential helpers, CLI logins) and reach the network, as far as the operator's account allows.
+  - The agent **could independently run `git commit` or `git push`** if its CLI tools and the OS allow it. The application detects unexpected Git mutations after the run where it can, but does not prevent them.
+  - Stop terminates the process group, not every possible descendant.
+
+**Strict Isolated Mode** (deferred):
+
+- Every required control must be enforced by a mechanism that has been independently verified for the exact CLI version and launch configuration. The gate is fail-closed.
+- It is not available until verified enforcement exists. That needs the deferred VM-based verification (M1-04B.2) and OS-level isolation work.
+- It is never silently downgraded to Trusted Local Mode.
+
+**Rules for both modes:**
+
+- Each run records the mode it ran under.
+- No mode borrows the other's security claims.
+- Risk acknowledgements never authorize Strict execution.
+- Conversation Mode (§18) needs its own, separate opt-in and never gains repository write or task-start permissions from Execution Mode settings.
 
 ## 13. Persisted data
 
@@ -283,7 +329,7 @@ The MVP is complete when the following scenarios work on a safe test repository:
 4. **Execution:** moving a task to `Queued` eventually starts the assigned agent in a newly created task branch/worktree and records the base SHA.
 5. **Capacity:** two Claude tasks never run concurrently even if they select different Claude models; an available Codex can run alongside one Claude task.
 6. **Dashboard:** show running, queued, review-ready, and attention-required tasks across all projects.
-7. **Stop:** stopping a running task terminates its execution, preserves generated files, frees agent capacity, and allows inspection.
+7. **Stop:** stopping a running task terminates its execution (the agent CLI's process group; surviving descendants outside the group are a documented limitation, SEC-01), preserves generated files, frees agent capacity, and allows inspection.
 8. **Crash recovery:** after unexpected shutdown and restart, the app marks unreconciled runs `Interrupted`, preserves worktrees, and does not restart them without user action.
 9. **Review:** show tracked and untracked changes; a follow-up prompt during review triggers a further run for the same task.
 10. **Discard:** discarding does not publish code or silently delete the workspace.
@@ -294,6 +340,10 @@ The MVP is complete when the following scenarios work on a safe test repository:
 15. **Queue pause:** pausing the scheduler prevents new runs from starting while leaving current runs untouched.
 16. **Model selection:** task creation defaults to `Default`; an explicit model is passed to the selected runtime when supported; switching runtimes clears incompatible model choices.
 17. **Model errors and history:** a model rejected by the CLI is surfaced as a recoverable error without a silent fallback, and each run preserves its requested model plus the effective model when verifiable.
+18. **Security mode (added 2026-11-04, SEC-02):**
+    - No task executes until the operator has explicitly enabled Trusted Local Mode and marked the repository as trusted.
+    - The UI shows the mode and its disclosure for every run.
+    - An agent commit, push to a local-path remote, or change to shared Git metadata or the main checkout during a run is reported after the run and blocks `Approve & Push` until the operator reviews it.
 
 ## 15. Verified proof-of-concept findings
 
@@ -312,7 +362,7 @@ The following behaviors were **manually verified** on macOS with a local test Gi
 
 These decisions do not change MVP scope but must be resolved before implementation:
 
-- How to enforce agent command restrictions and prevent commits/pushes outside the human approval flow.
+- How to enforce agent command restrictions and prevent commits/pushes outside the human approval flow. *(Decided for the MVP: Trusted Local Mode does not enforce them; it discloses and detects. Enforcement is the deferred Strict Isolated Mode, §12.1.)*
 - Internal separation and transitions for task, run, and Git-operation states.
 - Reliable worker communication and UI log streaming.
 - Log storage format, retention, and disk usage policy.
@@ -376,6 +426,8 @@ The "no live conversational input while a task runs" exclusion (§2) still appli
 Both modes may share adapter infrastructure (CLI discovery, process execution, model selection, event normalization). Each mode has its own runtime policy and lifecycle.
 
 **Conversation Mode is not described as read-only, sandboxed or isolated unless that is actually enforced** by verified runtime isolation for the selected CLI, as required for Execution Mode by M1-03. Instructions to the model are defense in depth, not enforcement.
+
+**Security modes (§12.1).** Conversation Mode can also run in a Trusted Local variant. It needs its **own** opt-in and disclosure, separate from Execution Mode's. Execution Mode acceptance or repository trust never enables conversations, and conversation acceptance never grants a worktree, repository write access, task queueing or publishing. In Trusted Local conversations, the CLI still runs in a scratch directory with a conversation launch profile (preferring no tools). The UI states that the CLI may read files the operator's account can read, and never calls the conversation read-only unless that is enforced.
 
 ### 18.3 User stories
 
@@ -461,7 +513,9 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 ### 18.10 Safety and privacy
 
 - Conversations are advisory. Every effect outside the conversation (accepting a decision, creating tasks) requires an explicit user action.
-- Conversation Mode runs only after its runtime policy for the selected CLI has been checked before launch. As with Execution Mode, required restrictions are fail-closed: if they are not enforced, the turn is refused with an actionable explanation rather than run with weaker protection.
+- Conversation Mode runs only after its runtime policy for the selected CLI has been checked before launch:
+  - In Strict Isolated Mode, required restrictions are fail-closed: if they are not enforced, the turn is refused with an actionable explanation rather than run with weaker protection.
+  - In Trusted Local Mode (separate opt-in, §18.2), the turn runs under the accepted disclosure, but still never with repository write access or task-start permissions.
 - Repository content and documents passed as context are **untrusted input**: they may contain instructions aimed at the model. They must never be able to trigger application actions without user approval.
 - Sending a message sends its assembled context to the provider behind the selected CLI, under the user's account. The UI must make this visible, especially for project source files.
 - Deleting a conversation requires confirmation. It removes the conversation's messages and pending proposals, but not accepted decisions or created tasks.

@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.3 — platform strategy and SEC-01 recorded; v0.2 recorded AI Conversations decisions (§10)  
+**Status:** Context snapshot v0.4 — SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.4, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.3, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.3
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.5, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.4, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.4
 
 ## 1. Why this project exists
 
@@ -30,6 +30,7 @@ The tool's own source may be hosted on GitHub while managed repositories may liv
 | Publish | After explicit review approval, commit and push **to the task branch only**. No automatic merge or PR. |
 | Stop and recovery | Stop a run without deleting changes; retry safely; resume only when verified supported; unexpected shutdowns require manual reconciliation. |
 | Language | Conversations can be Polish; technical docs, prompts, UI, code and commits are English. |
+| Execution security (SEC-02, 2026-11-04) | **Personal-use MVP runs agents in an explicit Trusted Local Mode:** operator opt-in with a versioned disclosure, trusted repositories only, existing binding/worktree/version/timeout/output-limit/process-group safeguards, a detect-only post-run Git integrity check, and publishing only through Approve & Push. No strict control is claimed as enforced. The fail-closed gate is kept as **Strict Isolated Mode**, deferred together with the VM-based verification (M1-04B.2). Conversation Mode needs its own opt-in. (`SPEC.md` §12.1, `ARCHITECTURE.md` §7.5, `IMPLEMENTATION_PLAN.md` §9.3–9.4) |
 | Platform | **macOS-first, cross-platform-ready.** macOS is the only targeted and tested platform. Windows/WSL2/Linux are possible future platforms, not MVP commitments, each needing its own compatibility and security verification. Platform-specific behavior stays behind module boundaries; shared domain logic must not assume macOS (`ARCHITECTURE.md` §16). |
 
 ## 3. Agreed technologies
@@ -67,9 +68,9 @@ The following outcomes were manually observed; they are not production automated
 
 ## 6. Risks and unresolved questions
 
-1. **Permission boundary:** Prompt instructions are not enough to prevent agent commits, pushes or access outside a worktree. Test actual tool restrictions, sandboxing, subprocesses, network and credential exposure per runtime.
+1. **Permission boundary:** Prompt instructions are not enough to prevent agent commits, pushes or access outside a worktree. Test actual tool restrictions, sandboxing, subprocesses, network and credential exposure per runtime. *SEC-02:* in Trusted Local Mode these are **accepted, disclosed risks**: the agent may use the operator's files, credentials and network and could commit or push on its own. The application detects unexpected Git mutations after runs where it can, but prevents none of them. Enforcement belongs to the deferred Strict Isolated Mode.
 2. **Session continuation:** Resuming a saved Claude/Codex run is not yet verified; implement as a capability-dependent option, not an assumption.
-3. **Process supervision:** Verify child process cleanup, cancellation races and accurate slot release after stop or crash. M1-04A showed that process-group stop does not reach descendants that create their own session or process group; tracked as **SEC-01** (`ARCHITECTURE.md` §7.4, `IMPLEMENTATION_PLAN.md` §9.2). Results report `process_group_only` containment, and a verifiable strategy is required before unattended execution of untrusted agent workloads.
+3. **Process supervision:** Verify child process cleanup, cancellation races and accurate slot release after stop or crash. M1-04A showed that process-group stop does not reach descendants that create their own session or process group; tracked as **SEC-01** (`ARCHITECTURE.md` §7.4, `IMPLEMENTATION_PLAN.md` §9.2). Results report `process_group_only` containment, and a verifiable strategy is required before unattended execution of untrusted agent workloads. In Trusted Local Mode with operator-trusted repositories, SEC-01 is an accepted, disclosed risk (SEC-02).
 4. **Restart recovery:** Reconcile durable run records, OS processes and retained worktrees without duplicate launches.
 5. **Review integrity:** Collect tracked and untracked files and compare immutable snapshot hashes before staging.
 6. **Publishing retries:** A commit followed by failed push must be recoverable without duplicate commits or wrong-branch pushes.
@@ -96,6 +97,7 @@ At the point of writing this snapshot:
 - Implemented and committed: monorepo foundation (core package, worker, SQLite/Drizzle initialization, runtime path configuration); safe Git repository inspection; safe task worktree lifecycle; read-only task change inspection; and the fail-closed execution security gate (M1-03 foundation).
 - Implemented (uncommitted at the time of writing): M1-02 adapter contract and the Claude Code and Codex adapters (`packages/agents`), tested only against fake CLIs. Not yet done: live validation of the adapters' assumptions and the adversarial per-CLI verification that M1-03 requires. Until then, the gate denies every execution, and the adapters refuse to launch without an authorization. Scheduler, web UI flows and publishing are not implemented.
 - AI Conversations has been specified (§10); no implementation exists.
+- M1-04B.1/1a (real-CLI verification plan, offline `replay`, `prepare --parent`) are complete. **SEC-02 (2026-11-04):** the personal-use MVP will execute in Trusted Local Mode (designed, not implemented). M1-04B.2 VM-based verification and the VM preparation are deferred, and agent execution stays disabled until SEC-02 stages a–e pass.
 - M1-04A (CLI compatibility and security test harness) adds `packages/cli-diagnostics`: disposable fixtures, fake-CLI compatibility checks, security probe scenarios with conservative verdict rules, and preparation of supervised real-CLI probes. No real CLI was run beyond `--version`/`--help`. No security control has been verified; the shipped profiles and the gate are unchanged.
 
 This document is a **context snapshot**, not an authoritative record of future implementation progress. Update it when major decisions or verified milestones change; prefer Git history and tests for detailed evidence.

@@ -8,6 +8,12 @@ has been run.
 **Real CLI tests must not start until the owner explicitly approves the environment and this
 plan** (§9).
 
+> **Scope update 2026-11-04 (SEC-02).** This VM-based plan now serves the **deferred Strict
+> Isolated Mode** and all **adversarial** testing. It is no longer a prerequisite for the
+> personal-use MVP. Benign, operator-approved Trusted Local smoke runs (SEC-02e, compatibility
+> checks C-03 to C-13 only, in a disposable local repository) may run on the host under Trusted
+> Local Mode (`docs/IMPLEMENTATION_PLAN.md` §9.3). Adversarial probes still require the VM (§2.1).
+
 This document covers supervised testing of the real Claude Code and Codex CLIs on macOS. It uses
 the diagnostic harness in this package (see [`../README.md`](../README.md)). It does not change
 production behavior:

@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.3 — platform strategy and security follow-up SEC-01 added (§9); v0.2 added AI Conversations (§8)  
+**Status:** Draft v0.4 — SEC-02 execution security modes and staged plan added (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.4 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.3  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.5 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.4  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -30,7 +30,7 @@ This is the executable plan for implementing AI Agent Manager. Product behavior 
 | **M6 — Review and safe publishing** | Verified snapshots; feedback, discard, commit and push | M4–M5 |
 | **M7 — Dashboard and polish** | Cross-project overview, settings, SSE, robust end-to-end checks | M3–M6 |
 
-M1 and M2 can proceed independently after M0. Do not connect real work repositories until the security gate in M1 is understood and accepted.
+M1 and M2 can proceed independently after M0. Do not connect real work repositories until the security gate in M1 is understood and accepted. *(2026-11-04: accepted for the personal-use MVP through the explicit Trusted Local Mode, SEC-02 §9.3. This is acceptance of disclosed risks, not verification. Real execution stays off until SEC-02 is implemented and its tests pass.)*
 
 The planned AI Conversations workstream (C1–C5) is defined separately in §8. It does not change M0–M7.
 
@@ -72,6 +72,14 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Implement available containment and controls; explicitly document residual risks. **Do not label prompt-only restrictions as enforced safeguards.**
 
 **Done when:** both adapters run in isolated test worktrees and the limitations of write/publish restrictions are recorded. Do not allow automatic publish-on-agent-completion.
+
+> **Decision 2026-11-04 (SEC-02, §9.3).** The M1-03 criterion stays as written for **Strict Isolated Mode**, which remains fail-closed and unverified.
+>
+> - Adversarial verification with real CLIs (M1-04B.2, VM-based) is **deferred** and is no longer a prerequisite for the personal-use MVP.
+> - For the MVP, M1 is completed by:
+>   - the recorded limitations (done: M1-03, M1-04A, M1-04B.1/1a, SEC-01);
+>   - the SEC-02 Trusted Local implementation and its tests (§9.3).
+> - No strict capability is marked verified. Completed M1 work is unchanged.
 
 ### M2 — Persistence and domain logic
 
@@ -126,6 +134,8 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Store run events in SQLite and expose event replay over SSE; browser reconnect must not lose durable run history.
 
 **Done when:** queueing Claude and Codex tasks leads to independent worktrees and visible run progress; simultaneous same-runtime tasks never exceed the configured slot.
+
+*SEC-02 dependency:* M4 runs agents only under an authorization from §9.3 (Trusted Local for the MVP). It records the security mode with every run and runs the post-run Git integrity check.
 
 ### M5 — Stop, retry and crash recovery
 
@@ -210,7 +220,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 
 Use this file as the high-level milestone plan. When implementation starts, track detailed issue state in GitHub issues or a lightweight `docs/PROGRESS.md` if needed; **do not** turn this document into an unstructured activity log.
 
-**Next action:** start **M0 — Foundation**, then perform the **M1 safety gate** before connecting real repositories.
+**Next action:** start **M0 — Foundation**, then perform the **M1 safety gate** before connecting real repositories. *(2026-11-04: the M1 safety gate for the MVP is SEC-02 Trusted Local Mode, §9.3.)*
 
 ## 8. Future workstream: AI Conversations (C1–C5)
 
@@ -333,7 +343,7 @@ Resolve each with a documented decision before building the dependent UI.
 
 - Keep the limitation visible in execution results, and later in run events and the UI. Never describe process-group cleanup as complete descendant containment.
 - No speculative process-tree tracking (PID scans, name matching, broad kills).
-- Choose and verify a containment strategy before **unattended execution of untrusted agent workloads**, at the latest before automatic scheduling (M4) runs agents against real repositories without supervision. Candidate mechanisms (dedicated OS user per runtime, OS sandbox policy, VM) need a documented decision, especially where they touch the "no Docker" direction in `AGENTS.md`.
+- Choose and verify a containment strategy before **unattended execution of untrusted agent workloads**, at the latest before automatic scheduling (M4) runs agents against real repositories without supervision. *(Amended 2026-11-04 by SEC-02: for operator-trusted repositories under Trusted Local Mode, SEC-01 is an accepted, disclosed risk instead of a prerequisite. It remains a prerequisite for Strict Isolated Mode and for untrusted workloads.)* Candidate mechanisms (dedicated OS user per runtime, OS sandbox policy, VM) need a documented decision, especially where they touch the "no Docker" direction in `AGENTS.md`.
 
 **Done when:**
 
@@ -342,3 +352,69 @@ Resolve each with a documented decision before building the dependent UI.
 - Results report the stronger containment scope only once that verification exists.
 
 Until then, the limitation stays documented and visible.
+
+### 9.3 SEC-02 — Trusted Local Execution (personal-use MVP)
+
+> Decided 2026-11-04. Design: `ARCHITECTURE.md` §7.5; product rules: `SPEC.md` §12.1. Only documentation exists so far.
+
+**Decision.** The MVP executes agents in an explicit **Trusted Local Mode**:
+
+- operator opt-in and a versioned disclosure;
+- trusted repositories only;
+- the existing binding, worktree, version, timeout, output-limit and process-group safeguards;
+- a new post-run Git integrity check;
+- publishing only through Approve & Push.
+
+The existing fail-closed gate becomes **Strict Isolated Mode**. It stays unchanged and unverified, and it is never silently downgraded.
+
+**Staged implementation** (each stage is a separate, reviewed task; real execution remains disabled until stage E):
+
+| Stage | Scope | Package(s) |
+| --- | --- | --- |
+| **SEC-02a — Types** | `ExecutionSecurityMode`; the discriminated `ExecutionSecurityPolicy` (Strict = today's v1 policy with `mode: 'strict_isolated'`, no default mode); `TrustedLocalPolicy`; the discriminated `ExecutionAuthorization` (Strict keeps `controls`; Trusted Local has `controlAssessments`, `acceptedRisks`, `safeguards`, no `enforced` claim); new denial codes. Strict behavior identical. | `core` |
+| **SEC-02b — Gate** | `authorizeTrustedLocalExecution` sharing the existing preflight (worktree, executable, arguments, deny list, version); trusted-repository identity match; non-root; acceptance and disclosure version; mandatory timeout. `authorizeAgentExecution` unchanged. | `orchestrator` (+ `git` for identity) |
+| **SEC-02c — Launch boundary** | `startAgentExecution` checks the authorization per mode (exhaustive switch). Trusted Local: all binding, freshness and single-use checks, timeout required, non-root re-check; no control-enforcement claim. `securityMode` in events and results. | `agents` |
+| **SEC-02d — Git integrity check** | Read-only before/after inventory: branch refs, worktree HEADs, remote-tracking refs, common config and hooks digests, main checkout HEAD and status. Result attached to the run. | `git` |
+| **SEC-02e — Trusted Local smoke runs** | Operator-approved, **benign** real runs on the host in a disposable local repository (no VM): compatibility checks C-03 to C-13 from the runbook, with captures checked by `replay`. No adversarial probes. | `cli-diagnostics` runbook |
+| Persistence and UI | Settings (enable flag, acceptance), project `execution_trust`, run security metadata, mode badge, disclosure page, attention banner. | M2, M3, M7 |
+
+**Tests required before Trusted Local execution may be enabled** (offline: fake CLIs and disposable repositories):
+
+1. **Strict mode unchanged.** The shipped profiles are still denied with `control_not_enforced`; `riskAcknowledgements` still never authorize.
+2. **No implicit mode.**
+   - A policy without `mode` is invalid.
+   - A Strict request never yields a Trusted Local authorization, even after a Strict denial.
+   - A Strict authorization never passes the Trusted Local launch checks, and vice versa.
+3. **Trusted Local denials:**
+   - disabled;
+   - acceptance missing or stale (disclosure version);
+   - repository not trusted, including the same path with a different common Git directory;
+   - worktree not verified;
+   - unsafe arguments;
+   - executable changed;
+   - elevated UID (injected);
+   - missing or excessive timeout.
+4. **Binding at launch.** Tampered arguments, environment, working directory or executable are rejected for Trusted Local authorizations; authorizations are single-use and expire.
+5. **Honest reporting.**
+   - A Trusted Local authorization has no `enforced` field.
+   - `controlAssessments` equals `assessControl` output.
+   - `acceptedRisks` equals the required controls that are not enforced.
+   - `securityMode` and `processContainment` appear in events and results.
+6. **Run controls in Trusted Local Mode.** Timeout, output limit, stop and process-group cleanup work (fake CLIs). The escaped-descendant limitation stays reported (T1–T3 follow-up).
+7. **Git integrity check.** It detects an agent commit in the task worktree, a push to a local bare remote (remote-tracking or remote ref), a common config or hooks change, a main checkout change, and another worktree's HEAD change. It reports no false positive for ordinary file edits inside the task worktree.
+8. **Architecture checks.** Conversation code cannot obtain or use an execution authorization (when C1 starts).
+
+**Exit criteria.**
+
+- All tests above pass, and the SEC-02e smoke runs are recorded.
+- The disclosure text is reviewed by the operator.
+- Execution is enabled only through Settings by the operator.
+
+### 9.4 Deferred: Strict Isolated Mode and VM-based verification
+
+- **M1-04B.2 (supervised real-CLI verification in a disposable macOS VM) is deferred.** Its plan and runbook remain valid: `packages/cli-diagnostics/docs/real-cli-verification.md`. The VM preparation (M1-04B.2a) was planned but not carried out.
+- **Strict Isolated Mode** becomes available only after verified enforcement exists for every required control. That needs:
+  - VM-based adversarial verification;
+  - OS-level mechanisms for the controls the CLIs cannot cover (credential isolation, subprocess coverage);
+  - SEC-01.
+- The G2 real-CLI diagnostic runner and the SEC-01 regression tests T1–T3 stay deferred follow-ups.

@@ -1,6 +1,6 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.3 — platform strategy (§16) and process containment follow-up SEC-01 (§7.4) added; v0.2 added AI Conversations (§15)  
+**Status:** Draft v0.4 — execution security modes SEC-02 (§7.5) added; v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
 **Date:** 2026-11-04 (v0.1: 2026-11-03)  
 **Product specification:** [`SPEC.md`](./SPEC.md) v0.4  
 **Scope:** Single-user, local-first MVP
@@ -217,7 +217,7 @@ Run CLI processes with `spawn` argument arrays (`shell: false`) and the worktree
 
 On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed by `SIGKILL` after a grace period. Production logic must confirm process-group termination, handle races and retries, persist stop intent first, and release runtime capacity only after final reconciliation. Process-group termination is **not** complete descendant containment; see §7.4.
 
-**Security gate:** Worktrees are *not* sandboxes. CLI flags and prompt-level instructions do not conclusively prevent an agent from running Git commits/pushes or accessing files outside its worktree. Before using company repositories, determine and test actual permission enforcement for each CLI (including tool policies, sandboxing, network and Git credential access). If hard guarantees cannot be established locally, document the limitation clearly and require explicit user acknowledgement rather than claiming full enforcement. Keep publication logic in a separate trusted service; reduce credentials/external side effects where practical.
+**Security gate:** Worktrees are *not* sandboxes. CLI flags and prompt-level instructions do not conclusively prevent an agent from running Git commits/pushes or accessing files outside its worktree. Before using company repositories, determine and test actual permission enforcement for each CLI (including tool policies, sandboxing, network and Git credential access). If hard guarantees cannot be established locally, document the limitation clearly and require explicit user acknowledgement rather than claiming full enforcement. Keep publication logic in a separate trusted service; reduce credentials/external side effects where practical. For the personal-use MVP this acknowledgement is realized as the explicit, typed **Trusted Local Mode** (§7.5), not through `riskAcknowledgements`.
 
 ### 7.4 Process containment beyond process groups (SEC-01)
 
@@ -231,6 +231,171 @@ On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed b
 - Do not add speculative process-tree tracking (PID scans, name matching, broad kills) that would create a false sense of security.
 - Unattended execution of untrusted agent workloads requires a **verifiable** containment strategy first. Candidates to evaluate include a dedicated OS user per runtime, whose processes can all be ended, an OS sandbox policy, or a VM. Each would need a documented decision, especially where it touches the "no Docker" direction in `AGENTS.md`. A candidate counts as verified only when supervised real runs of the `stop_with_subprocesses` probe (`packages/cli-diagnostics`) show no surviving descendant, including those in a new session.
 - The mechanism lives behind the process-supervision boundary in `packages/agents` and is platform-specific (§16).
+- *Decision 2026-11-04 (SEC-02):* repositories the operator trusts and runs under Trusted Local Mode (§7.5) are not "untrusted workloads" in this sense. There, SEC-01 is an **accepted, disclosed risk**, not a prerequisite. SEC-01 remains a prerequisite for Strict Isolated Mode and for any untrusted workload.
+
+### 7.5 Execution security modes (SEC-02)
+
+> Design decided 2026-11-04 for the personal-use MVP. **Not implemented.** The current gate (`authorizeAgentExecution`) and launch boundary (`startAgentExecution`) stay fail-closed and unchanged until the staged implementation in `IMPLEMENTATION_PLAN.md` §9.3.
+
+**Threat model** (`SPEC.md` §12.1):
+
+- One trusted operator on their own macOS account, with trusted repositories and the CLIs they already use manually.
+- The agent is **not** trusted: model mistakes, overreach, and prompt injection from repository content, dependencies or tool output.
+- It runs with the operator's account permissions: file system, credentials, network.
+
+**Two modes, one typed discriminant.** The domain types live in `packages/core`. Neither mode contains OS-specific mechanisms; those stay in the profiles and the supervisor in `packages/agents`.
+
+```ts
+type ExecutionSecurityMode = 'strict_isolated' | 'trusted_local';
+
+// Existing v1 policy, unchanged apart from the discriminant.
+type StrictIsolatedPolicy = {
+  mode: 'strict_isolated'; version: 1;
+  workspaceAccess: 'task_worktree_only'; network: 'deny' | 'allow';
+  interactiveApproval: 'deny'; gitMutations: 'deny';
+  riskAcknowledgements: { control: SecurityControl; reason: string }[]; // informational only
+};
+
+type TrustedLocalPolicy = {
+  mode: 'trusted_local'; version: 1;
+  // Versioned operator acceptance of the Trusted Local disclosure (from Settings).
+  acceptance: { disclosureVersion: string; acceptedAt: string };
+  interactiveApproval: 'deny';       // runs stay unattended and non-interactive
+  timeoutMs: number;                 // mandatory, bounded
+};
+
+type ExecutionSecurityPolicy = StrictIsolatedPolicy | TrustedLocalPolicy; // `mode` required, no default
+
+type StrictExecutionAuthorization = {
+  mode: 'strict_isolated'; /* existing fields */
+  controls: AuthorizedControl[]; // every required control `enforced`, as today
+};
+
+type TrustedLocalExecutionAuthorization = {
+  mode: 'trusted_local';
+  runtime; runtimeVersion; launchProfileId; launchArguments;
+  invocation: AuthorizedInvocation;        // executable identity, every argument, env digest
+  workspace: VerifiedWorkspace;            // same verification as strict
+  policy: TrustedLocalPolicy;
+  trustedRepository: { root: string; commonDir: string; trustedAt: string };
+  // Honest assessment from `assessControl`, never upgraded. There is deliberately NO
+  // `controls`/`enforced` field, so the result cannot be read as an enforcement claim.
+  controlAssessments: ControlAssessment[];
+  acceptedRisks: SecurityControl[];        // required strict controls that are not enforced
+  safeguards: TrustedLocalSafeguard[];     // what was actually applied (list below)
+  processContainment: 'process_group_only';
+  checkedAt: string;
+};
+
+type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecutionAuthorization;
+```
+
+**Mode selection and no silent downgrade.**
+
+- The worker builds the policy only from persisted operator state:
+  - a global `trustedLocal.enabled` setting (default off);
+  - the current disclosure acceptance;
+  - the project's execution trust (`none`, the default, or `trusted_local`).
+
+  Task fields, REST bodies and browser input never select a mode.
+- The mode is snapshotted when the run is claimed. A Strict denial is final for that run. Retrying after the operator changes settings is a new attempt, never an automatic fallback.
+- Separate gate entry points share one preflight:
+  - `authorizeAgentExecution` (Strict, unchanged semantics);
+  - `authorizeTrustedLocalExecution`.
+
+  Both return a decision tagged with the requested mode. The launch boundary checks the authorization per mode, using an exhaustive switch on `mode`.
+
+**Trusted Local authorization conditions** (all required; denial otherwise):
+
+| Check | Source |
+| --- | --- |
+| Trusted Local is enabled globally, and the acceptance matches the current disclosure version | Settings (M2) |
+| The repository is trusted, matched by **canonical root and common Git directory**, not by path alone | Project record (M2/M3) |
+| The task worktree is verified: registered, locked, on the expected branch, at the expected base | Existing gate preflight |
+| The executable is canonical and has the expected file identity; the CLI version is detected and at least the assessed minimum; the launch arguments are the profile's and pass the deny list; the environment digest and working directory are bound | Existing gate and launch boundary |
+| The process is not elevated: effective UID ≠ 0 (checked at authorization and again at launch) | New, platform-specific helper |
+| A timeout is set and within the maximum; output limits apply | Policy + `ExecutionLimits` |
+| The authorization is fresh and single-use | Existing launch boundary |
+
+New denial codes:
+
+- `trusted_local_disabled`;
+- `acceptance_missing` / `acceptance_stale`;
+- `repository_not_trusted`;
+- `elevated_privileges`;
+- `timeout_required`.
+
+**Safeguards** (`TrustedLocalSafeguard`):
+
+- `invocation_binding`;
+- `worktree_verification`;
+- `allow_listed_environment`: drops `SSH_AUTH_SOCK`, `GIT_*` and API keys. This reduces exposure but is **not** credential isolation: SSH key files, `osxkeychain` Git credentials and CLI logins remain usable.
+- `non_root`;
+- `mandatory_timeout`;
+- `output_limits`;
+- `process_group_stop`;
+- `post_run_git_integrity_check`: new, detect-only (below).
+
+**Post-run Git integrity check** (new, in `packages/git`, read-only):
+
+- **Before and after each run it records:**
+  - every branch ref of the repository;
+  - the task worktree HEAD and the other worktrees' HEADs;
+  - remote-tracking refs;
+  - a digest of the common `config` and `hooks/`;
+  - a digest of the main checkout's HEAD and status.
+- **Any difference** other than working-tree changes inside the task worktree marks the run *needs attention: unexpected Git mutation*. `Approve & Push` stays blocked until the operator reviews it.
+- **It detects; it does not prevent.** It cannot see pushes to a URL that update no local ref, changes to other repositories, or file changes outside these repositories. The UI says so.
+
+**Accepted risks in Trusted Local Mode** (shown in the disclosure, stored with every run as `acceptedRisks`): all strict controls that are not enforced for the profile. With today's profiles that is all seven:
+
+- writes outside the worktree;
+- network access;
+- Git history mutation and pushes;
+- reading credentials;
+- repository-controlled CLI configuration (only partly mitigated by profile flags);
+- non-interactive approval (where unverified);
+- descendant processes outside the process group (SEC-01).
+
+**Representation outside the authorization:**
+
+- **Run results and events.** `AgentRunResult` and the `started` event carry `securityMode` (plus the existing `processContainment`).
+- **Persisted run metadata (M2).** `task_runs` gains:
+  - `security_mode`;
+  - `launch_profile_id`;
+  - `cli_version`;
+  - `control_assessment_json` (the honest statuses);
+  - `accepted_risks_json`;
+  - `safeguards_json`;
+  - `disclosure_version`;
+  - `process_containment`;
+  - `git_integrity_result`.
+- **Persisted settings and projects (M2).**
+  - `scheduler_settings` (or a `security_settings` row): `trusted_local_enabled`, `trusted_local_disclosure_version`, `trusted_local_accepted_at`.
+  - `projects`: `execution_trust` plus `trusted_common_dir` and `trusted_at`.
+- **UI (M3/M7):**
+  - a persistent mode badge on tasks and runs;
+  - a Settings page with the full disclosure and an explicit enable action;
+  - a per-project trust toggle that shows the canonical repository identity;
+  - Stop wording "terminates the agent's process group";
+  - an attention banner for Git integrity findings.
+
+  Strict-mode wording ("enforced", "isolated", "sandboxed") is never shown for Trusted Local runs.
+
+**What does not change:**
+
+- The Strict gate, `assessControl`, the shipped profiles (`unverified`) and the CLI launch arguments.
+- The informational-only role of `riskAcknowledgements`.
+- The worktree lifecycle and cleanup safeguards.
+- The trusted publish flow (§9).
+- Execution is still off until the staged implementation lands.
+
+**Conversation Mode** (§15) applies the same pattern with its **own** types:
+
+- `ConversationRuntimePolicy` with `strict_isolated` | `trusted_local`.
+- A separate conversation disclosure and acceptance.
+- No repository or worktree in the authorization, and a scratch directory as `cwd`.
+- A conversation authorization is a different type that `startAgentExecution` rejects. Execution Mode acceptance or repository trust never enables conversations, and conversation acceptance never grants a worktree, task queueing or publishing.
 
 ## 8. Git repository and worktree management
 
@@ -338,6 +503,11 @@ UI state should be refreshed from server-authoritative records; drag-and-drop is
 6. Local process supervision for a packaged release (development uses two terminal processes).
 7. AI Conversations verification gates and open questions are listed separately in §15.11.
 8. A verifiable process containment mechanism beyond process groups (SEC-01, §7.4), and the platform-specific mechanisms any future platform would need (§16).
+9. Open SEC-02 decisions (§7.5):
+   - launch profiles for Trusted Local Mode (today's Claude `--restricted` profile removes command tools, and Codex `workspace-write` denies network by default; either may be too restrictive for real coding tasks, and any change needs its own review);
+   - whether automatic scheduling is allowed in Trusted Local Mode from the start;
+   - whether a CLI version change requires renewed acceptance;
+   - an optional post-stop report of processes whose working directory is inside the worktree.
 
 These are **explicit validation tasks**, not implied guarantees. The architecture should evolve based on their results without widening the MVP feature list.
 
@@ -383,7 +553,7 @@ Both modes use the same adapter infrastructure: CLI discovery and version detect
 
 Network access to the provider is inherent to the CLI. Additional network or web tools are denied unless a policy explicitly allows them and the control is verified.
 
-Like M1-03, the gate is **fail-closed**. A required control that is unenforced, unsupported or unverified for the detected CLI version refuses the turn, and acknowledgements never waive it. Running the CLI in a scratch directory **reduces exposure but is not confinement**: without verified isolation, a CLI with file or command tools could still read or write elsewhere. The UI must not call a conversation read-only or sandboxed unless the gate reports the corresponding control as enforced.
+In **Strict Isolated Mode**, like M1-03, the gate is **fail-closed**. In **Trusted Local Mode** (§7.5), a turn may run under a separate, conversation-specific operator acceptance. It still never receives a repository path, worktree or task authority, and the honest control assessment is recorded and shown. In Strict mode, a required control that is unenforced, unsupported or unverified for the detected CLI version refuses the turn, and acknowledgements never waive it. Running the CLI in a scratch directory **reduces exposure but is not confinement**: without verified isolation, a CLI with file or command tools could still read or write elsewhere. The UI must not call a conversation read-only or sandboxed unless the gate reports the corresponding control as enforced.
 
 ### 15.3 Domain model and tables (conceptual)
 
