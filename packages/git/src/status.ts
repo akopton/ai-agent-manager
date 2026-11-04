@@ -1,6 +1,5 @@
-import { runGit, runGitChecked } from './process.js';
+import { readFilterOverrides, runGitChecked } from './process.js';
 import { parseAbsolutePath, type GitCommandOptions } from './schemas.js';
-import { GitCommandError } from './errors.js';
 
 export type WorkingTreeStatus = {
   /** No staged, unstaged, untracked, or conflicted paths. Ignored files do not count. */
@@ -12,41 +11,6 @@ export type WorkingTreeStatus = {
   untracked: string[];
   /** Paths with unresolved merge conflicts. */
   conflicted: string[];
-};
-
-/**
- * `git status` may run clean filters configured in repository config. Neutralize every configured
- * filter driver for this command: an empty command disables the filter.
- */
-const listFilterOverrides = async (
-  cwd: string,
-  options: GitCommandOptions,
-): Promise<Array<readonly [string, string]>> => {
-  const result = await runGit(['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], {
-    ...options,
-    cwd,
-  });
-  if (result.exitCode !== 0 && result.exitCode !== 1) {
-    throw new GitCommandError(`git config failed: ${result.stderr.trim()}`, {
-      code: 'GIT_FAILED',
-      args: ['config'],
-      exitCode: result.exitCode,
-      signal: null,
-      stderr: result.stderr,
-    });
-  }
-  const drivers = new Set(
-    result.stdout
-      .split('\0')
-      .filter((key) => key.startsWith('filter.') && key.lastIndexOf('.') > 'filter'.length)
-      .map((key) => key.slice('filter.'.length, key.lastIndexOf('.'))),
-  );
-  return [...drivers].flatMap((driver) => [
-    [`filter.${driver}.clean`, ''] as const,
-    [`filter.${driver}.smudge`, ''] as const,
-    [`filter.${driver}.process`, ''] as const,
-    [`filter.${driver}.required`, 'false'] as const,
-  ]);
 };
 
 /** Returns the text after the `count`-th space; porcelain v2 paths may contain spaces. */
@@ -71,7 +35,7 @@ export const getWorkingTreeStatus = async (
   options: GitCommandOptions = {},
 ): Promise<WorkingTreeStatus> => {
   const cwd = parseAbsolutePath(root, 'Repository root');
-  const config = await listFilterOverrides(cwd, options);
+  const config = await readFilterOverrides(cwd, options);
   const output = await runGitChecked(
     [
       'status',
@@ -110,4 +74,31 @@ export const getWorkingTreeStatus = async (
       status.conflicted.length ===
     0;
   return status;
+};
+
+/**
+ * Lists ignored paths (directories collapsed) that `git worktree remove` would delete along with a
+ * clean worktree. Internal; used to protect files such as `.env` or build output.
+ */
+export const listIgnoredPaths = async (
+  root: string,
+  options: GitCommandOptions = {},
+): Promise<string[]> => {
+  const cwd = parseAbsolutePath(root, 'Repository root');
+  const config = await readFilterOverrides(cwd, options);
+  const output = await runGitChecked(
+    [
+      'status',
+      '--porcelain=v2',
+      '-z',
+      '--ignored=traditional',
+      '--untracked-files=normal',
+      '--ignore-submodules=dirty',
+    ],
+    { ...options, cwd, config },
+  );
+  return output
+    .split('\0')
+    .filter((record) => record.startsWith('! '))
+    .map((record) => record.slice(2));
 };

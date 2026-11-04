@@ -109,6 +109,21 @@ export const hasLocalBranch = async (
   return matched;
 };
 
+/** Resolves `refs/heads/<branch>` to its full commit SHA, or `null` when the branch is absent. */
+export const resolveLocalBranch = async (
+  root: string,
+  branch: string,
+  options: GitCommandOptions = {},
+): Promise<string | null> => {
+  const name = parseBranchName(branch);
+  const { matched, stdout } = await runPredicate(
+    ['rev-parse', '--verify', '--quiet', `${branchRefPrefix}${name}^{commit}`],
+    root,
+    options,
+  );
+  return matched ? stdout.trim() : null;
+};
+
 /** Hides user information (often a token) in HTTP(S) and FTP(S) URLs. Other URLs are unchanged. */
 export const redactRemoteUrl = (url: string): string =>
   url.replace(/^((?:https?|ftps?):\/\/)[^/?#]*@/i, '$1***@');

@@ -1,7 +1,16 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 
 // Fixture repositories are created only inside temporary directories, with global and system Git
 // configuration disabled so the developer's settings cannot affect them.
@@ -50,3 +59,28 @@ export const withFixtures = async (run: (directory: string) => Promise<void>): P
     rmSync(directory, { recursive: true, force: true });
   }
 };
+
+/** Captures every file under `directory` with its size, mtime, and content hash input. */
+export const snapshot = (directory: string): Map<string, string> => {
+  const entries = new Map<string, string>();
+  const visit = (path: string): void => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        visit(child);
+        continue;
+      }
+      const stats = statSync(child);
+      entries.set(
+        relative(directory, child),
+        `${stats.size}:${stats.mtimeMs}:${readFileSync(child).toString('base64')}`,
+      );
+    }
+  };
+  visit(directory);
+  return entries;
+};
+
+/** Runs a fixture Git command that reads from stdin. */
+export const gitWithInput = (cwd: string, input: string, ...args: string[]): string =>
+  execFileSync('git', args, { cwd, env: fixtureEnvironment(), encoding: 'utf8', input });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { existsSync, readdirSync, readFileSync, statSync, utimesSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, utimesSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   getWorkingTreeStatus,
@@ -9,28 +9,7 @@ import {
   inspectRepository,
 } from '../src/index.js';
 import { runGitChecked, runProcess } from '../src/process.js';
-import { createRepository, git, withFixtures, writeFile } from './fixtures.js';
-
-/** Captures every file under `directory` with its size, mtime, and content hash input. */
-const snapshot = (directory: string): Map<string, string> => {
-  const entries = new Map<string, string>();
-  const visit = (path: string): void => {
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      const child = join(path, entry.name);
-      if (entry.isDirectory()) {
-        visit(child);
-        continue;
-      }
-      const stats = statSync(child);
-      entries.set(
-        relative(directory, child),
-        `${stats.size}:${stats.mtimeMs}:${readFileSync(child).toString('base64')}`,
-      );
-    }
-  };
-  visit(directory);
-  return entries;
-};
+import { createRepository, git, snapshot, withFixtures, writeFile } from './fixtures.js';
 
 test('inspection leaves the repository, index, refs, and config byte-for-byte unchanged', async () => {
   await withFixtures(async (directory) => {

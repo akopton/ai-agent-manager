@@ -187,3 +187,39 @@ export const runGitChecked = async (
   }
   return result.stdout;
 };
+
+/**
+ * Checkout, `status`, and `worktree remove` may run clean/smudge filters named in repository config,
+ * which an agent can modify. Returns overrides that neutralize every configured filter driver for
+ * one command: an empty command disables the filter.
+ */
+export const readFilterOverrides = async (
+  cwd: string,
+  options: GitCommandOptions,
+): Promise<Array<readonly [string, string]>> => {
+  const result = await runGit(['config', '--null', '--name-only', '--get-regexp', '^filter\\.'], {
+    ...options,
+    cwd,
+  });
+  if (result.exitCode !== 0 && result.exitCode !== 1) {
+    throw new GitCommandError(`git config failed: ${result.stderr.trim()}`, {
+      code: 'GIT_FAILED',
+      args: ['config'],
+      exitCode: result.exitCode,
+      signal: null,
+      stderr: result.stderr,
+    });
+  }
+  const drivers = new Set(
+    result.stdout
+      .split('\0')
+      .filter((key) => key.startsWith('filter.') && key.lastIndexOf('.') > 'filter'.length)
+      .map((key) => key.slice('filter.'.length, key.lastIndexOf('.'))),
+  );
+  return [...drivers].flatMap((driver) => [
+    [`filter.${driver}.clean`, ''] as const,
+    [`filter.${driver}.smudge`, ''] as const,
+    [`filter.${driver}.process`, ''] as const,
+    [`filter.${driver}.required`, 'false'] as const,
+  ]);
+};

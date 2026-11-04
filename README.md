@@ -11,7 +11,8 @@ M0.5 adds shared `core` contracts and a standalone Node.js worker process that o
 the configured database and shuts down gracefully. Projects, project boards, and
 dashboard data remain future features. M0-03 adds validated runtime configuration for
 the data root, database file, and managed worktree root. M1-01 adds read-only Git
-repository inspection in `packages/git`; no Git operation modifies a repository yet.
+repository inspection in `packages/git`, and M1-02 adds the task worktree lifecycle
+(create, inspect, and safely remove locked worktrees on task branches).
 The web app is not connected to the database, and no scheduling, API endpoints, or
 agents are implemented.
 The experimental scripts in `poc/` remain separate from production workspaces.
@@ -30,7 +31,7 @@ The experimental scripts in `poc/` remain separate from production workspaces.
 
 The database package exports a connection factory and migration helper; `core`
 exports framework-independent types and Zod schemas; `git` provides read-only
-repository inspection (see [`packages/git/README.md`](packages/git/README.md)).
+repository inspection and the task worktree lifecycle (see [`packages/git/README.md`](packages/git/README.md)).
 `agents` and `orchestrator` remain private ESM package skeletons.
 
 ## Development commands
