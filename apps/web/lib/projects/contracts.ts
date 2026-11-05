@@ -11,6 +11,9 @@ export const apiErrorCodes = [
   'forbidden_host',
   'forbidden_origin',
   'project_not_found',
+  'project_has_dependents',
+  'repository_unavailable',
+  'repository_identity_changed',
   'database_not_ready',
   'repository_inspection_failed',
   'internal_error',
@@ -103,3 +106,7 @@ export const projectListResponseSchema = z.object({ projects: z.array(projectSch
 export const projectResponseSchema = z.object({ project: projectSchema });
 
 export const repositoryPreviewResponseSchema = z.object({ preview: repositoryPreviewSchema });
+
+export const disconnectProjectResponseSchema = z.object({
+  disconnected: z.object({ id: z.string(), name: z.string() }),
+});

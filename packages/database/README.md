@@ -1,10 +1,12 @@
 # Database foundation
 
 SQLite with `better-sqlite3` 12.11.1, Drizzle ORM 0.45.4, and Drizzle Kit 0.31.11.
-The driver is pinned to the Node-20-compatible 12.x line; 13.x requires Node 22.
-On the validated Node 20.20.2/macOS ARM64 setup it compiled locally, so installation
-requires the Xcode command line tools and Python if no prebuilt binding is available.
-pnpm permits its native install script in `pnpm-workspace.yaml`.
+The driver is pinned to the 12.x line, which was validated on Node 20.20.2 and is used
+with the supported Node.js 24 runtime (see the root README). On macOS ARM64 it compiled
+locally, so installation requires the Xcode command line tools and Python if no prebuilt
+binding is available. pnpm permits its native install script in `pnpm-workspace.yaml`.
+The compiled binding matches one Node.js ABI: after switching Node.js major versions,
+run `pnpm rebuild better-sqlite3`.
 
 ## Connection lifecycle
 

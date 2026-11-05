@@ -1,12 +1,14 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { connection } from 'next/server';
-import { ChevronRight, FolderGit2, GitBranch, Globe, Plus } from 'lucide-react';
+import { CheckCircle2, ChevronRight, FolderGit2, GitBranch, Globe, Plus } from 'lucide-react';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { readDisconnectedName } from '@/lib/projects/feedback';
 import { formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
@@ -23,9 +25,14 @@ const AddProjectButton = () => (
   </Button>
 );
 
-const ProjectsPage = async () => {
+const ProjectsPage = async ({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => {
   // SQLite reads are synchronous; render per request instead of at build time.
   await connection();
+  const disconnectedName = readDisconnectedName(await searchParams);
   const result = await loadForPage(() => listProjects(getDatabase()));
 
   return (
@@ -44,6 +51,19 @@ const ProjectsPage = async () => {
         </div>
         {result.ok && result.data.length > 0 ? <AddProjectButton /> : null}
       </section>
+
+      {disconnectedName !== undefined ? (
+        <Alert>
+          <CheckCircle2 aria-hidden="true" />
+          <AlertTitle>“{disconnectedName}” was disconnected</AlertTitle>
+          <AlertDescription>
+            <p>
+              Only the project entry was removed. The repository, its files, branches, worktrees and
+              history were not changed, and it can be added again at any time.
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {!result.ok ? (
         <DatabaseNotReady message={result.message} />
@@ -92,6 +112,9 @@ const ProjectsPage = async () => {
                           <Globe aria-hidden="true" />
                           {project.remoteName ?? 'No remote'}
                         </Badge>
+                        {project.priority !== 0 ? (
+                          <Badge variant="outline">Priority {project.priority}</Badge>
+                        ) : null}
                         <span className="text-xs text-muted-foreground">
                           Added {formatTimestamp(project.createdAt)}
                         </span>

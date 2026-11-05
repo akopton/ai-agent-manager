@@ -15,4 +15,15 @@ const NativeSelect = ({ className, ...props }: React.ComponentProps<'select'>) =
   return <select data-slot="native-select" className={cn(fieldClassName, className)} {...props} />;
 };
 
-export { Input, NativeSelect };
+/** A multi-line text field styled like `Input`. */
+const Textarea = ({ className, ...props }: React.ComponentProps<'textarea'>) => {
+  return (
+    <textarea
+      data-slot="textarea"
+      className={cn(fieldClassName, 'h-auto min-h-32 py-2 leading-6', className)}
+      {...props}
+    />
+  );
+};
+
+export { Input, NativeSelect, Textarea };

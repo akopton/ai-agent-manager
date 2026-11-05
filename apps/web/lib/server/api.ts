@@ -25,7 +25,10 @@ export const errorResponse = (
 const serviceErrorStatus = (code: ProjectServiceErrorCode): number => {
   switch (code) {
     case 'project_already_registered':
+    case 'project_has_dependents':
       return 409;
+    case 'project_not_found':
+      return 404;
     case 'repository_inspection_failed':
       return 500;
     default:
@@ -51,6 +54,15 @@ export const guardRead = (request: Request): Response | undefined => {
   return failure === undefined ? undefined : errorResponse(failure.code, failure.message, 403);
 };
 
+/**
+ * Guards a state-changing route without a request body (loopback Host and same-origin Origin).
+ * Returns a response to send when the request is rejected.
+ */
+export const guardMutation = (request: Request): Response | undefined => {
+  const failure = checkMutationRequest(request.headers);
+  return failure === undefined ? undefined : errorResponse(failure.code, failure.message, 403);
+};
+
 type ParsedBody<T> = { data: T; response?: undefined } | { data?: undefined; response: Response };
 
 /**
@@ -61,9 +73,9 @@ export const parseMutationRequest = async <T>(
   request: Request,
   schema: z.ZodType<T>,
 ): Promise<ParsedBody<T>> => {
-  const failure = checkMutationRequest(request.headers);
-  if (failure !== undefined) {
-    return { response: errorResponse(failure.code, failure.message, 403) };
+  const rejected = guardMutation(request);
+  if (rejected !== undefined) {
+    return { response: rejected };
   }
   const contentType = request.headers.get('content-type') ?? '';
   if (!/^application\/json\s*(?:;|$)/i.test(contentType)) {

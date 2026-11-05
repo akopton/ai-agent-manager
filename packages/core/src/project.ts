@@ -43,6 +43,51 @@ export const registerProjectRequestSchema = z.strictObject({
 
 export type RegisterProjectRequest = z.infer<typeof registerProjectRequestSchema>;
 
+/**
+ * Project priority for the global scheduler: a smaller number is scheduled first
+ * (`ARCHITECTURE.md` §6). New projects start at the default.
+ */
+export const projectPriorityMin = -100;
+export const projectPriorityMax = 100;
+export const projectPriorityDefault = 0;
+
+export const projectPrioritySchema = z
+  .number({ error: 'Enter a whole number.' })
+  .int('Enter a whole number.')
+  .min(projectPriorityMin, `Use a number from ${projectPriorityMin} to ${projectPriorityMax}.`)
+  .max(projectPriorityMax, `Use a number from ${projectPriorityMin} to ${projectPriorityMax}.`);
+
+export const projectInstructionsMaxLength = 10_000;
+
+/** Project-specific agent instructions; separate from global and repository instruction files. */
+export const projectInstructionsSchema = z
+  .string()
+  .trim()
+  .max(
+    projectInstructionsMaxLength,
+    `Use at most ${projectInstructionsMaxLength.toLocaleString('en')} characters.`,
+  );
+
+/**
+ * Partial update of a project's settings. The repository identity (path and common Git directory)
+ * is deliberately not editable: unknown keys are rejected. A changed base branch or remote must
+ * exist in the registered repository when the update is saved.
+ */
+export const updateProjectRequestSchema = z
+  .strictObject({
+    name: projectNameSchema.optional(),
+    priority: projectPrioritySchema.optional(),
+    instructions: projectInstructionsSchema.optional(),
+    defaultBaseBranch: projectBranchNameSchema.optional(),
+    /** `null` removes the project's remote selection. */
+    remoteName: projectRemoteNameSchema.nullable().optional(),
+  })
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: 'Change at least one setting.',
+  });
+
+export type UpdateProjectRequest = z.infer<typeof updateProjectRequestSchema>;
+
 /** A registered project. Timestamps are Unix milliseconds. */
 export const projectSchema = z.object({
   id: projectIdSchema,

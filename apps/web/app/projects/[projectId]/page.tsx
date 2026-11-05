@@ -3,14 +3,24 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, Eye, GitBranch, Globe } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Eye,
+  GitBranch,
+  Globe,
+  Pencil,
+} from 'lucide-react';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { DisconnectProjectDialog } from '@/components/projects/disconnect-project-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { ProjectDetails, RepositoryState } from '@/lib/projects/contracts';
+import { wasProjectSaved } from '@/lib/projects/feedback';
 import { describeHead, describeWorkingTree, formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
@@ -53,7 +63,10 @@ const RepositoryProblem = ({ repository }: { repository: RepositoryState }) => {
       <AlertTitle>{title}</AlertTitle>
       <AlertDescription>
         <p>{repository.message}</p>
-        <p>The project registration is unchanged. Nothing was modified on disk.</p>
+        <p>
+          The project registration is unchanged. Nothing was modified on disk. You can still edit
+          the name, priority and instructions, or disconnect the project.
+        </p>
       </AlertDescription>
     </Alert>
   );
@@ -134,9 +147,39 @@ const RepositoryCards = ({
   );
 };
 
-const ProjectPage = async ({ params }: { params: Promise<{ projectId: string }> }) => {
+const InstructionsCard = ({ instructions }: { instructions: string }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle>
+        <h2>Project instructions</h2>
+      </CardTitle>
+      <CardDescription>
+        Given to agents for every task in this project, with the global instructions and the
+        repository’s own instruction files.
+      </CardDescription>
+    </CardHeader>
+    <CardContent>
+      {instructions === '' ? (
+        <p className="text-sm text-muted-foreground">No project instructions.</p>
+      ) : (
+        <p className="rounded-lg border bg-muted/30 p-3 text-sm leading-6 break-words whitespace-pre-wrap">
+          {instructions}
+        </p>
+      )}
+    </CardContent>
+  </Card>
+);
+
+const ProjectPage = async ({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ projectId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) => {
   await connection();
   const { projectId } = await params;
+  const saved = wasProjectSaved(await searchParams);
   const result = await loadForPage(() => getProjectDetails(getDatabase(), projectId));
 
   if (!result.ok) {
@@ -158,11 +201,36 @@ const ProjectPage = async ({ params }: { params: Promise<{ projectId: string }> 
     <>
       <section aria-labelledby="page-title" className="space-y-3">
         <BackLink />
-        <h1 id="page-title" className="text-3xl font-semibold tracking-tight break-words">
-          {project.name}
-        </h1>
-        <p className="font-mono text-sm break-all text-muted-foreground">{project.localPath}</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-3">
+            <h1 id="page-title" className="text-3xl font-semibold tracking-tight break-words">
+              {project.name}
+            </h1>
+            <p className="font-mono text-sm break-all text-muted-foreground">{project.localPath}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={`/projects/${project.id}/edit`}>
+                <Pencil aria-hidden="true" />
+                Edit settings
+              </Link>
+            </Button>
+            <DisconnectProjectDialog
+              project={{ id: project.id, name: project.name, localPath: project.localPath }}
+            />
+          </div>
+        </div>
       </section>
+
+      {saved ? (
+        <Alert>
+          <CheckCircle2 aria-hidden="true" />
+          <AlertTitle>Project settings saved</AlertTitle>
+          <AlertDescription>
+            <p>The repository itself was not changed.</p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <RepositoryProblem repository={repository} />
 
@@ -206,13 +274,22 @@ const ProjectPage = async ({ params }: { params: Promise<{ projectId: string }> 
                 </Field>
               </>
             ) : null}
+            <Field label="Priority">
+              {project.priority}
+              <span className="text-muted-foreground"> (lower runs first)</span>
+            </Field>
             <Field label="Git directory">
               <span className="font-mono text-xs break-all">{project.gitCommonDir}</span>
             </Field>
             <Field label="Added">{formatTimestamp(project.createdAt)}</Field>
+            {project.updatedAt !== project.createdAt ? (
+              <Field label="Settings updated">{formatTimestamp(project.updatedAt)}</Field>
+            ) : null}
           </dl>
         </CardContent>
       </Card>
+
+      <InstructionsCard instructions={project.instructions} />
 
       {available !== undefined ? (
         <RepositoryCards project={project} repository={available} />

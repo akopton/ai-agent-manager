@@ -9,18 +9,23 @@ export type ClientError = {
 
 export type ClientResult<T> = { ok: true; data: T } | { ok: false; error: ClientError };
 
-/** POSTs JSON to a same-origin API route and validates the response with `schema`. */
-export const postJson = async <T>(
+/**
+ * Sends a request to a same-origin API route and validates the response with `schema`. A `body`
+ * is sent as JSON; without one, no body or content type is sent.
+ */
+export const requestJson = async <T>(
+  method: 'POST' | 'PATCH' | 'DELETE',
   url: string,
-  body: unknown,
   schema: z.ZodType<T>,
+  body?: unknown,
 ): Promise<ClientResult<T>> => {
   let response: Response;
   try {
     response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     });
   } catch {
     return {
@@ -51,3 +56,10 @@ export const postJson = async <T>(
       : { code: 'http_error', message: `The request failed (HTTP ${response.status}).` },
   };
 };
+
+/** POSTs JSON to a same-origin API route and validates the response with `schema`. */
+export const postJson = <T>(
+  url: string,
+  body: unknown,
+  schema: z.ZodType<T>,
+): Promise<ClientResult<T>> => requestJson('POST', url, schema, body);

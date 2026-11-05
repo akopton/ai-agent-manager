@@ -14,10 +14,11 @@ the data root, database file, and managed worktree root. M1-01 adds read-only Gi
 repository inspection in `packages/git`, and M1-02 adds the task worktree lifecycle
 (create, inspect, and safely remove locked worktrees on task branches), and M1-03 adds read-only
 change inventories and file diffs against the recorded base commit for review.
-The first Projects slice (M2-01 `projects` table and the M3-01 repository library
-basics) lets the web app register existing local Git repositories read-only, list them,
-and show live repository details; see [Projects](#projects). Editing and disconnecting
-projects, tasks, boards, scheduling, and agent runs are not implemented in the web app.
+The Projects slices (M2-01 `projects` table and the M3-01 repository library) let the
+web app register existing local Git repositories read-only, list them, show live
+repository details, edit project settings, and disconnect projects without touching the
+repository; see [Projects](#projects). Tasks, boards, scheduling, and agent runs are not
+implemented in the web app.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -40,8 +41,11 @@ repository inspection and the task worktree lifecycle (see [`packages/git/README
 
 ## Development commands
 
-Use pnpm 12.16.1, pinned in `package.json`, and Node.js matching
-`^20.19.0 || ^22.13.0 || >=24` (the web tooling requirement). The setup uses
+Use pnpm 12.16.1, pinned in `package.json`, and **Node.js 24** (declared in the root
+`package.json` `engines` field and in `.nvmrc`). The web tooling alone would accept
+`^20.19.0 || ^22.13.0 || >=24`, but Node.js 20 caused React `ArrayBuffer` compatibility
+errors in this setup, so only Node.js 24 is supported. See
+[Node.js 24 on macOS](#nodejs-24-on-macos). The setup uses
 Next.js 16.4.5 and React 19.3.1, with ESLint 9 and the matching Next.js config.
 ESLint 9 is retained because the bundled React, import, and accessibility plugins
 do not yet declare support for ESLint 10; pnpm reports ESLint 9 as deprecated.
@@ -52,6 +56,31 @@ typescript-eslint. Strict mode remains enabled for the web and PoC checks.
 pnpm install --frozen-lockfile
 pnpm list --recursive --depth -1
 pnpm dev
+```
+
+### Node.js 24 on macOS
+
+On macOS (Apple Silicon), install Node.js 24 with a version manager or Homebrew and make
+it the active `node` before running any `pnpm` command:
+
+```sh
+# nvm or fnm read .nvmrc in the repository root:
+nvm install && nvm use        # or: fnm use --install-if-missing
+
+# Homebrew: node@24 is keg-only, so put it first on PATH for this shell
+# (add the line to ~/.zshrc to make it permanent).
+brew install node@24
+export PATH="$(brew --prefix node@24)/bin:$PATH"
+
+node --version                # v24.x
+```
+
+`better-sqlite3` is a native module compiled for one Node.js ABI. After switching Node.js
+major versions (for example from 20 to 24), rebuild it, or the web app and worker fail to
+open the database with a `NODE_MODULE_VERSION` error:
+
+```sh
+pnpm rebuild better-sqlite3
 ```
 
 Apply database migrations once (and after pulling schema changes) before starting:
@@ -195,15 +224,18 @@ sample task counts or agent activity are displayed.
 
 ## Projects
 
-| Route                          | Purpose                                                  |
-| ------------------------------ | -------------------------------------------------------- |
-| `/projects`                    | Persisted project list, with empty and error states      |
-| `/projects/new`                | Check a repository path, review it, then add it          |
-| `/projects/[projectId]`        | Read-only details: HEAD, working tree, branches, remotes |
-| `GET /api/projects`            | List projects                                            |
-| `POST /api/projects/preview`   | Validate a path and describe the repository (no writes)  |
-| `POST /api/projects`           | Register a repository                                    |
-| `GET /api/projects/:projectId` | Project plus live, read-only repository information      |
+| Route                             | Purpose                                                        |
+| --------------------------------- | -------------------------------------------------------------- |
+| `/projects`                       | Persisted project list, with empty and error states            |
+| `/projects/new`                   | Check a repository path, review it, then add it                |
+| `/projects/[projectId]`           | Details (HEAD, working tree, branches, remotes); disconnect    |
+| `/projects/[projectId]/edit`      | Edit name, priority, instructions, base branch and remote      |
+| `GET /api/projects`               | List projects                                                  |
+| `POST /api/projects/preview`      | Validate a path and describe the repository (no writes)        |
+| `POST /api/projects`              | Register a repository                                          |
+| `GET /api/projects/:projectId`    | Project plus live, read-only repository information            |
+| `PATCH /api/projects/:projectId`  | Update settings (partial); the repository path is not editable |
+| `DELETE /api/projects/:projectId` | Disconnect: remove the project record only                     |
 
 Registration accepts an absolute path or one starting with `~/`, anywhere on the local
 filesystem. The server canonicalizes it (symlinks resolved) and requires the root of a
@@ -218,11 +250,29 @@ functions from `packages/git` (no fetch, checkout, branch, worktree, commit, or 
 writes). Registration re-inspects the path instead of trusting the preview, and the
 details view inspects only the stored canonical path.
 
+Editing changes only the stored settings. Priority is an integer from -100 to 100
+(default 0); lower numbers are scheduled first. Project instructions hold up to 10,000
+characters and are kept separate from global instructions and from the repository's own
+instruction files. The canonical path and common Git directory never change: to use a
+repository at a new location, disconnect the project and add it again. A changed base
+branch or remote must exist in the live repository at the registered path; if the
+repository is missing, moved, inaccessible, or replaced by a different repository, the
+request fails with a clear error, while name, priority, and instructions stay editable.
+
+Disconnecting asks for confirmation and deletes only the project row in SQLite. It never
+inspects or touches the repository: files, uncommitted changes, branches, worktrees,
+remotes, Git configuration, and history stay as they are, and the repository can be
+registered again afterwards. It fails closed with `project_has_dependents` (HTTP 409) if
+any table declares a foreign key to `projects` and still has rows for the project; no
+such tables exist yet, so future tasks, runs, and workspaces are covered automatically
+instead of being removed by a cascade.
+
 Request handling (`apps/web/lib/server`): request bodies are validated with Zod and
 errors use `{ error: { code, message, details? } }`. `proxy.ts` rejects requests whose
-`Host` is not a loopback address (DNS rebinding). `POST` routes also require JSON and
-an `Origin` header equal to the app's own origin, so other websites cannot use the
-browser to reach them; non-browser clients must send that header explicitly.
+`Host` is not a loopback address (DNS rebinding). `POST`, `PATCH`, and `DELETE` routes
+also require an `Origin` header equal to the app's own origin (and `POST`/`PATCH` require
+JSON), so other websites cannot use the browser to reach them; non-browser clients must
+send that header explicitly.
 
 To try it with a disposable repository and database:
 

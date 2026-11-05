@@ -6,15 +6,20 @@ import {
   type Project,
   type ProjectRegistrationErrorCode,
   type RegisterProjectRequest,
+  type UpdateProjectRequest,
 } from '@ai-agent-manager/core';
 import {
+  deleteProject,
   findProjectById,
   findProjectByRepository,
   insertProject,
   listProjects as listProjectRecords,
   ProjectConflictError,
+  ProjectHasDependentsError,
+  updateProject as updateProjectRecord,
   type DatabaseConnection,
   type ProjectRecord,
+  type ProjectSettingsUpdate,
 } from '@ai-agent-manager/database';
 import {
   GitCommandError,
@@ -31,12 +36,19 @@ import type {
   WorkingTreeSummary,
 } from '@/lib/projects/contracts';
 
-// Project registration composes read-only Git inspection with the project table. Nothing here
-// writes to the repository: inspection runs only read-only Git queries (see packages/git).
+// Project registration, editing and disconnecting compose read-only Git inspection with the project
+// table. Nothing here writes to the repository: inspection runs only read-only Git queries (see
+// packages/git), and disconnecting removes only the database record.
 
 type Database = DatabaseConnection['db'];
 
-export type ProjectServiceErrorCode = ProjectRegistrationErrorCode | 'repository_inspection_failed';
+export type ProjectServiceErrorCode =
+  | ProjectRegistrationErrorCode
+  | 'repository_inspection_failed'
+  | 'repository_unavailable'
+  | 'repository_identity_changed'
+  | 'project_not_found'
+  | 'project_has_dependents';
 
 export class ProjectServiceError extends Error {
   override name = 'ProjectServiceError';
@@ -67,6 +79,9 @@ const resolveInputPath = (input: string): string => {
   }
   return expanded;
 };
+
+const projectNotFoundError = (): ProjectServiceError =>
+  new ProjectServiceError('project_not_found', 'The project does not exist.');
 
 const invalidRepositoryError = (inspection: InvalidInspection): ProjectServiceError => {
   switch (inspection.reason) {
@@ -216,6 +231,24 @@ export const previewProject = async (db: Database, path: string): Promise<Reposi
   };
 };
 
+const assertBranchExists = (branches: readonly string[], branch: string): void => {
+  if (!branches.includes(branch)) {
+    throw new ProjectServiceError(
+      'base_branch_not_found',
+      `The branch “${branch}” does not exist locally in this repository. Choose an existing branch.`,
+    );
+  }
+};
+
+const assertRemoteExists = (remotes: readonly RemoteView[], remote: string): void => {
+  if (!remotes.some(({ name }) => name === remote)) {
+    throw new ProjectServiceError(
+      'remote_not_found',
+      `The remote “${remote}” is not configured in this repository. Choose an existing remote or no remote.`,
+    );
+  }
+};
+
 const duplicateError = (existing: ProjectRecord): ProjectServiceError =>
   new ProjectServiceError(
     'project_already_registered',
@@ -238,20 +271,10 @@ export const registerProject = async (
   { now = Date.now, createId = randomUUID }: RegisterProjectOptions = {},
 ): Promise<Project> => {
   const inspection = await inspectEligibleRepository(request.path);
-  if (!inspection.branches.some(({ name }) => name === request.defaultBaseBranch)) {
-    throw new ProjectServiceError(
-      'base_branch_not_found',
-      `The branch “${request.defaultBaseBranch}” does not exist locally in this repository. Choose an existing branch.`,
-    );
-  }
-  if (
-    request.remoteName !== null &&
-    !inspection.remotes.some(({ name }) => name === request.remoteName)
-  ) {
-    throw new ProjectServiceError(
-      'remote_not_found',
-      `The remote “${request.remoteName}” is not configured in this repository. Choose an existing remote or no remote.`,
-    );
+  const branches = inspection.branches.map(({ name }) => name);
+  assertBranchExists(branches, request.defaultBaseBranch);
+  if (request.remoteName !== null) {
+    assertRemoteExists(inspection.remotes.map(toRemoteView), request.remoteName);
   }
 
   const identity = repositoryIdentity(inspection);
@@ -343,4 +366,131 @@ export const getProjectDetails = async (
     return undefined;
   }
   return { project: toProject(record), repository: await inspectRegisteredRepository(record) };
+};
+
+type AvailableRepository = Extract<RepositoryState, { status: 'available' }>;
+
+/**
+ * Inspects the registered repository (stored canonical path only) and requires it to be the same,
+ * usable repository. Used before saving a changed base branch or remote.
+ */
+const requireRegisteredRepository = async (record: ProjectRecord): Promise<AvailableRepository> => {
+  const state = await inspectRegisteredRepository(record);
+  const suffix = 'The base branch and remote cannot be changed until this is resolved.';
+  switch (state.status) {
+    case 'available':
+      return state;
+    case 'unavailable':
+      throw new ProjectServiceError(
+        state.code === 'path_not_accessible' ? 'path_not_accessible' : 'repository_unavailable',
+        `${state.message} ${suffix}`,
+      );
+    case 'identity_changed':
+      throw new ProjectServiceError('repository_identity_changed', `${state.message} ${suffix}`);
+    case 'inspection_failed':
+      throw new ProjectServiceError('repository_inspection_failed', state.message);
+  }
+};
+
+/** Keeps only the fields whose value differs from the stored record. */
+const changedSettings = (
+  record: ProjectRecord,
+  request: UpdateProjectRequest,
+): ProjectSettingsUpdate => {
+  const changes: ProjectSettingsUpdate = {};
+  if (request.name !== undefined && request.name !== record.name) {
+    changes.name = request.name;
+  }
+  if (request.priority !== undefined && request.priority !== record.priority) {
+    changes.priority = request.priority;
+  }
+  if (request.instructions !== undefined && request.instructions !== record.instructions) {
+    changes.instructions = request.instructions;
+  }
+  if (
+    request.defaultBaseBranch !== undefined &&
+    request.defaultBaseBranch !== record.defaultBaseBranch
+  ) {
+    changes.defaultBaseBranch = request.defaultBaseBranch;
+  }
+  if (request.remoteName !== undefined && request.remoteName !== record.remoteName) {
+    changes.remoteName = request.remoteName;
+  }
+  return changes;
+};
+
+export type UpdateProjectOptions = { now?: () => number };
+
+/**
+ * Updates a project's settings. The repository identity (canonical path and common Git directory)
+ * never changes. A changed base branch or remote is checked against the live registered repository
+ * first; unchanged values are not re-checked, so a moved repository can still be renamed. Saving
+ * values identical to the stored ones is a no-op. The repository is never modified.
+ */
+export const updateProject = async (
+  db: Database,
+  id: string,
+  request: UpdateProjectRequest,
+  { now = Date.now }: UpdateProjectOptions = {},
+): Promise<Project> => {
+  const parsedId = projectIdSchema.safeParse(id);
+  const record = parsedId.success ? findProjectById(db, parsedId.data) : undefined;
+  if (record === undefined) {
+    throw projectNotFoundError();
+  }
+
+  const changes = changedSettings(record, request);
+  if (Object.keys(changes).length === 0) {
+    return toProject(record);
+  }
+  if (
+    changes.defaultBaseBranch !== undefined ||
+    (changes.remoteName !== undefined && changes.remoteName !== null)
+  ) {
+    const repository = await requireRegisteredRepository(record);
+    if (changes.defaultBaseBranch !== undefined) {
+      assertBranchExists(repository.branches, changes.defaultBaseBranch);
+    }
+    if (changes.remoteName !== undefined && changes.remoteName !== null) {
+      assertRemoteExists(repository.remotes, changes.remoteName);
+    }
+  }
+
+  const updated = updateProjectRecord(db, record.id, changes, now());
+  if (updated === undefined) {
+    // Disconnected while the repository was being inspected.
+    throw projectNotFoundError();
+  }
+  return toProject(updated);
+};
+
+export type DisconnectedProject = Pick<Project, 'id' | 'name'>;
+
+/**
+ * Removes a project from the application. Only the database record is deleted: the repository,
+ * its files, branches, worktrees, configuration and history are not touched, and the repository is
+ * not even inspected. Fails without deleting anything while other records reference the project.
+ */
+export const disconnectProject = (db: Database, id: string): DisconnectedProject => {
+  const parsedId = projectIdSchema.safeParse(id);
+  if (!parsedId.success) {
+    throw projectNotFoundError();
+  }
+  let removed: ProjectRecord | undefined;
+  try {
+    removed = deleteProject(db, parsedId.data);
+  } catch (error) {
+    if (error instanceof ProjectHasDependentsError) {
+      throw new ProjectServiceError(
+        'project_has_dependents',
+        'This project still has tasks or other records in AI Agent Manager, so it was not disconnected. Resolve them first.',
+        { dependents: error.dependents },
+      );
+    }
+    throw error;
+  }
+  if (removed === undefined) {
+    throw projectNotFoundError();
+  }
+  return { id: removed.id, name: removed.name };
 };

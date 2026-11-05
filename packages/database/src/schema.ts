@@ -12,7 +12,7 @@ export const projects = sqliteTable('projects', {
   gitCommonDir: text('git_common_dir').notNull().unique(),
   remoteName: text('remote_name'),
   defaultBaseBranch: text('default_base_branch').notNull(),
-  // Ordering semantics are defined together with the scheduler (M2-03).
+  // Smaller numbers are scheduled first (ARCHITECTURE §6); the range is validated in `core`.
   priority: integer('priority').notNull().default(0),
   instructions: text('instructions').notNull().default(''),
   createdAt: integer('created_at').notNull(),

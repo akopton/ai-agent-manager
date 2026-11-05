@@ -104,7 +104,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M3 — Projects and Kanban slice
 
 **M3-01 — Repository library**
-*(2026-11-05, first slice: read-only preview and registration, persisted list and read-only details view; invalid paths and duplicates are rejected. Edit, disconnect, priority/instructions editing, task counts and the SEC-02 `execution_trust` fields remain open. The project REST routes follow M3-03 validation and Origin rules.)*
+*(2026-11-05, first slice: read-only preview and registration, persisted list and read-only details view; invalid paths and duplicates are rejected. Second slice: editing of name, priority, instructions, base branch and remote (`PATCH /api/projects/:id`, branch/remote checked against the live repository) and disconnect (`DELETE /api/projects/:id`, removes only the project record; fails closed with `project_has_dependents` while any table references the project). Open: task counts and the warning/decision flow for tasks and retained worktrees (need the M2-01 `tasks`/`workspaces` tables), and the SEC-02 `execution_trust` fields. The project REST routes follow M3-03 validation and Origin rules.)*
 - Create/list/edit/disconnect project entries with canonical local Git path, remote, default base branch, priority and instructions.
 - Reject missing or invalid paths; prevent duplicate connections to the same repository.
 - Disconnect must not delete source repositories or retained worktrees.

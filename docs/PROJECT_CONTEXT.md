@@ -47,6 +47,7 @@ The tool's own source may be hosted on GitHub while managed repositories may liv
 The owner develops on macOS using VS Code. During the conversation:
 
 - Git, Node.js, and `pnpm` were installed and working (Node.js was observed at `v20.20.2`, pnpm at `12.16.1`). Confirm current versions before relying on them; these observations are not dependency constraints.
+- *(2026-11-05)* Node.js 20 caused React `ArrayBuffer` compatibility errors in the web app. The supported runtime is now **Node.js 24** (root `package.json` `engines` and `.nvmrc`; on macOS Apple Silicon via a version manager or Homebrew `node@24`). After switching Node.js major versions, `pnpm rebuild better-sqlite3` is required.
 - The Claude and Codex CLI tools were installed and authenticated using the owner's accounts.
 - Local development directories were reported under `~/repos/`, with `ai-agent-manager`, `agent-test-repo`, and a sibling `.agent-worktrees/` directory. **Do not hardcode these user-specific paths into production code.**
 - The test repo was linked to GitHub; unrelated repositories may use Gitea. Git authentication is supplied by the owner's local Git configuration.

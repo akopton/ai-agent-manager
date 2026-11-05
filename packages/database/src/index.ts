@@ -19,12 +19,17 @@ export {
 } from './directories.js';
 export { applyMigrations } from './migrations.js';
 export {
+  deleteProject,
   findProjectById,
   findProjectByRepository,
   insertProject,
   listProjects,
   ProjectConflictError,
+  ProjectHasDependentsError,
+  updateProject,
   type NewProjectRecord,
+  type ProjectDependent,
   type ProjectRecord,
+  type ProjectSettingsUpdate,
 } from './projects.js';
 export { projects, schema } from './schema.js';
