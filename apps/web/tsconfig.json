@@ -9,6 +9,7 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
+    "customConditions": ["@ai-agent-manager/source"],
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",

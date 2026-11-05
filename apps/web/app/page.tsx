@@ -1,4 +1,5 @@
-import { Columns3, FolderGit2, LayoutDashboard, Plus } from 'lucide-react';
+import Link from 'next/link';
+import { Columns3, LayoutDashboard, Plus } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,12 +13,6 @@ import {
 } from '@/components/ui/card';
 
 const plannedAreas = [
-  {
-    title: 'Projects',
-    icon: FolderGit2,
-    description: 'Keep your local repositories in one place.',
-    detail: 'Connect a repository to give each project its own space for tasks and reviews.',
-  },
   {
     title: 'Project boards',
     icon: Columns3,
@@ -59,17 +54,19 @@ const HomePage = () => (
         </CardTitle>
         <CardDescription className="max-w-2xl leading-6">
           Coordinate work across local repositories and review agent changes before publishing.
-          Project setup and task management are coming next.
+          Start by adding a local repository; task management is coming next.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-4">
-        <Button disabled size="lg" aria-describedby="project-setup-note">
-          <Plus aria-hidden="true" />
-          Add project
+        <Button asChild size="lg">
+          <Link href="/projects/new">
+            <Plus aria-hidden="true" />
+            Add project
+          </Link>
         </Button>
-        <p id="project-setup-note" className="text-xs text-muted-foreground">
-          Project setup is not available yet.
-        </p>
+        <Button asChild size="lg" variant="outline">
+          <Link href="/projects">View projects</Link>
+        </Button>
       </CardContent>
     </Card>
 
@@ -77,7 +74,7 @@ const HomePage = () => (
       <h2 id="planned-areas" className="text-sm font-semibold">
         Coming next
       </h2>
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-2">
         {plannedAreas.map(({ title, icon: Icon, description, detail }) => (
           <Card key={title} className="h-full">
             <CardHeader className="gap-3">

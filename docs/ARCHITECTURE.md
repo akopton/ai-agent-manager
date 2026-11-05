@@ -540,6 +540,7 @@ Illustrative route surface (final endpoints and exact payloads will be refined d
 | Method | Route | Purpose |
 |---|---|---|
 | `GET/POST` | `/api/projects` | List / connect local repositories |
+| `POST` | `/api/projects/preview` | Validate a path and describe the repository before connecting (read-only) |
 | `GET/PATCH/DELETE` | `/api/projects/:id` | Details, update, disconnect (without deleting repo) |
 | `GET/POST` | `/api/projects/:id/tasks` | Project board and task creation |
 | `GET/PATCH` | `/api/tasks/:id` | Task details and editing |

@@ -199,6 +199,15 @@ importers:
 
   apps/web:
     dependencies:
+      '@ai-agent-manager/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@ai-agent-manager/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@ai-agent-manager/git':
+        specifier: workspace:*
+        version: link:../../packages/git
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -226,6 +235,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
     devDependencies:
       '@tailwindcss/postcss':
         specifier: 4.3.4
@@ -245,6 +257,9 @@ importers:
       tailwindcss:
         specifier: 4.3.4
         version: 4.3.4
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: 6.0.3
         version: 6.0.3

@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { Columns3, FolderGit2, LayoutDashboard, Monitor } from 'lucide-react';
+import { Monitor } from 'lucide-react';
 
+import { MainNav } from '@/components/main-nav';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 
 export const AppShell = ({ children }: { children: ReactNode }) => (
   <div className="min-h-svh bg-muted/30 md:grid md:grid-cols-[15rem_1fr]">
@@ -26,27 +25,7 @@ export const AppShell = ({ children }: { children: ReactNode }) => (
           <p className="mt-0.5 text-xs text-muted-foreground">Your local workspace</p>
         </div>
       </div>
-      <nav aria-label="Main navigation" className="space-y-1 px-3 pb-5">
-        <p className="px-3 pt-2 pb-3 text-xs font-medium tracking-wider text-muted-foreground uppercase">
-          Workspace
-        </p>
-        <Button asChild variant="secondary" className="h-10 w-full justify-start gap-3">
-          <Link href="/" aria-current="page">
-            <LayoutDashboard aria-hidden="true" />
-            Overview
-          </Link>
-        </Button>
-        <Button variant="ghost" disabled className="h-10 w-full justify-start gap-3">
-          <FolderGit2 aria-hidden="true" />
-          Projects
-          <span className="ml-auto text-xs">Soon</span>
-        </Button>
-        <Button variant="ghost" disabled className="h-10 w-full justify-start gap-3">
-          <Columns3 aria-hidden="true" />
-          Project boards
-          <span className="ml-auto text-xs">Soon</span>
-        </Button>
-      </nav>
+      <MainNav />
       <div className="mt-auto hidden border-t px-5 py-5 text-xs text-muted-foreground md:block">
         <div className="flex items-center gap-2">
           <Monitor className="size-3.5" aria-hidden="true" />

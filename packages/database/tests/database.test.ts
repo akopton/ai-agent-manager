@@ -78,21 +78,21 @@ test('creates a file, configures SQLite, performs typed CRUD, and persists acros
   }
 });
 
-test('applies versioned foundation migrations once without creating application tables', () => {
+test('applies versioned migrations once and creates only the expected application tables', () => {
   const directory = mkdtempSync(join(tmpdir(), 'ai-agent-manager-migrations-'));
   try {
     const connection = createDatabase({ path: join(directory, 'database.sqlite') });
     try {
       applyMigrations(connection);
       const firstRun = connection.db.all(sql`SELECT * FROM __drizzle_migrations`);
-      assert.equal(firstRun.length, 1);
+      assert.equal(firstRun.length, 2);
       applyMigrations(connection);
       assert.deepEqual(connection.db.all(sql`SELECT * FROM __drizzle_migrations`), firstRun);
       assert.deepEqual(
         connection.db.all(
-          sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+          sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
         ),
-        [{ name: '__drizzle_migrations' }],
+        [{ name: '__drizzle_migrations' }, { name: 'projects' }],
       );
     } finally {
       connection.close();

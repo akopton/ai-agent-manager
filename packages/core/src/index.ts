@@ -79,3 +79,21 @@ export {
   type StrictIsolatedPolicyInput,
   type TrustedLocalPolicy,
 } from './security-policy.js';
+export {
+  previewProjectRequestSchema,
+  projectBranchNameSchema,
+  projectIdSchema,
+  projectNameMaxLength,
+  projectNameSchema,
+  projectRegistrationErrorCodes,
+  projectRegistrationErrorCodeSchema,
+  projectRemoteNameSchema,
+  projectSchema,
+  registerProjectRequestSchema,
+  repositoryPathInputSchema,
+  type PreviewProjectRequest,
+  type Project,
+  type ProjectId,
+  type ProjectRegistrationErrorCode,
+  type RegisterProjectRequest,
+} from './project.js';

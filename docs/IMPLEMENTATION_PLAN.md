@@ -84,6 +84,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M2 — Persistence and domain logic
 
 **M2-01 — Drizzle and SQLite**
+*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`). The other core tables remain open.)*
 - Implement migrations, foreign keys, WAL mode and `busy_timeout` for both processes.
 - Create core tables: `projects`, `tasks`, `task_runs`, `workspaces`, `run_events`, `reviews`, `git_operations`, `scheduler_settings`; add command/lease storage when finalized.
 - Keep SQLite user data out of Git; commit migrations and schema source.
@@ -103,6 +104,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M3 — Projects and Kanban slice
 
 **M3-01 — Repository library**
+*(2026-11-05, first slice: read-only preview and registration, persisted list and read-only details view; invalid paths and duplicates are rejected. Edit, disconnect, priority/instructions editing, task counts and the SEC-02 `execution_trust` fields remain open. The project REST routes follow M3-03 validation and Origin rules.)*
 - Create/list/edit/disconnect project entries with canonical local Git path, remote, default base branch, priority and instructions.
 - Reject missing or invalid paths; prevent duplicate connections to the same repository.
 - Disconnect must not delete source repositories or retained worktrees.

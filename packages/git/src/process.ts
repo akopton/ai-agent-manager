@@ -134,9 +134,14 @@ const buildEnvironment = (
 ): NodeJS.ProcessEnv => {
   // Drop inherited GIT_* variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_*, ...) so the
   // caller's environment cannot redirect inspection to another repository or inject config.
-  const env: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')),
-  );
+  // Copying `process.env` (rather than rebuilding it with `Object.fromEntries`) keeps the
+  // `ProcessEnv` type valid under framework augmentations such as Next.js's required `NODE_ENV`.
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const name of Object.keys(env)) {
+    if (name.startsWith('GIT_')) {
+      delete env[name];
+    }
+  }
   const config = [...baseConfig, ...extraConfig];
   config.forEach(([key, value], index) => {
     env[`GIT_CONFIG_KEY_${index}`] = key;
