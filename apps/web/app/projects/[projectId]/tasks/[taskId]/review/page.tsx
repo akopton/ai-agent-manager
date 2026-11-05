@@ -104,7 +104,7 @@ const PendingChangeRequest = ({ review }: { review: TaskReviewView }) => {
           </Link>
           ; it continues in this worktree from the changes shown below, with your feedback.
         </p>
-        <p className="mt-2 rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap text-foreground">
+        <p className="mt-2 rounded-lg border bg-inset p-3 break-words whitespace-pre-wrap text-foreground">
           {pending.feedback}
         </p>
       </AlertDescription>
@@ -241,7 +241,7 @@ const RunDetails = ({ review }: { review: TaskReviewView }) => {
             <p className="text-xs text-muted-foreground">
               As reported by the agent at the end of the run. Not verified.
             </p>
-            <p className="rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap">
+            <p className="rounded-lg border bg-inset p-3 break-words whitespace-pre-wrap">
               {run.summary}
             </p>
           </div>
@@ -294,10 +294,8 @@ const ChangesSection = ({ review }: { review: TaskReviewView }) => {
           <>
             <p>
               {changes.totalFiles} {changes.totalFiles === 1 ? 'file' : 'files'} changed ·{' '}
-              <span className="text-emerald-700 dark:text-emerald-400">
-                +{changes.totals.additions}
-              </span>{' '}
-              <span className="text-red-700 dark:text-red-400">−{changes.totals.deletions}</span>
+              <span className="text-success">+{changes.totals.additions}</span>{' '}
+              <span className="text-destructive">−{changes.totals.deletions}</span>
               {changes.ignoredCount > 0 ? (
                 <span className="text-muted-foreground">
                   {' '}

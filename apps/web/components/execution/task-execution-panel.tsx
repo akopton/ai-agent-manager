@@ -171,7 +171,7 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
                 prompt and this feedback. The worktree is re-verified before launch; if it was
                 moved, switched or committed to, the run is refused and nothing is reset.
               </p>
-              <p className="mt-2 rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap text-foreground">
+              <p className="mt-2 rounded-lg border bg-inset p-3 break-words whitespace-pre-wrap text-foreground">
                 {pendingChangeRequest.feedback}
               </p>
             </AlertDescription>
@@ -269,7 +269,7 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
               </Field>
             </dl>
             {latest.summary !== null ? (
-              <p className="rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap">
+              <p className="rounded-lg border bg-inset p-3 break-words whitespace-pre-wrap">
                 {latest.summary}
               </p>
             ) : null}

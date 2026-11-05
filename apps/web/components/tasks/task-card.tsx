@@ -18,12 +18,15 @@ type TaskCardProps = { task: Task; projectDefaultBranch: string };
 export const TaskCard = ({ task, projectDefaultBranch }: TaskCardProps) => (
   <article
     aria-labelledby={`task-${task.id}-title`}
-    className="space-y-2.5 rounded-lg border bg-card p-3 text-sm shadow-xs"
+    className="space-y-3 rounded-lg border bg-elevated p-3 text-sm transition-colors hover:border-border-strong"
   >
-    <h4 id={`task-${task.id}-title`} className="leading-5 font-medium break-words">
+    <h4
+      id={`task-${task.id}-title`}
+      className="text-[0.9375rem] leading-5 font-medium break-words text-foreground"
+    >
       <Link
         href={taskUrl(task.projectId, task.id)}
-        className="rounded-sm hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+        className="rounded-sm underline-offset-4 hover:text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
       >
         {task.title}
       </Link>

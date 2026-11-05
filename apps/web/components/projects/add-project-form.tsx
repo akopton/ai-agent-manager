@@ -223,7 +223,7 @@ export const AddProjectForm = () => {
           <CardDescription>Confirm the details below to add this project.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-muted/30 p-4 text-sm sm:grid-cols-[10rem_1fr]">
+          <dl className="grid gap-x-6 gap-y-3 rounded-lg border bg-inset p-4 text-sm sm:grid-cols-[10rem_1fr]">
             <dt className="text-muted-foreground">Repository root</dt>
             <dd className="font-mono text-xs break-all">{preview.path}</dd>
             <dt className="text-muted-foreground">Current HEAD</dt>

@@ -1,5 +1,6 @@
 import { taskStatusLabels, type Task, type TaskStatus } from '@ai-agent-manager/core';
 
+import { taskStatusDotClassName } from '@/components/tasks/task-badges';
 import { TaskCard } from '@/components/tasks/task-card';
 import { cn } from '@/lib/utils';
 import {
@@ -31,26 +32,32 @@ const BoardColumn = ({ status, tasks, projectDefaultBranch, compact = false }: C
   <section
     aria-labelledby={`column-${status}`}
     className={cn(
-      'flex min-w-0 flex-col gap-3 rounded-xl border bg-muted/40 p-3',
-      compact ? undefined : 'min-h-48 snap-start',
+      'flex min-w-0 flex-col gap-3 rounded-xl border p-3',
+      compact ? 'bg-card/50' : 'min-h-48 snap-start bg-card',
     )}
   >
-    <header className="flex items-baseline justify-between gap-2">
-      <div className="min-w-0">
-        <h3 id={`column-${status}`} className="text-sm font-semibold">
-          {taskStatusLabels[status]}
-        </h3>
+    <header className="flex items-start justify-between gap-2 px-0.5">
+      <div className="min-w-0 space-y-0.5">
+        <div className="flex items-center gap-2">
+          <span
+            className={cn('size-1.5 shrink-0 rounded-full', taskStatusDotClassName[status])}
+            aria-hidden="true"
+          />
+          <h3 id={`column-${status}`} className="text-sm font-semibold">
+            {taskStatusLabels[status]}
+          </h3>
+        </div>
         <p className="text-xs text-muted-foreground">{columnDescriptions[status]}</p>
       </div>
       <span
-        className="rounded-full bg-background px-2 py-0.5 text-xs font-medium tabular-nums"
+        className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground tabular-nums"
         aria-label={`${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'}`}
       >
         {tasks.length}
       </span>
     </header>
     {tasks.length === 0 ? (
-      <p className="text-xs text-muted-foreground">No tasks</p>
+      <p className="px-0.5 text-xs text-muted-foreground/80">No tasks</p>
     ) : (
       <ul className="space-y-2">
         {tasks.map((task) => (
@@ -77,7 +84,7 @@ export const TaskBoard = ({ tasks, projectDefaultBranch }: TaskBoardProps) => {
       <div
         role="group"
         aria-label="Main flow"
-        className="-mx-6 grid snap-x auto-cols-[minmax(15rem,80%)] grid-flow-col gap-3 overflow-x-auto px-6 pb-2 sm:auto-cols-[minmax(15rem,45%)] lg:mx-0 lg:grid-flow-row lg:grid-cols-5 lg:overflow-visible lg:px-0"
+        className="-mx-6 grid snap-x scroll-px-6 auto-cols-[minmax(15rem,80%)] grid-flow-col gap-3 overflow-x-auto px-6 pb-2 sm:auto-cols-[minmax(15rem,45%)] lg:mx-0 lg:grid-flow-row lg:grid-cols-5 lg:scroll-px-0 lg:overflow-visible lg:px-0"
       >
         {primaryBoardStatuses.map((status) => (
           <BoardColumn

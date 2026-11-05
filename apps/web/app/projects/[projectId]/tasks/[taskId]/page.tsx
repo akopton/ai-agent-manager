@@ -126,7 +126,7 @@ const TaskPage = async ({
       </section>
 
       {feedback !== undefined ? (
-        <Alert>
+        <Alert variant="success">
           <CheckCircle2 aria-hidden="true" />
           <AlertTitle>{feedbackMessages[feedback].title}</AlertTitle>
           <AlertDescription>
@@ -159,7 +159,7 @@ const TaskPage = async ({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="rounded-lg border bg-muted/30 p-3 font-mono text-sm leading-6 break-words whitespace-pre-wrap">
+          <p className="rounded-lg border bg-inset p-3 font-mono text-sm leading-6 break-words whitespace-pre-wrap">
             {task.prompt}
           </p>
         </CardContent>

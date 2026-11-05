@@ -167,7 +167,7 @@ const InstructionsCard = ({ instructions }: { instructions: string }) => (
       {instructions === '' ? (
         <p className="text-sm text-muted-foreground">No project instructions.</p>
       ) : (
-        <p className="rounded-lg border bg-muted/30 p-3 text-sm leading-6 break-words whitespace-pre-wrap">
+        <p className="rounded-lg border bg-inset p-3 text-sm leading-6 break-words whitespace-pre-wrap">
           {instructions}
         </p>
       )}
@@ -246,7 +246,7 @@ const ProjectPage = async ({
       </section>
 
       {saved ? (
-        <Alert>
+        <Alert variant="success">
           <CheckCircle2 aria-hidden="true" />
           <AlertTitle>Project settings saved</AlertTitle>
           <AlertDescription>

@@ -71,7 +71,7 @@ const ProjectsPage = async ({
       </section>
 
       {disconnectedName !== undefined ? (
-        <Alert>
+        <Alert variant="success">
           <CheckCircle2 aria-hidden="true" />
           <AlertTitle>“{disconnectedName}” was disconnected</AlertTitle>
           <AlertDescription>
@@ -111,7 +111,7 @@ const ProjectsPage = async ({
                 href={`/projects/${project.id}`}
                 className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
               >
-                <Card className="transition-colors group-hover:bg-muted/40">
+                <Card className="transition-colors group-hover:bg-elevated group-hover:ring-border-strong">
                   <CardContent className="flex items-center gap-4">
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
                       <FolderGit2 className="size-5 text-muted-foreground" aria-hidden="true" />

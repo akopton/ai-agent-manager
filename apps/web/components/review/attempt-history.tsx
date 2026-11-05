@@ -71,7 +71,7 @@ export const AttemptHistory = ({ attempts, decisions }: AttemptHistoryProps) => 
                         ? ` · addressed by attempt ${decision.followUpAttempt}`
                         : ' · waiting for an explicit Start'}
                     </p>
-                    <p className="rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap">
+                    <p className="rounded-lg border bg-inset p-3 break-words whitespace-pre-wrap">
                       {decision.feedback}
                     </p>
                   </div>

@@ -109,7 +109,7 @@ export const PublicationStatus = ({ projectId, taskId, publication }: Publicatio
             </AlertDescription>
           </Alert>
         ) : publication.status === 'pushed' ? (
-          <Alert>
+          <Alert variant="success">
             <CheckCircle2 aria-hidden="true" />
             <AlertTitle>Committed and pushed</AlertTitle>
             <AlertDescription>

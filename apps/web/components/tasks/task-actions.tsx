@@ -64,7 +64,8 @@ export const TaskActions = ({ projectId, task, size = 'default' }: TaskActionsPr
               key={action}
               type="button"
               size={size}
-              variant={action === 'queue' ? 'default' : 'outline'}
+              // Compact board cards keep the task title as the primary element.
+              variant={action === 'queue' ? (size === 'sm' ? 'secondary' : 'default') : 'outline'}
               disabled={pending !== null}
               onClick={() => void run(action)}
               aria-label={`${userTaskActionLabels[action]}: ${task.title}`}

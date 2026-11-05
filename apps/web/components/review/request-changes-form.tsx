@@ -120,7 +120,7 @@ export const RequestChangesForm = ({
               </p>
             ) : null}
           </div>
-          <div className="rounded-lg border bg-muted/30 p-3 text-muted-foreground">
+          <div className="rounded-lg border bg-inset p-3 text-muted-foreground">
             <p>
               <span className="font-medium text-foreground">What happens next:</span> the task
               returns to <span className="font-medium text-foreground">Queued</span>. No agent

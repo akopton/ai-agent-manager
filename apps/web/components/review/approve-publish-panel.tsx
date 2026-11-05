@@ -167,7 +167,7 @@ export const ApprovePublishPanel = ({
         {commitMessage !== null ? (
           <div className="space-y-1">
             <p className="font-medium">Commit message</p>
-            <pre className="rounded-lg border bg-muted/30 p-3 font-mono text-xs break-words whitespace-pre-wrap">
+            <pre className="rounded-lg border bg-inset p-3 font-mono text-xs break-words whitespace-pre-wrap">
               {commitMessage}
             </pre>
           </div>
@@ -203,7 +203,7 @@ export const ApprovePublishPanel = ({
                     </li>
                   ))}
                 </ul>
-                <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="rounded-lg border bg-inset p-3">
                   <p className="font-medium">What happens</p>
                   <ul className="mt-1 list-disc space-y-1 pl-5 text-muted-foreground">
                     <li>

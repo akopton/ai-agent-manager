@@ -25,11 +25,11 @@ import { cn } from '@/lib/utils';
 const initiallyOpenFiles = 8;
 
 const changeBadgeStyles: Readonly<Record<string, string>> = {
-  Added: 'border-emerald-300 text-emerald-800 dark:text-emerald-300',
-  Untracked: 'border-emerald-300 text-emerald-800 dark:text-emerald-300',
-  Deleted: 'border-red-300 text-red-800 dark:text-red-300',
-  Renamed: 'border-sky-300 text-sky-800 dark:text-sky-300',
-  Conflicted: 'border-amber-400 text-amber-900 dark:text-amber-300',
+  Added: 'border-success/40 text-success',
+  Untracked: 'border-success/40 text-success',
+  Deleted: 'border-destructive/40 text-destructive',
+  Renamed: 'border-info/40 text-info',
+  Conflicted: 'border-warning/50 text-warning',
 };
 
 export const FileChangeBadge = ({ file }: { file: ChangedFileView }) => {
@@ -60,8 +60,8 @@ const fileFlags = (file: ChangedFileView): string[] => {
 const LineCounts = ({ file }: { file: ChangedFileView }) =>
   file.additions === null && file.deletions === null ? null : (
     <span className="shrink-0 font-mono text-xs tabular-nums">
-      <span className="text-emerald-700 dark:text-emerald-400">+{file.additions ?? 0}</span>{' '}
-      <span className="text-red-700 dark:text-red-400">−{file.deletions ?? 0}</span>
+      <span className="text-success">+{file.additions ?? 0}</span>{' '}
+      <span className="text-destructive">−{file.deletions ?? 0}</span>
     </span>
   );
 
@@ -123,13 +123,13 @@ const FileDiff = ({ projectId, taskId, file, revision, defaultOpen, anchorId }: 
   const omitted = knownOmission ?? (state.status === 'loaded' ? state.diff.omitted : null);
 
   return (
-    <section id={anchorId} aria-label={file.path} className="scroll-mt-4 rounded-lg border">
+    <section id={anchorId} aria-label={file.path} className="scroll-mt-4 rounded-lg border bg-card">
       <h3 className="min-w-0">
         <button
           type="button"
           aria-expanded={open}
           onClick={toggle}
-          className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-t-lg px-3 py-2 text-left text-sm hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+          className="flex w-full min-w-0 flex-wrap items-center gap-2 rounded-t-lg px-3 py-2 text-left text-sm transition-colors hover:bg-hover focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           {open ? (
             <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
@@ -187,7 +187,7 @@ const FileDiff = ({ projectId, taskId, file, revision, defaultOpen, anchorId }: 
           ) : (
             <>
               {state.diff.revision !== revision ? (
-                <p className="text-xs text-amber-800 dark:text-amber-300">
+                <p className="text-xs text-warning">
                   The worktree changed after the overview was loaded. Refresh the page to inspect it
                   again.
                 </p>
@@ -212,13 +212,13 @@ type ReviewFileListProps = {
 export const ReviewFileList = ({ projectId, taskId, files, revision }: ReviewFileListProps) => (
   <div className="space-y-4">
     <nav aria-label="Changed files">
-      <ul className="divide-y rounded-lg border text-sm">
+      <ul className="divide-y rounded-lg border bg-card text-sm">
         {files.map((file, index) => (
           <li key={file.path} className="flex min-w-0 items-center gap-2 px-3 py-1.5">
             <FileChangeBadge file={file} />
             <a
               href={`#file-${index}`}
-              className="min-w-0 flex-1 font-mono text-xs break-all hover:underline"
+              className="min-w-0 flex-1 rounded-sm font-mono text-xs break-all underline-offset-4 hover:text-primary hover:underline focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               {file.path}
             </a>
