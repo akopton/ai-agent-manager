@@ -8,8 +8,11 @@ It is **not** part of the production execution path:
 
 - No production package depends on it. ESLint (`no-restricted-imports`) forbids importing it, or the
   `@ai-agent-manager/agents/diagnostics` entry point it uses, outside this package.
-- It never calls `startAgentExecution`, never builds an `ExecutionAuthorization`, and never changes
-  the shipped security profiles or the gate.
+- The `diagnostics` CLI never calls `startAgentExecution`, never builds an
+  `ExecutionAuthorization`, and never changes the shipped security profiles or the gate. The one
+  exception is the separate SEC-02e `smoke` entry point (below): it launches a real CLI only
+  through the production `authorizeTrustedLocalExecution` → `startAgentExecution` path, never
+  loads the diagnostics supervisor, and changes no profile, gate or setting.
 - The fake-CLI runner only starts executables it generated itself. Before every spawn it checks
   that the file is in the fixture's `fake-bin`, is canonical, and is byte-identical to what it
   wrote. It cannot launch a real agent CLI.
@@ -34,6 +37,22 @@ pnpm --filter @ai-agent-manager/cli-diagnostics diagnostics <command> [options]
 | `evaluate --manifest m --runtime r --scenario s --cli-version v --isolation text [--events f] [--operator-stopped-run]` | Collects evidence after an operator-performed real run and classifies it as `real_supervised`.                                                                                                                                                                                                                                        |
 | `replay --runtime r --events f (--exit-code n \| --signal SIG) [--stopped] [--explicit-model]`                          | Offline: replays captured CLI stdout through the production line splitter, parser and outcome classifier with production limits. Starts no process. Prints event types, tool names, codes and the outcome, never content.                                                                                                             |
 | `cleanup --manifest m [--include-results]`                                                                              | Removes a fixture (and optionally its results) after ownership checks.                                                                                                                                                                                                                                                                |
+
+### SEC-02e Trusted Local smoke runs
+
+```sh
+pnpm --filter @ai-agent-manager/cli-diagnostics smoke prepare --parent DIR
+pnpm --filter @ai-agent-manager/cli-diagnostics smoke run --manifest M --runtime claude|codex --check ID
+pnpm --filter @ai-agent-manager/cli-diagnostics smoke cleanup --manifest M [--include-results]
+pnpm --filter @ai-agent-manager/cli-diagnostics smoke checks
+```
+
+`run` executes exactly one fixed check against a fresh, verified smoke fixture after interactive
+approval in a terminal, with a Git integrity baseline and comparison, and writes a redacted report
+next to the manifest. It accepts no prompt, executable, argument, environment, path or policy
+input. Design, check catalog and runbook:
+[`docs/trusted-local-smoke-runs.md`](docs/trusted-local-smoke-runs.md). **Real runs need the
+owner's separate approval.**
 
 `pnpm test` (in this package or at the root) runs the automated tests. They are offline, use only
 fake CLIs and temporary repositories, and need no authenticated CLI session.

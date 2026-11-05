@@ -14,13 +14,15 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
     "test": "tsx --conditions=@ai-agent-manager/source --test tests/*.test.ts",
-    "diagnostics": "tsx --conditions=@ai-agent-manager/source src/cli.ts"
+    "diagnostics": "tsx --conditions=@ai-agent-manager/source src/cli.ts",
+    "smoke": "tsx --conditions=@ai-agent-manager/source src/smoke/main.ts"
   },
   "dependencies": {
     "@ai-agent-manager/agents": "workspace:*",
     "@ai-agent-manager/core": "workspace:*",
     "@ai-agent-manager/database": "workspace:*",
     "@ai-agent-manager/git": "workspace:*",
+    "@ai-agent-manager/orchestrator": "workspace:*",
     "zod": "4.6.7"
   },
   "devDependencies": {

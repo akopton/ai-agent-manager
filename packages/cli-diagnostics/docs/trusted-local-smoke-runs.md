@@ -1,7 +1,8 @@
 # SEC-02e: Trusted Local real CLI smoke runs (design and operator runbook)
 
-**Status:** design only, for review. The smoke runner described in §3 is **not implemented**,
-no real CLI has been run for SEC-02e, and the first supervised run is **not ready** (§9).
+**Status:** design accepted; the runner is implemented and tested offline (SEC-02e.1, see
+§3.1). **No real CLI has been run for SEC-02e.** The first supervised run waits for the owner's
+approvals (§9).
 Related: [`real-cli-verification.md`](real-cli-verification.md) (VM plan, adversarial testing,
 compatibility IDs C-01 to C-13), [`supervisor-verification-design.md`](supervisor-verification-design.md)
 (G2), `docs/ARCHITECTURE.md` §7.5, `docs/IMPLEMENTATION_PLAN.md` §9.3.
@@ -117,6 +118,84 @@ that the command line does not expose):
 - stop, timeout and output-limit checks → `stopped`, `timeout`, `output_limit_exceeded`;
 - the report contains no prompt-derived assistant text, environment values or tool inputs.
 
+### 3.1 Implementation notes (SEC-02e.1)
+
+Code: `packages/cli-diagnostics/src/smoke/` (`main.ts` entry, `cli.ts`, `runner.ts`, `fixture.ts`,
+`checks.ts`, `approval.ts`, `report.ts`), shared ownership helpers in `src/owned-directory.ts`.
+Tests: `tests/smoke.test.ts` (fake CLIs, disposable fixtures) and `tests/smoke-imports.test.ts`
+(static import graph). It differs from the design above in these points:
+
+- **Separate fixture type, not a profile flag.** `smoke prepare` writes its own prefixes
+  (`ai-agent-manager-smoke-fixture-`/`-results-`), marker (`.aam-smoke-fixture.json`) and
+  manifest (`smoke-manifest.json`). Cleanup is therefore `smoke cleanup`, not `diagnostics
+cleanup`; neither harness accepts the other's directories. Both reuse the same ownership checks.
+- **Single use.** Approval writes `run-claim.json` in the results directory; a claimed or
+  non-pristine fixture is refused. The fixture is re-verified after approval, before the claim.
+- **Confirmation token** is `<fixture-id[0:8]>/<runtime>/<check>/<last 6 of runId>`, so it binds
+  one run. `smoke run` refuses non-TTY stdin/stdout before discovery.
+- **Stop** is requested at the first structured output event (`metadata`, `message`, tool or
+  provider notice), not the first assistant message, because Claude `stream-json` may emit the
+  whole message only at the end. `SIGINT` to the runner also calls `AgentHandle.stop()`.
+- **Timeout and output-limit prompts** count to 2000 (`Do not use any tools.` appended), and the
+  output limit is 4096 bytes: 65 536 would not be reached by either CLI's event stream.
+- **Integrity identity.** The baseline is captured with `expectedRepository` (root and common Git
+  directory with their `dev`/`ino`), so a repository replaced after verification yields only an
+  incomplete baseline and nothing launches.
+- **`auth-error` (C-08)** is in the catalog as `blocked`; the runner refuses it before discovery.
+- **Not implemented:** raw stdout capture (the production launch path does not expose it; use
+  runbook §8.3 with `replay` to reproduce a `compat_failure`), and C-12 (manual `ps`).
+
+### 3.2 Terminal, interruption and failure behavior (SEC-02e.2)
+
+Verified on the owner's Mac on 2026-11-05 with a generated fake `codex` only. A Python `pty`
+harness drove the real `pnpm --filter … smoke run` command. Its `PATH` excluded the directory of
+the real CLIs, and it required `codex` to resolve to the fake and `claude` to resolve to nothing.
+The process chain is `pnpm` → `sh` → `tsx` → `node` (runner) → CLI in its own process group.
+
+| Situation                                 | Observed                                                                                                                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TTY detection and approval through `pnpm` | Works; `pass`, exit 0.                                                                                                                                                                                                      |
+| Ctrl+C at the approval prompt             | readline receives it (raw mode); the approval is cancelled, `aborted`, the CLI never starts. Before SEC-02e.2 readline only paused here.                                                                                    |
+| One Ctrl+C during the run                 | SIGINT reaches the runner; `AgentHandle.stop()`; integrity compared; `inconclusive` (operator interruption); report written; process group gone.                                                                            |
+| Second Ctrl+C                             | The runner acknowledges and ignores it. **`pnpm` exits (SIGTERM) and returns the shell prompt**, while the runner finishes in the background and still writes the report. Direct `tsx` invocation (below) keeps the output. |
+| SIGTERM to the runner                     | Same as one Ctrl+C.                                                                                                                                                                                                         |
+| Terminal closed (SIGHUP)                  | Same as one Ctrl+C; output is lost, the report is written.                                                                                                                                                                  |
+| A child in a new session (SEC-01)         | Survives the stop, as documented; the report says `process_group_only`. The group child is stopped.                                                                                                                         |
+| SIGKILL to the runner                     | Cannot be handled: the CLI keeps running in its own process group, and no report or integrity result is written. Recovery below.                                                                                            |
+
+**Recommended invocation for real runs** (no `pnpm` layer; press Ctrl+C once):
+
+```sh
+cd packages/cli-diagnostics
+./node_modules/.bin/tsx --conditions=@ai-agent-manager/source src/smoke/main.ts run \
+  --manifest "$MANIFEST" --runtime codex --check stdin-token
+```
+
+**Guarantees on interrupted or failed runs:**
+
+- An operator interruption is always `inconclusive` (or `integrity_violation`), never `pass` or
+  `compat_failure`.
+- Any exception after the fixture claim is caught. The runner then:
+  1. stops a running CLI through its handle;
+  2. attempts the integrity comparison;
+  3. writes an `inconclusive` report (`aborted` if nothing started, `integrity_violation` if one
+     was found).
+- Reports record error classes only. Messages, which can embed Git stderr, go to the terminal.
+- An interruption between approval and launch launches nothing.
+- `smoke cleanup` refuses while a claimed run has no report and its runner or CLI process may
+  still be alive (`run-claim.json` records the runner PID, `run-process.json` the CLI PID and
+  process group).
+
+**Recovery after SIGKILL or a crash without a report:**
+
+1. Read `run-process.json` in the results directory.
+2. Inspect the process group: `ps -o pid,pgid,command -g <processGroup>`.
+3. If the CLI is still alive: `kill -TERM -- -<processGroup>`. After 10 s, use `-KILL` if it is
+   still alive.
+4. Check the fixture manually with `git -C <repository> log --all --oneline` and
+   `git -C <repository> worktree list`.
+5. Record the run as `inconclusive` in the operator log.
+
 ## 4. Compatibility test matrix
 
 Run every check for both runtimes unless noted. Each run uses a **fresh** compatibility fixture.
@@ -163,22 +242,22 @@ No probe helper, credential canary, `outside/` directory, real file, real remote
 SSH key, token or copy of any private repository. The fixture uses the operator's Git binary and
 global Git config only for commands the harness runs.
 
-**Creation**
+**Creation and one run**
 
 ```sh
 SMOKE() { pnpm --silent --filter @ai-agent-manager/cli-diagnostics smoke "$@"; }
-DIAG() { pnpm --silent --filter @ai-agent-manager/cli-diagnostics diagnostics "$@"; }
 FIXTURES="$HOME/aam-fixtures"    # 0700, outside every Git repository and the app data root
 mkdir -m 700 -p "$FIXTURES"
 OUT="$(SMOKE prepare --parent "$FIXTURES")"
 MANIFEST="$(printf '%s\n' "$OUT" | sed -n 's/^Manifest: //p')"
+SMOKE run --manifest "$MANIFEST" --runtime codex --check stdin-token   # interactive approval
 ```
 
 **Cleanup** (only after the operator has inspected the fixture and exported the report):
 
 ```sh
-DIAG cleanup --manifest "$MANIFEST"                     # fixture only; keeps the report
-DIAG cleanup --manifest "$MANIFEST" --include-results   # also the results directory
+SMOKE cleanup --manifest "$MANIFEST"                     # fixture only; keeps the report
+SMOKE cleanup --manifest "$MANIFEST" --include-results   # also the results directory
 ```
 
 `cleanup` refuses unless the directory identities, prefix, marker, owner and parent all match.
@@ -209,6 +288,36 @@ place until the operator has reviewed it. Remove `$FIXTURES` itself manually whe
       without it.
 - [ ] For C-11/C-12, a second terminal is ready for the `ps` snapshots.
 - [ ] After the run: review the report, inspect the fixture, then decide on cleanup.
+
+**Terminal preflight (once per terminal application, before the first real run).** It repeats
+§3.2 in the operator's own terminal with a fake CLI. No provider is contacted.
+
+```sh
+# A fixed, new, private directory (not a generated path that could fall back to the current
+# directory). $HOME must be canonical; otherwise use its `pwd -P` form.
+PRE="$HOME/aam-smoke-preflight"
+mkdir -m 700 "$PRE" "$PRE/fixtures"   # stop here if this fails: it must not exist yet
+cd packages/cli-diagnostics
+./node_modules/.bin/tsx --conditions=@ai-agent-manager/source tests/make-smoke-fake.ts "$PRE/bin" hang
+FAKEPATH="$PRE/bin:$(dirname "$(command -v node)"):$(dirname "$(command -v pnpm)"):/usr/bin:/bin"
+PATH="$FAKEPATH" command -v codex     # must print $PRE/bin/codex
+PATH="$FAKEPATH" command -v claude    # must print nothing; otherwise stop here
+OUT="$(PATH="$FAKEPATH" ./node_modules/.bin/tsx --conditions=@ai-agent-manager/source src/smoke/main.ts prepare --parent "$PRE/fixtures")"
+M="$(printf '%s\n' "$OUT" | sed -n 's/^Manifest: //p')"
+PATH="$FAKEPATH" ./node_modules/.bin/tsx --conditions=@ai-agent-manager/source src/smoke/main.ts \
+  run --manifest "$M" --runtime codex --check stdin-token
+```
+
+Approve with the token. After `Started codex`, press Ctrl+C once. Expected output:
+
+- `Classification: inconclusive`;
+- `Integrity: clean`;
+- a report with `stopRequestedBy: "operator"`;
+- no process left: `ps -axo pid,command | grep "$PRE/bin"`.
+
+Repeat with the approval prompt, pressing Ctrl+C there: expect `aborted` and no `Started` line.
+Then remove each fixture with `smoke cleanup --manifest "$M" --include-results`, and finally
+delete the preflight directory by its literal path: `rm -r "$HOME/aam-smoke-preflight"`.
 
 **Abort the session (no further runs) when:** the CLI prompts interactively or hangs past the
 timeout; the version changes; any integrity `violation`; any file change outside the fixture is
@@ -256,13 +365,13 @@ UI, any commit or push by the application, and multiple runs per invocation.
 
 ## 9. Blockers before the first supervised run
 
-1. **Smoke runner not implemented** (§3), including the `orchestrator` dependency, the file-scoped
-   lint rule and the offline tests.
-2. **Compatibility fixture profile not implemented** (the current `prepare` fixture contains probe
-   and canary material).
-3. **Owner approvals** (§6): this design, use of existing host logins and costs, the session's
-   runtimes and checks, the smoke disclosure text.
-4. **CLI versions** re-checked against the adapters' minimums on the day of the run.
+1. ~~Smoke runner~~ and ~~compatibility fixture~~: implemented and tested offline (§3.1).
+   Terminal and interruption behavior verified with fake CLIs (§3.2).
+2. **Owner approvals** (§6): use of existing host logins and costs, the session's runtimes and
+   checks, the smoke disclosure text (`sec-02e-smoke.1`, shown in the approval prompt).
+3. **CLI versions** re-checked against the adapters' minimums on the day of the run.
 
-**Readiness: NOT READY.** After items 1–2 are implemented and reviewed and items 3–4 are recorded,
-the first run would be `codex` / `stdin-token`.
+4. **Terminal preflight** (§6) in the operator's own terminal application.
+
+**Readiness: technically ready, not approved.** After items 2–4, the first run would be
+`codex` / `stdin-token`, started with the direct `tsx` invocation (§3.2).

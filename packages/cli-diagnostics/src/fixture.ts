@@ -1,24 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
-import {
-  chmod,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-  rmdir,
-  writeFile,
-} from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { createTaskWorktree } from '@ai-agent-manager/git';
 import { runFixtureGitChecked } from './fixture-git.js';
+import { createOwnedDirectory, identityOf, verifyOwnedDirectory } from './owned-directory.js';
 import {
-  assertSafeHarnessLocation,
   defaultProtectedRoots,
-  DiagnosticsPathError,
   isWithin,
   validateExplicitParent,
   type ProtectedRoot,
@@ -106,36 +95,7 @@ export type CreateFixtureOptions = {
   protectedRoots?: readonly ProtectedRoot[];
 };
 
-const identityOf = async (path: string) => {
-  const stats = await lstat(path);
-  return { dev: stats.dev, ino: stats.ino };
-};
-
 const sha256 = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
-
-/** Creates a private directory with `mkdtemp` and validates its location before using it. */
-const createOwnedDirectory = async (
-  parent: string,
-  prefix: string,
-  protectedRoots: readonly ProtectedRoot[],
-): Promise<string> => {
-  // Validate the would-be location first, so nothing is created inside a protected root.
-  await assertSafeHarnessLocation(join(parent, `${prefix}candidate`), protectedRoots);
-  const created = await mkdtemp(join(parent, prefix));
-  const canonical = await realpath(created);
-  try {
-    if (canonical !== created) {
-      throw new DiagnosticsPathError(`${created} is not canonical.`);
-    }
-    await assertSafeHarnessLocation(canonical, protectedRoots);
-  } catch (error) {
-    // Only the empty directory just created is removed, non-recursively.
-    await rmdir(created).catch(() => undefined);
-    throw error;
-  }
-  await chmod(canonical, 0o700);
-  return canonical;
-};
 
 export const writeManifest = async (fixture: DiagnosticFixture): Promise<void> => {
   const manifest = fixtureManifestSchema.parse(fixture.manifest);
@@ -339,58 +299,6 @@ export type CleanupResult =
     }
   | { status: 'refused'; reasons: string[] };
 
-type MarkerCheck = { path: string; identity: { dev: number; ino: number }; prefix: string };
-
-/** Proves a directory is the one the harness created: identity, location, marker. */
-const verifyOwnedDirectory = async (
-  check: MarkerCheck,
-  manifest: FixtureManifest,
-  protectedRoots: readonly ProtectedRoot[],
-): Promise<string[]> => {
-  const reasons: string[] = [];
-  const stats = await lstat(check.path).catch(() => null);
-  if (stats === null) {
-    // Already removed; nothing to verify or delete.
-    return [];
-  }
-  if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    reasons.push(`${check.path} is not a directory.`);
-  }
-  if (stats.dev !== check.identity.dev || stats.ino !== check.identity.ino) {
-    reasons.push(`${check.path} is not the directory the harness created (identity changed).`);
-  }
-  const uid = process.getuid?.();
-  if (uid !== undefined && stats.uid !== uid) {
-    reasons.push(`${check.path} is not owned by the current user.`);
-  }
-  if (
-    dirname(check.path) !== manifest.parentDirectory ||
-    !basename(check.path).startsWith(check.prefix)
-  ) {
-    reasons.push(`${check.path} is not a harness directory in ${manifest.parentDirectory}.`);
-  }
-  if ((await realpath(check.path).catch(() => null)) !== check.path) {
-    reasons.push(`${check.path} is not canonical.`);
-  }
-  await assertSafeHarnessLocation(check.path, protectedRoots).catch((error: Error) =>
-    reasons.push(error.message),
-  );
-  const marker = await readFile(join(check.path, fixtureMarkerName), 'utf8')
-    .then((text) => JSON.parse(text) as unknown)
-    .catch(() => null);
-  const markerOk =
-    typeof marker === 'object' &&
-    marker !== null &&
-    'harness' in marker &&
-    'fixtureId' in marker &&
-    marker.harness === harnessName &&
-    marker.fixtureId === manifest.fixtureId;
-  if (!markerOk) {
-    reasons.push(`${check.path} has no matching ownership marker.`);
-  }
-  return reasons;
-};
-
 export type CleanupOptions = {
   /** Also remove the results directory (reports and manifest). Default `false`. */
   includeResults?: boolean;
@@ -410,7 +318,13 @@ export const cleanupFixture = async (
 ): Promise<CleanupResult> => {
   const { manifest } = fixture;
   const protectedRoots = options.protectedRoots ?? (await defaultProtectedRoots());
-  const checks: MarkerCheck[] = [
+  const marker = {
+    fileName: fixtureMarkerName,
+    harness: harnessName,
+    fixtureId: manifest.fixtureId,
+  };
+  const { parentDirectory } = manifest;
+  const checks = [
     { path: manifest.paths.root, identity: manifest.rootIdentity, prefix: fixturePrefix },
   ];
   if (options.includeResults === true) {
@@ -421,7 +335,13 @@ export const cleanupFixture = async (
     });
   }
   const reasons = (
-    await Promise.all(checks.map((check) => verifyOwnedDirectory(check, manifest, protectedRoots)))
+    await Promise.all(
+      checks.map((check) =>
+        verifyOwnedDirectory({ ...check, parentDirectory, marker }, protectedRoots, {
+          allowMissing: true,
+        }),
+      ),
+    )
   ).flat();
   for (const [name, path] of Object.entries(manifest.paths)) {
     if (!isWithin(manifest.paths.root, path)) {

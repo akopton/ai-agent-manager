@@ -107,6 +107,38 @@ export default defineConfig([
     },
   },
   {
+    // SEC-02e smoke runner: launches real CLIs only through the Trusted Local gate and launch
+    // boundary, so it must never load the unguarded supervisor or the fake-CLI/probe tooling.
+    files: ['packages/cli-diagnostics/src/smoke/**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [...diagnosticsImports, trustedLocalIssuerImport],
+          patterns: [
+            agentsInternals,
+            {
+              group: [
+                '../fake-*',
+                '../replay*',
+                '../compatibility*',
+                '../probes*',
+                '../probe-helper*',
+                '../processes*',
+                '../evidence*',
+                '../fixture.js',
+                '../cli.js',
+                '../index.js',
+              ],
+              message:
+                'The smoke runner must not load the diagnostics fake-CLI, probe or supervisor modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: [trustedLocalGateFile],
     rules: {
       'no-restricted-imports': [
