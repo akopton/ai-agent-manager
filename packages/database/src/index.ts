@@ -33,7 +33,9 @@ export {
   type ProjectSettingsUpdate,
 } from './projects.js';
 export {
+  gitOperations,
   projects,
+  publications,
   reviews,
   runEvents,
   schema,
@@ -104,3 +106,24 @@ export {
   requestTaskChanges,
   type ReviewRecord,
 } from './reviews.js';
+export {
+  claimPublication,
+  completePublicationCommit,
+  completePublicationPush,
+  createPublication,
+  failPublication,
+  findBlockingPublication,
+  findPublication,
+  findPublicationByRequest,
+  listGitOperations,
+  listInFlightPublications,
+  listQueuedPublications,
+  listTaskPublications,
+  recordPublicationCommitObject,
+  requestPublicationPushRetry,
+  startPublicationPush,
+  type GitOperationRecord,
+  type NewPublication,
+  type PublicationClaim,
+  type PublicationRecord,
+} from './publications.js';

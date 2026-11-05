@@ -57,6 +57,8 @@ export const reviewActionErrorCodes = [
   'run_not_review_eligible',
   /** A decision was already recorded for this run. */
   'changes_already_requested',
+  /** The attempt was approved for publishing (M6-03); its publication is in progress or pending a push. */
+  'publication_in_progress',
 ] as const;
 
 export const reviewActionErrorCodeSchema = z.enum(reviewActionErrorCodes);

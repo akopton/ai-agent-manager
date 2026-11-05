@@ -135,6 +135,45 @@ for (const signal of shutdownSignals) {
   });
 }
 
+test('logs "Worker started" only after execution started and signal handlers are installed', async () => {
+  await withTemporaryDirectory(async (directory) => {
+    const signals = new EventEmitter();
+    const recording = createRecordingLogger();
+    const listenersWhenStarted: number[] = [];
+    const logger = {
+      ...recording,
+      info: (message: string) => {
+        if (message.startsWith('Worker started')) {
+          listenersWhenStarted.push(...shutdownSignals.map((name) => signals.listenerCount(name)));
+          // Like a supervisor reacting to the readiness line: signal immediately (only when a
+          // handler exists, so the old ordering fails the assertion below instead of hanging).
+          if (signals.listenerCount('SIGTERM') > 0) signals.emit('SIGTERM');
+        }
+        recording.info(message);
+      },
+    };
+    const exit = await runWorker({
+      logger,
+      signals: signals satisfies SignalSource,
+      openDatabase: () => createDatabase({ path: join(directory, 'database.sqlite') }),
+      // Execution is configured but disabled by the unmigrated schema; startup still awaits it.
+      execution: {},
+      onStarted: () => {
+        if (listenersWhenStarted.every((count) => count === 0)) signals.emit('SIGTERM');
+      },
+    });
+    assert.deepEqual(listenersWhenStarted, [1, 1]);
+    assert.deepEqual(exit, { exitCode: 0, signal: 'SIGTERM' });
+    const messages = recording.messages;
+    const started = messages.findIndex((message) => message.startsWith('Worker started'));
+    const executionChecked = messages.findIndex((message) =>
+      message.includes('Task execution is disabled'),
+    );
+    assert.ok(executionChecked !== -1 && executionChecked < started, messages.join('\n'));
+    assert.ok(messages.includes('Worker stopped.'));
+  });
+});
+
 test('reports a startup failure without installing signal handlers', async () => {
   const signals = new EventEmitter();
   const logger = createRecordingLogger();

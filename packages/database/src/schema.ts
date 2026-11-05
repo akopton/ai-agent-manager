@@ -1,9 +1,14 @@
 import {
+  activePublicationStatuses,
   activeTaskRunStatuses,
   agentRuntimes,
   executionSecurityModes,
   gitIntegrityResultStatuses,
+  gitOperationKinds,
+  gitOperationStatuses,
   projectExecutionTrusts,
+  publicationFailureStages,
+  publicationStatuses,
   reviewStatuses,
   taskPriorities,
   taskRunStatuses,
@@ -343,6 +348,123 @@ export const reviews = sqliteTable(
   ],
 );
 
+const activePublicationCondition = sql.raw(
+  `status IN (${activePublicationStatuses.map((value) => `'${value}'`).join(', ')})`,
+);
+
+/**
+ * Approve & Push (M6-03, migration `0005_publications`). One row per operator approval: the
+ * decision about one run and its workspace, the immutable review snapshot it is bound to
+ * (`snapshot_hash` over `snapshot_json`, plus the change-inventory revision the operator saw), the
+ * destination resolved by the server, and the durable publish state the worker advances. The
+ * documented `reviews.snapshot_*` columns live here instead: `reviews.status` has a CHECK that
+ * only an additive table can extend. At most one active publication per task (partial unique
+ * index); `request_id` deduplicates repeated submissions. Rows are never deleted.
+ */
+export const publications = sqliteTable(
+  'publications',
+  {
+    id: text('id').primaryKey(),
+    requestId: text('request_id').notNull().unique(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    status: text('status', { enum: publicationStatuses }).notNull(),
+    failureStage: text('failure_stage', { enum: publicationFailureStages }),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    inventoryRevision: text('inventory_revision').notNull(),
+    snapshotHash: text('snapshot_hash').notNull(),
+    snapshotJson: text('snapshot_json').notNull(),
+    fileCount: integer('file_count').notNull(),
+    baseCommit: text('base_commit').notNull(),
+    branch: text('branch').notNull(),
+    remoteName: text('remote_name').notNull(),
+    /** Display form of the push URL with HTTP(S) credentials redacted. */
+    remoteUrl: text('remote_url').notNull(),
+    remoteUrlDigest: text('remote_url_digest').notNull(),
+    commitMessage: text('commit_message').notNull(),
+    commitSha: text('commit_sha'),
+    treeSha: text('tree_sha'),
+    workerInstanceId: text('worker_instance_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    committedAt: integer('committed_at'),
+    pushedAt: integer('pushed_at'),
+  },
+  (table) => [
+    index('publications_task_id_idx').on(table.taskId),
+    index('publications_status_idx').on(table.status),
+    uniqueIndex('publications_one_active_per_task_idx')
+      .on(table.taskId)
+      .where(activePublicationCondition),
+    check('publications_status_check', sql`${table.status} IN (${sqlList(publicationStatuses)})`),
+    check(
+      'publications_failure_stage_check',
+      sql`(${table.status} = 'failed') = (${table.failureStage} IS NOT NULL) AND (${table.failureStage} IS NULL OR ${table.failureStage} IN (${sqlList(publicationFailureStages)}))`,
+    ),
+    check(
+      'publications_commit_check',
+      sql`${table.status} NOT IN ('committed', 'push_requested', 'pushing', 'pushed') OR ${table.commitSha} IS NOT NULL`,
+    ),
+    check('publications_file_count_check', sql`${table.fileCount} >= 1`),
+  ],
+);
+
+/**
+ * The Git operations of a publication (`ARCHITECTURE.md` §4): the commit and each push attempt,
+ * with their own outcome, so a failed push is visible next to the successful commit and a retry is
+ * a new push row, never a new commit. At most one running operation per publication.
+ */
+export const gitOperations = sqliteTable(
+  'git_operations',
+  {
+    id: text('id').primaryKey(),
+    publicationId: text('publication_id')
+      .notNull()
+      .references(() => publications.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    kind: text('kind', { enum: gitOperationKinds }).notNull(),
+    attempt: integer('attempt').notNull(),
+    status: text('status', { enum: gitOperationStatuses }).notNull(),
+    commitSha: text('commit_sha'),
+    remoteName: text('remote_name'),
+    /** `refs/heads/<task branch>` for pushes; the local task branch for commits. */
+    ref: text('ref').notNull(),
+    /** Push outcome reported by Git: `created`, `fast_forward` or `up_to_date`. */
+    outcome: text('outcome'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    startedAt: integer('started_at').notNull(),
+    finishedAt: integer('finished_at'),
+  },
+  (table) => [
+    unique('git_operations_publication_kind_attempt_unique').on(
+      table.publicationId,
+      table.kind,
+      table.attempt,
+    ),
+    index('git_operations_publication_id_idx').on(table.publicationId),
+    uniqueIndex('git_operations_one_running_per_publication_idx')
+      .on(table.publicationId)
+      .where(sql`status = 'running'`),
+    check('git_operations_kind_check', sql`${table.kind} IN (${sqlList(gitOperationKinds)})`),
+    check(
+      'git_operations_status_check',
+      sql`${table.status} IN (${sqlList(gitOperationStatuses)})`,
+    ),
+    check('git_operations_attempt_check', sql`${table.attempt} >= 1`),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -353,4 +475,6 @@ export const schema = {
   workerCommands,
   workerLeases,
   reviews,
+  publications,
+  gitOperations,
 };

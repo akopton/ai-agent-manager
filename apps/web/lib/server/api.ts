@@ -1,8 +1,10 @@
 import {
   ExecutionError,
+  PublicationError,
   ReviewActionError,
   TaskError,
   type ExecutionErrorCode,
+  type PublicationErrorCode,
   type ReviewActionErrorCode,
   type TaskErrorCode,
 } from '@ai-agent-manager/core';
@@ -75,6 +77,17 @@ const executionErrorStatus = (code: ExecutionErrorCode): number => {
 const reviewActionErrorStatus = (code: ReviewActionErrorCode): number =>
   code === 'invalid_review_input' ? 400 : 409;
 
+const publicationErrorStatus = (code: PublicationErrorCode): number => {
+  switch (code) {
+    case 'invalid_publication_input':
+      return 400;
+    case 'publication_not_found':
+      return 404;
+    default:
+      return 409;
+  }
+};
+
 /** Converts expected failures into structured responses; unexpected ones are logged. */
 export const handleRouteError = (error: unknown): Response => {
   if (error instanceof ProjectServiceError) {
@@ -96,6 +109,14 @@ export const handleRouteError = (error: unknown): Response => {
       error.code,
       error.message,
       reviewActionErrorStatus(error.code),
+      error.details,
+    );
+  }
+  if (error instanceof PublicationError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      publicationErrorStatus(error.code),
       error.details,
     );
   }

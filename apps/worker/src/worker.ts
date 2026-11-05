@@ -32,6 +32,8 @@ const executionTables = [
   'worker_commands',
   'worker_leases',
   'reviews',
+  'publications',
+  'git_operations',
 ] as const;
 
 const databaseMigrateCommand = 'pnpm --filter @ai-agent-manager/database db:migrate';
@@ -96,7 +98,7 @@ export const createWorker = ({
     }
     logger.info(`Database opened at ${connection.path}.`);
     state = 'running';
-    logger.info(`Worker started (pid ${process.pid}).`);
+    // "Worker started" is logged by `runWorker` once shutdown signal handlers are installed.
   };
 
   const startExecution = async (): Promise<void> => {

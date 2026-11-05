@@ -365,6 +365,30 @@ or retried; after a crash the agent's process group is not signalled and may sti
 Start requests that wait more than five minutes expire. The task page shows run state, the Git
 integrity result, recent bounded and redacted events, and refreshes while a run is active.
 
+## Approve & Push
+
+M6-03. On the Review Changes page of a task in Review, whose latest run completed with a clean
+Git integrity check, **Approve & Push** shows the reviewed files, the source, the destination
+(the project's configured remote and `refs/heads/agent/<task-id>`), the generated commit message
+and the consequences, and records an approval only after a separate confirmation
+(`POST …/review/approve`). The approval is bound to the attempt, the change-inventory revision
+and a review snapshot (SHA-256 of every changed path's bytes and mode); nothing is staged,
+committed or pushed by the web process, and loading the page changes nothing.
+
+The worker executes approvals one at a time. It re-verifies the task, latest run, retained
+worktree, repository identity, remote URL and snapshot, stages exactly the snapshot into a private
+temporary index, verifies the resulting tree and `git diff --check`, commits with the base commit
+as parent (no hooks; the configured Git identity is required), moves the task branch with a
+compare-and-swap, and pushes `<commit>:refs/heads/agent/<task-id>` to the configured remote without
+force. The task moves to Done only after both succeed. A project without a remote cannot be
+approved; nothing is merged and no pull request is opened.
+
+If the push fails, the commit stays on the task branch and **Retry push**
+(`POST …/review/retry-push`) pushes the same commit again; a new approval is refused meanwhile.
+After a worker restart, publications in progress are reconciled from Git state and never resumed
+automatically. Changes after the approval (edits, new files, agent commits, branch switches,
+moved or unlocked worktrees, changed remotes) fail the publication before anything is committed.
+
 ## UI foundation
 
 Tailwind CSS 4.3.4 uses `@tailwindcss/postcss` in the web workspace's

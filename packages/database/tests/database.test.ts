@@ -85,7 +85,7 @@ test('applies versioned migrations once and creates only the expected applicatio
     try {
       applyMigrations(connection);
       const firstRun = connection.db.all(sql`SELECT * FROM __drizzle_migrations`);
-      assert.equal(firstRun.length, 5);
+      assert.equal(firstRun.length, 6);
       applyMigrations(connection);
       assert.deepEqual(connection.db.all(sql`SELECT * FROM __drizzle_migrations`), firstRun);
       assert.deepEqual(
@@ -94,7 +94,9 @@ test('applies versioned migrations once and creates only the expected applicatio
         ),
         [
           { name: '__drizzle_migrations' },
+          { name: 'git_operations' },
           { name: 'projects' },
+          { name: 'publications' },
           { name: 'reviews' },
           { name: 'run_events' },
           { name: 'security_settings' },

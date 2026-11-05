@@ -77,6 +77,10 @@ export const runWorker = async ({
       signals.on(signal, listener);
     }
 
+    // Readiness is announced only now: the database is open, execution (if configured) has started
+    // and SIGINT/SIGTERM are handled. Logging earlier let a supervisor's signal arrive before the
+    // handlers existed, which terminated the process without a graceful shutdown.
+    logger.info(`Worker started (pid ${process.pid}).`);
     onStarted?.(worker);
   });
 };

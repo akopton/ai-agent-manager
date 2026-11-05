@@ -1,4 +1,13 @@
-import { requestChangesInputSchema, taskStatusSchema } from '@ai-agent-manager/core';
+import {
+  approvePublicationInputSchema,
+  gitOperationKindSchema,
+  gitOperationStatusSchema,
+  publicationFailureStageSchema,
+  publicationStatusSchema,
+  requestChangesInputSchema,
+  retryPublicationPushInputSchema,
+  taskStatusSchema,
+} from '@ai-agent-manager/core';
 import { z } from 'zod';
 import { reviewDecisionViewSchema, taskRunViewSchema } from '@/lib/execution/contracts';
 import { reviewErrorCodes } from '@/lib/review/errors';
@@ -98,6 +107,99 @@ export const reviewBlockReasons = [
 
 export type ReviewBlockReason = (typeof reviewBlockReasons)[number];
 
+/**
+ * Why Approve & Push is not offered for the current review (besides normal-review eligibility).
+ * Derived from the inventory, the stored publications and the project's remote; page loads never
+ * hash, stage, commit or push anything.
+ */
+export const publicationReadinessReasons = [
+  'not_review_eligible',
+  'no_changes',
+  'files_truncated',
+  'unexpected_commits',
+  'conflicted_file',
+  'unsupported_file',
+  'no_remote',
+  'remote_not_found',
+  'remote_mirror',
+  'publication_active',
+  'push_pending',
+] as const;
+
+export type PublicationReadinessReason = (typeof publicationReadinessReasons)[number];
+
+export const gitOperationViewSchema = z.object({
+  kind: gitOperationKindSchema,
+  attempt: z.number(),
+  status: gitOperationStatusSchema,
+  commitSha: z.string().nullable(),
+  remoteName: z.string().nullable(),
+  ref: z.string(),
+  outcome: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  startedAt: z.number(),
+  finishedAt: z.number().nullable(),
+});
+
+export type GitOperationView = z.infer<typeof gitOperationViewSchema>;
+
+export const publicationViewSchema = z.object({
+  id: z.string(),
+  status: publicationStatusSchema,
+  failureStage: publicationFailureStageSchema.nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  runId: z.string(),
+  /** Attempt number of the approved run. */
+  attempt: z.number(),
+  fileCount: z.number(),
+  /** The approved paths (current path; renames also list their previous path). */
+  files: z.array(
+    z.object({ path: z.string(), previousPath: z.string().nullable(), change: z.string() }),
+  ),
+  snapshotHash: z.string(),
+  baseCommit: z.string(),
+  branch: z.string(),
+  remoteName: z.string(),
+  remoteUrl: z.string(),
+  commitMessage: z.string(),
+  commitSha: z.string().nullable(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  committedAt: z.number().nullable(),
+  pushedAt: z.number().nullable(),
+  /** The commit exists and only the push may be retried now. */
+  canRetryPush: z.boolean(),
+  operations: z.array(gitOperationViewSchema),
+});
+
+export type PublicationView = z.infer<typeof publicationViewSchema>;
+
+export const publicationPanelSchema = z.object({
+  /** Where Approve & Push would publish: the project's configured remote and the task branch. */
+  destination: z
+    .object({
+      remoteName: z.string(),
+      remoteUrl: z.string(),
+      branch: z.string(),
+      remoteRef: z.string(),
+    })
+    .nullable(),
+  /** Generated from the task; the browser never supplies it. */
+  commitMessage: z.string().nullable(),
+  readiness: z.object({
+    ready: z.boolean(),
+    reasons: z.array(z.enum(publicationReadinessReasons)),
+  }),
+  /** The publication that holds the task (in progress or push pending), if any. */
+  current: publicationViewSchema.nullable(),
+  /** Every publication of the task, newest first. */
+  history: z.array(publicationViewSchema),
+});
+
+export type PublicationPanel = z.infer<typeof publicationPanelSchema>;
+
 export const taskReviewViewSchema = z.object({
   task: z.object({
     id: z.string(),
@@ -130,6 +232,8 @@ export const taskReviewViewSchema = z.object({
   attempts: z.array(taskRunViewSchema),
   /** Review decisions of the task's attempts, newest first. */
   decisions: z.array(reviewDecisionViewSchema),
+  /** Approve & Push (M6-03): destination, readiness and publication history. */
+  publication: publicationPanelSchema,
 });
 
 export type TaskReviewView = z.infer<typeof taskReviewViewSchema>;
@@ -167,3 +271,16 @@ export const requestChangesResponseSchema = z.object({
 });
 
 export type RequestChangesResponse = z.infer<typeof requestChangesResponseSchema>;
+
+/** `POST …/review/approve`: the operator's confirmed approval (see `approvePublicationInputSchema`). */
+export const approvePublicationRequestSchema = approvePublicationInputSchema;
+
+/** `POST …/review/retry-push`. */
+export const retryPublicationPushRequestSchema = retryPublicationPushInputSchema;
+
+export const publicationResponseSchema = z.object({
+  task: z.object({ id: z.string(), status: taskStatusSchema }),
+  publication: publicationViewSchema,
+});
+
+export type PublicationResponse = z.infer<typeof publicationResponseSchema>;

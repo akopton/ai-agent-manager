@@ -1,4 +1,9 @@
-import { fileDiffQuerySchema, requestChangesRequestSchema } from '@/lib/review/contracts';
+import {
+  approvePublicationRequestSchema,
+  fileDiffQuerySchema,
+  requestChangesRequestSchema,
+  retryPublicationPushRequestSchema,
+} from '@/lib/review/contracts';
 import {
   errorResponse,
   guardContentRead,
@@ -7,6 +12,7 @@ import {
   parseMutationRequest,
 } from '@/lib/server/api';
 import { getDatabase } from '@/lib/server/database';
+import { approveTaskPublication, retryTaskPublicationPush } from '@/lib/server/publication';
 import { getTaskReview, getTaskReviewFileDiff, requestChangesForTask } from '@/lib/server/review';
 
 // Review Changes routes. The GET routes are read-only, run no agent and change nothing: the server
@@ -76,6 +82,46 @@ export const taskRequestChangesPost = async (
   try {
     const { projectId, taskId } = await params;
     return jsonResponse(await requestChangesForTask(getDatabase(), projectId, taskId, data), 201);
+  } catch (error) {
+    return handleRouteError(error);
+  }
+};
+
+/**
+ * `POST {requestId, runId, revision, remoteName, branch, confirmed: true}`: Approve & Push. Records
+ * the approval bound to a fresh review snapshot (201), or returns the approval already recorded for
+ * the same `requestId` (200). Publishing itself is done by the worker; nothing is committed or
+ * pushed by this request and no agent is started.
+ */
+export const taskApprovePost = async (
+  request: Request,
+  { params }: RouteContext,
+): Promise<Response> => {
+  const { data, response } = await parseMutationRequest(request, approvePublicationRequestSchema);
+  if (response !== undefined) {
+    return response;
+  }
+  try {
+    const { projectId, taskId } = await params;
+    const result = await approveTaskPublication(getDatabase(), projectId, taskId, data);
+    return jsonResponse(result.response, result.created ? 201 : 200);
+  } catch (error) {
+    return handleRouteError(error);
+  }
+};
+
+/** `POST {publicationId}`: Retry push of a committed but unpublished approval. */
+export const taskRetryPushPost = async (
+  request: Request,
+  { params }: RouteContext,
+): Promise<Response> => {
+  const { data, response } = await parseMutationRequest(request, retryPublicationPushRequestSchema);
+  if (response !== undefined) {
+    return response;
+  }
+  try {
+    const { projectId, taskId } = await params;
+    return jsonResponse(await retryTaskPublicationPush(getDatabase(), projectId, taskId, data));
   } catch (error) {
     return handleRouteError(error);
   }

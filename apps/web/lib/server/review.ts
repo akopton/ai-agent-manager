@@ -41,6 +41,7 @@ import type {
 } from '@/lib/review/contracts';
 import { ReviewError } from '@/lib/review/errors';
 import { listReviewDecisionViews, toRunView } from '@/lib/server/execution';
+import { getPublicationPanel } from '@/lib/server/publication-view';
 
 // Review Changes (M6-01, first slice) and Request Changes (M6-02). Inspection only reads: the database, the
 // registered repository's identity and the task worktree, through the hardened inspection
@@ -212,7 +213,7 @@ const notVerifiedMessage = (error: TaskWorktreeError): ReviewError => {
 };
 
 /** Maps inspection failures to safe, path-free review errors; unexpected errors propagate. */
-const toReviewError = (error: unknown): unknown => {
+export const toReviewError = (error: unknown): unknown => {
   if (error instanceof ReviewError) return error;
   if (error instanceof TaskWorktreeError) {
     switch (error.code) {
@@ -332,6 +333,11 @@ export const getTaskReview = async (
 
   const reasons = blockReasons(context.task, run, changes);
   const { workspace } = context;
+  const publication = await getPublicationPanel(db, {
+    ...context,
+    changes,
+    eligible: reasons.length === 0,
+  });
   return {
     task: {
       id: context.task.id,
@@ -355,6 +361,7 @@ export const getTaskReview = async (
     changes,
     attempts: context.runs.map(toRunView),
     decisions: listReviewDecisionViews(db, context.task.id, context.runs),
+    publication,
   };
 };
 
@@ -382,6 +389,12 @@ export const requestChangesForTask = async (
     throw new ReviewActionError(
       'changes_already_requested',
       'Changes were already requested for this attempt. Reload the page.',
+    );
+  }
+  if (review.publication.current !== null) {
+    throw new ReviewActionError(
+      'publication_in_progress',
+      'This attempt was approved for publishing. Changes cannot be requested while it is being published or its push is pending.',
     );
   }
   if (!review.eligibility.eligible) {

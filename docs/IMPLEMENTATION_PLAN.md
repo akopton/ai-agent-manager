@@ -84,13 +84,13 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M2 — Persistence and domain logic
 
 **M2-01 — Drizzle and SQLite**
-*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). 2026-11-05, execution slice: migration `0003_execution` adds `task_runs`, `workspaces`, `run_events`, a single-row `security_settings`, `worker_commands` and `worker_leases`, and the project trust columns. `git_operations` and `scheduler_settings` remain open. 2026-11-05, M6-02 slice: migration `0004_reviews` adds `reviews` (review decisions; snapshot columns still open).)*
+*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). 2026-11-05, execution slice: migration `0003_execution` adds `task_runs`, `workspaces`, `run_events`, a single-row `security_settings`, `worker_commands` and `worker_leases`, and the project trust columns. `git_operations` and `scheduler_settings` remain open. 2026-11-05, M6-02 slice: migration `0004_reviews` adds `reviews` (review decisions; snapshot columns still open). 2026-11-05, M6-03 slice: migration `0005_publications` adds `publications` (approval decision, review snapshot and publish state; the documented `reviews.snapshot_*` columns live here because `reviews.status` has a CHECK that only an additive table can extend) and `git_operations`. `scheduler_settings` remains open.)*
 - Implement migrations, foreign keys, WAL mode and `busy_timeout` for both processes.
 - Create core tables: `projects`, `tasks`, `task_runs`, `workspaces`, `run_events`, `reviews`, `git_operations`, `scheduler_settings`; add command/lease storage when finalized.
 - Keep SQLite user data out of Git; commit migrations and schema source.
 
 **M2-02 — Domain states and transitions**
-*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Execution slice: run states, attempt numbering and the run/task mapping (`resolveRunFinish` in the worker; Git integrity status stored separately). Open: publish states (`git_operations`) and task deletion.)*
+*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Execution slice: run states, attempt numbering and the run/task mapping (`resolveRunFinish` in the worker; Git integrity status stored separately). M6-03: publish states (`approved`, `committing`, `committed`, `push_requested`, `pushing`, `pushed`, `failed` with a failure stage) in `packages/core/src/publication.ts`. Open: task deletion.)*
 - Implement typed task/run/publish states and legal transitions; use Zod schemas at boundaries.
 - Distinguish `Backlog`, `Queued`, `In Progress`, `Review`, `Done`, `Stopped`, `Interrupted`, `Failed`, `Discarded` and separate publish states.
 - Preserve attempts rather than overwriting prior run history.
@@ -177,6 +177,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Implement `Discard` as a state transition; deletion requires a separate explicit cleanup action.
 
 **M6-03 — Approve & Push**
+*(2026-11-05, first slice: implemented as specified; see `ARCHITECTURE.md` §9 "M6-03 implementation notes". The web process records an approval bound to a review snapshot after an explicit confirmation (`POST …/review/approve`); the worker re-verifies and commits exactly the snapshot on the task branch, pushes only `refs/heads/<task branch>` to the configured remote without force, and applies `mark_done` only with a confirmed push. Push failures keep the commit and offer Retry push (`POST …/review/retry-push`). Not yet: Discard, `git fetch` before review, and an operator-editable commit message.)*
 - Lock workspace and ensure no agent is active; recompute and match the approved snapshot.
 - Stage **only approved files**, verify staged tree, commit with a task-linked message and persist SHA.
 - Push explicitly to the configured remote and task branch. Do not merge or open PRs.

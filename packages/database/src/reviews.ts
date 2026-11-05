@@ -9,6 +9,7 @@ import {
 } from '@ai-agent-manager/core';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { DatabaseConnection } from './client.js';
+import { findBlockingPublication } from './publications.js';
 import { reviews, taskRuns, tasks } from './schema.js';
 import { transitionTask, type TaskRecord } from './tasks.js';
 
@@ -97,6 +98,12 @@ export const requestTaskChanges = (
           throw new ReviewActionError(
             'run_not_review_eligible',
             'The latest attempt is not eligible for the normal review path.',
+          );
+        }
+        if (findBlockingPublication(tx, task.id) !== undefined) {
+          throw new ReviewActionError(
+            'publication_in_progress',
+            'This attempt was approved for publishing. Changes cannot be requested while it is being published or its push is pending.',
           );
         }
         const review = tx

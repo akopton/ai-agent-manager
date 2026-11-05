@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, realpath } from 'node:fs/promises';
-import { join } from 'node:path';
+import { lstat } from 'node:fs/promises';
 import {
   getAgentAdapter,
   startAgentExecution,
@@ -31,19 +30,13 @@ import {
   updateTaskRunProgress,
   type ClaimedRun,
   type DatabaseConnection,
-  type ProjectRecordWithTrust,
-  type RunContinuation,
   type RunFinish,
-  type TaskRecord,
 } from '@ai-agent-manager/database';
 import {
   captureGitIntegritySnapshot,
   createTaskWorktree,
-  defaultTaskBranchName,
   gitIntegritySections,
-  inspectTaskWorktree,
   TaskWorktreeError,
-  taskWorktreeLockReason,
   validateRepository,
   verifyGitIntegrity,
   type GitIntegrityComparison,
@@ -56,6 +49,7 @@ import {
   type TrustedLocalState,
 } from '@ai-agent-manager/orchestrator';
 import type { Logger } from '../logger.js';
+import { verifyRetainedWorkspace } from './retained-workspace.js';
 import { normalizeAgentEvent } from './run-events.js';
 
 // Executes one claimed task run (M4-02) through the production Trusted Local path:
@@ -146,102 +140,7 @@ export const composeRunPrompt = (
   ].join('\n\n');
 };
 
-export type RetainedWorkspaceCheck =
-  { ok: true; worktree: TaskWorktree } | { ok: false; reason: string };
-
-/**
- * Re-verifies the reviewed run's retained workspace before a follow-up attempt (M6-02): the stored
- * record must belong to this task, project and managed worktree root, and Git must still confirm a
- * locked linked worktree of the registered repository at the managed location, on the task branch,
- * with HEAD and the branch at the recorded base commit. Nothing is repaired, reset, cleaned or
- * recreated: a mismatch refuses the run and leaves the worktree as it is.
- */
-export const verifyRetainedWorkspace = async ({
-  project,
-  task,
-  continuation,
-  worktreeRoot,
-}: {
-  project: ProjectRecordWithTrust;
-  task: TaskRecord;
-  continuation: RunContinuation;
-  worktreeRoot: string;
-}): Promise<RetainedWorkspaceCheck> => {
-  const { workspace } = continuation;
-  const fail = (reason: string): RetainedWorkspaceCheck => ({ ok: false, reason });
-  let expectedBranch: string;
-  try {
-    expectedBranch = defaultTaskBranchName(task.id);
-  } catch {
-    return fail('the task identifier cannot name a task branch');
-  }
-  if (workspace.taskId !== task.id) return fail('the workspace belongs to another task');
-  if (
-    workspace.repositoryRoot !== project.localPath ||
-    workspace.gitCommonDir !== project.gitCommonDir
-  ) {
-    return fail('the workspace belongs to another repository');
-  }
-  if (workspace.worktreeRoot !== worktreeRoot) {
-    return fail('the managed worktree root changed since the workspace was created');
-  }
-  if (workspace.branch !== expectedBranch)
-    return fail('the workspace branch is not the task branch');
-
-  let inspection;
-  try {
-    inspection = await inspectTaskWorktree({
-      repositoryPath: project.localPath,
-      worktreePath: workspace.path,
-      branchName: workspace.branch,
-    });
-  } catch (error) {
-    return fail(
-      `the worktree could not be inspected (${error instanceof TaskWorktreeError ? error.code : 'unexpected'})`,
-    );
-  }
-  if (inspection.state !== 'ready') {
-    return fail(
-      `Git does not confirm the retained worktree (${inspection.state}${inspection.issues.length > 0 ? `: ${inspection.issues.join(', ')}` : ''})`,
-    );
-  }
-  if (
-    inspection.repository.root !== project.localPath ||
-    inspection.repository.commonDir !== project.gitCommonDir ||
-    inspection.path !== workspace.path
-  ) {
-    return fail('the inspected worktree is not the recorded workspace');
-  }
-  let canonicalRoot: string;
-  try {
-    canonicalRoot = await realpath(worktreeRoot);
-  } catch {
-    return fail('the managed worktree root no longer exists');
-  }
-  if (workspace.path !== join(canonicalRoot, inspection.repository.key, task.id)) {
-    return fail('the worktree is not at the managed location for this task');
-  }
-  if (
-    inspection.head?.commit !== workspace.baseSha ||
-    inspection.branchCommit !== workspace.baseSha
-  ) {
-    return fail(
-      'the task branch no longer points at the recorded base commit (commits were made or the branch was moved)',
-    );
-  }
-  return {
-    ok: true,
-    worktree: {
-      taskId: task.id,
-      branch: inspection.branch,
-      path: inspection.path,
-      baseBranch: workspace.baseBranch,
-      baseCommit: workspace.baseSha,
-      repository: inspection.repository,
-      lockReason: taskWorktreeLockReason(inspection.branch),
-    },
-  };
-};
+export { verifyRetainedWorkspace, type RetainedWorkspaceCheck } from './retained-workspace.js';
 
 /** A bounded, value-free summary of a comparison for `task_runs.git_integrity_result_json`. */
 export const summarizeComparison = (comparison: GitIntegrityComparison) => ({

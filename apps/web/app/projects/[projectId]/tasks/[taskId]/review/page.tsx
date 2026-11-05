@@ -15,7 +15,9 @@ import {
 import { ExecutionError, taskRunStatusLabels } from '@ai-agent-manager/core';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { ApprovePublishPanel } from '@/components/review/approve-publish-panel';
 import { AttemptHistory } from '@/components/review/attempt-history';
+import { PublicationStatus } from '@/components/review/publication-status';
 import { RefreshReviewButton } from '@/components/review/refresh-review-button';
 import { RequestChangesForm } from '@/components/review/request-changes-form';
 import { ReviewFileList } from '@/components/review/review-file-list';
@@ -129,7 +131,7 @@ const EligibilityBanner = ({ review }: { review: TaskReviewView }) => {
           <p>
             The agent process completed and the Git integrity check found no observable Git
             mutation. Neither shows that the implementation is correct: judge the result by the
-            changes below. You can request changes below; Approve &amp; Push and Discard are not
+            changes below. You can request changes or approve and push below; Discard is not
             available yet.
           </p>
         </AlertDescription>
@@ -333,6 +335,42 @@ const ChangesSection = ({ review }: { review: TaskReviewView }) => {
   );
 };
 
+/**
+ * Approve & Push (M6-03): the publication that holds the task (progress, failure, Retry push), or
+ * the approval panel for an eligible review. Rendering never stages, commits or pushes.
+ */
+const PublicationSection = ({ review }: { review: TaskReviewView }) => {
+  const { publication, task, run, workspace, changes } = review;
+  const shown = publication.current ?? publication.history[0] ?? null;
+  const showStatus =
+    shown !== null &&
+    (publication.current !== null || task.status === 'done' || shown.runId === run?.id);
+  return (
+    <>
+      {showStatus ? (
+        <PublicationStatus projectId={task.projectId} taskId={task.id} publication={shown} />
+      ) : null}
+      {publication.current === null &&
+      task.status === 'review' &&
+      run !== null &&
+      workspace !== null &&
+      changes.state === 'available' ? (
+        <ApprovePublishPanel
+          projectId={task.projectId}
+          taskId={task.id}
+          runId={run.id}
+          attempt={run.attempt}
+          revision={changes.revision}
+          files={changes.files}
+          baseBranch={workspace.baseBranch}
+          baseSha={workspace.baseSha}
+          publication={publication}
+        />
+      ) : null}
+    </>
+  );
+};
+
 const ReviewPage = async ({
   params,
 }: {
@@ -394,7 +432,11 @@ const ReviewPage = async ({
       <EligibilityBanner review={review} />
       <RunDetails review={review} />
       <ChangesSection review={review} />
-      {review.eligibility.eligible && run !== null && review.changes.state === 'available' ? (
+      <PublicationSection review={review} />
+      {review.eligibility.eligible &&
+      run !== null &&
+      review.changes.state === 'available' &&
+      review.publication.current === null ? (
         <RequestChangesForm
           projectId={task.projectId}
           taskId={task.id}

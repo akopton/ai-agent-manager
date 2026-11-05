@@ -2,6 +2,7 @@ import {
   executionErrorCodes,
   projectRegistrationErrorCodes,
   projectSchema,
+  publicationErrorCodes,
   reviewActionErrorCodes,
   taskErrorCodes,
 } from '@ai-agent-manager/core';
@@ -28,6 +29,7 @@ export const apiErrorCodes = [
   'repository_inspection_failed',
   ...reviewErrorCodes,
   ...reviewActionErrorCodes,
+  ...publicationErrorCodes,
   'internal_error',
 ] as const;
 

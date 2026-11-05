@@ -1,6 +1,8 @@
 import type {
   ChangedFileView,
   DiffOmissionReasonView,
+  PublicationReadinessReason,
+  PublicationView,
   ReviewBlockReason,
 } from '@/lib/review/contracts';
 
@@ -43,6 +45,33 @@ export const reviewBlockMessages: Readonly<Record<ReviewBlockReason, string>> = 
   changed_during_inspection:
     'The worktree changed while it was inspected. Refresh to inspect it again.',
 };
+
+export const publicationReadinessMessages: Readonly<Record<PublicationReadinessReason, string>> = {
+  not_review_eligible: 'The latest attempt is not eligible for the normal review path (see above).',
+  no_changes: 'The worktree has no changes to publish.',
+  files_truncated:
+    'Not every changed file is listed, so the change set cannot be approved as shown.',
+  unexpected_commits:
+    'The task branch has commits after the base commit. Only uncommitted changes made in the worktree can be approved.',
+  conflicted_file: 'A file has unresolved conflicts.',
+  unsupported_file:
+    'A changed entry is a submodule, nested repository or other unsupported file type, or lies behind a symlinked directory.',
+  no_remote:
+    'The project has no remote configured. Choose a remote in the project settings; nothing is pushed to a guessed destination.',
+  remote_not_found: 'The project’s configured remote does not exist in the repository.',
+  remote_mirror: 'The project’s remote is a mirror remote; a single-branch push is not possible.',
+  publication_active: 'This task is already being published.',
+  push_pending: 'A commit of this task exists but is not pushed yet. Use Retry push below.',
+};
+
+const failureTitles: Readonly<Record<NonNullable<PublicationView['failureStage']>, string>> = {
+  validation: 'Not published: the changes no longer match the approval',
+  commit: 'Not published: the commit was not created',
+  push: 'Committed, but not pushed',
+};
+
+export const describePublicationFailure = (publication: PublicationView): string =>
+  publication.failureStage === null ? 'Not published' : failureTitles[publication.failureStage];
 
 export const formatBytes = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;

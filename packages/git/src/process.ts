@@ -17,6 +17,8 @@ type RunProcessOptions = {
   maxOutputBytes: number;
   /** Arguments reported in errors; defaults to `args`. */
   reportedArgs?: readonly string[];
+  /** Bytes written to stdin, which is then closed. Without it, stdin is closed immediately. */
+  input?: Buffer;
 };
 
 const killGraceMs = 2_000;
@@ -29,16 +31,21 @@ const killGraceMs = 2_000;
 export const runProcess = (
   executable: string,
   args: readonly string[],
-  { cwd, env, timeoutMs, maxOutputBytes, reportedArgs = args }: RunProcessOptions,
+  { cwd, env, timeoutMs, maxOutputBytes, reportedArgs = args, input }: RunProcessOptions,
 ): Promise<ProcessResult> =>
   new Promise((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
       env,
       shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    // stdin is closed right away (EOF), after writing `input` when given. A process that exits
+    // without reading all input closes the pipe; that is not an error here (the exit code reports
+    // the outcome).
+    child.stdin.on('error', () => undefined);
+    child.stdin.end(input);
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputBytes = 0;
@@ -131,6 +138,7 @@ const baseConfig: ReadonlyArray<readonly [string, string]> = [
 
 const buildEnvironment = (
   extraConfig: ReadonlyArray<readonly [string, string]>,
+  indexFile?: string,
 ): NodeJS.ProcessEnv => {
   // Drop inherited GIT_* variables (GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, GIT_CONFIG_*, ...) so the
   // caller's environment cannot redirect inspection to another repository or inject config.
@@ -149,6 +157,8 @@ const buildEnvironment = (
   });
   return {
     ...env,
+    // Set only by the publish flow, which stages into a private temporary index (never inherited).
+    ...(indexFile === undefined ? {} : { GIT_INDEX_FILE: indexFile }),
     GIT_CONFIG_COUNT: String(config.length),
     // Do not take optional locks or refresh the index on read commands.
     GIT_OPTIONAL_LOCKS: '0',
@@ -166,6 +176,10 @@ export type RunGitOptions = GitCommandOptions & {
   cwd: string;
   /** Additional config overrides for this command only. */
   config?: ReadonlyArray<readonly [string, string]>;
+  /** Bytes written to the command's stdin. */
+  input?: Buffer;
+  /** Absolute path of an alternative index file (`GIT_INDEX_FILE`). Publish flow only. */
+  indexFile?: string;
 };
 
 /** Runs a Git subcommand in `cwd` with the inspection safety environment. */
@@ -173,9 +187,10 @@ export const runGit = (args: readonly string[], options: RunGitOptions): Promise
   const { timeoutMs, maxOutputBytes } = parseCommandOptions(options);
   return runProcess('git', args, {
     cwd: options.cwd,
-    env: buildEnvironment(options.config ?? []),
+    env: buildEnvironment(options.config ?? [], options.indexFile),
     timeoutMs,
     maxOutputBytes,
+    input: options.input,
   });
 };
 

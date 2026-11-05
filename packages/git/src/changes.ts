@@ -836,3 +836,10 @@ export const getTaskFileDiff = async ({
     consistency: before === after ? 'stable' : 'changed_during_inspection',
   };
 };
+
+/**
+ * The change-detection token that `inspectTaskChanges` reports as `revision`, computed without
+ * building the inventory. Used to confirm that nothing changed while a review snapshot was hashed.
+ */
+export const readTaskChangesRevision = async (options: TaskChangesOptions): Promise<string> =>
+  computeRevision(await prepare(options));
