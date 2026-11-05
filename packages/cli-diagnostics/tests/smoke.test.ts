@@ -33,6 +33,7 @@ import {
   classifyLaunchedRun,
   smokeReportSchema,
   writeSmokeReport,
+  type SmokeExecution,
   type SmokeReport,
 } from '../src/smoke/report.js';
 import { createSmokeRunner, type SmokeRunnerDependencies } from '../src/smoke/runner.js';
@@ -381,7 +382,7 @@ for (const runtime of ['claude', 'codex'] as const) {
       assert.equal(report.verification, 'offline_fake_cli');
       assert.equal(report.authorization.authorized, true);
       assert.match(report.authorization.authorizationId ?? '', /^[0-9a-f-]{36}$/);
-      assert.equal(report.authorization.disclosureVersion, 'sec-02e-smoke.1');
+      assert.equal(report.authorization.disclosureVersion, 'sec-02e-smoke.2');
       assert.ok(report.authorization.acceptedRisks.length > 0);
       assert.ok(!report.authorization.safeguards.includes('post_run_git_integrity_check'));
       assert.equal(report.launch.processStarted, true);
@@ -487,6 +488,46 @@ const outcomeCases: Array<{
       );
       assert.equal(report.worktreeChanges?.expectedEditMatched, true);
       assert.equal(report.integrity.status, 'clean');
+    },
+  },
+  {
+    name: 'a failed write tool is a compat_failure with per-tool counts and no claimed cause',
+    runtime: 'claude',
+    behavior: 'write-denied',
+    check: 'coding-edit',
+    expected: 'compat_failure',
+    verify: (report) => {
+      assert.deepEqual(report.execution?.toolActivity, [
+        { toolName: 'Read', started: 1, completed: 1, failed: 0 },
+        { toolName: 'Write', started: 1, completed: 0, failed: 1 },
+        { toolName: 'other', started: 1, completed: 0, failed: 0 },
+      ]);
+      const reasons = report.reasons.join(' ');
+      assert.match(reasons, /file-writing tool Write \(1 failed\) reported a failure/);
+      assert.match(reasons, /permission denial is possible but not confirmed/);
+      assert.doesNotMatch(reasons, /was denied|denied by/);
+      const text = JSON.stringify(report);
+      for (const secret of [
+        'FILE-CONTENT-DO-NOT-REPORT',
+        'TOOL-OUTPUT-DO-NOT-REPORT',
+        'greeting.ts',
+        'weird<tool>',
+      ]) {
+        assert.equal(text.includes(secret), false, secret);
+      }
+      assert.equal(report.worktreeChanges?.totalFiles, 0);
+      assert.equal(report.integrity.status, 'clean');
+    },
+  },
+  {
+    name: 'a coding-edit run without any write tool says the edit was not attempted',
+    runtime: 'codex',
+    behavior: 'token',
+    check: 'coding-edit',
+    expected: 'compat_failure',
+    verify: (report) => {
+      assert.deepEqual(report.execution?.toolActivity, []);
+      assert.match(report.reasons.join(' '), /No file-writing tool was observed/);
     },
   },
   {
@@ -632,6 +673,7 @@ test('an operator stop of the stop check is still inconclusive, never pass', () 
     lingeringProcesses: 'none',
     stopRequestedBy: 'operator',
     eventCounts: {} as Record<string, number>,
+    toolActivity: [] as SmokeExecution['toolActivity'],
     diagnosticCodes: [] as string[],
     sessionIdReported: true,
     reportedModelId: null,

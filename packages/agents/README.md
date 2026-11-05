@@ -11,10 +11,10 @@ It also holds the launch security profiles that the orchestrator's execution gat
 
 ## Runtimes and model selection
 
-| Runtime  | CLI         | Assessed version | Non-interactive invocation                                                                                                       |
-| -------- | ----------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `claude` | Claude Code | 2.1.317          | `claude --print --restricted --strict-mcp-config --permission-prompts none --output-format stream-json --verbose [--model <id>]` |
-| `codex`  | Codex CLI   | 0.166.0          | `codex exec --sandbox workspace-write --ignore-user-config --ignore-rules --json [--model <id>] -`                               |
+| Runtime  | CLI         | Assessed version | Non-interactive invocation                                                                                                                                     |
+| -------- | ----------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude` | Claude Code | 2.1.317          | `claude --print --restricted --strict-mcp-config --permission-prompts none --permission-mode acceptEdits --output-format stream-json --verbose [--model <id>]` |
+| `codex`  | Codex CLI   | 0.166.0          | `codex exec --sandbox workspace-write --ignore-user-config --ignore-rules --json [--model <id>] -`                                                             |
 
 - Each CLI is **one runtime**. Models are selected per request; there are no agent profiles.
 - `modelId: null` means Default: no `--model` is passed, and the CLI's own configuration decides.
@@ -286,8 +286,11 @@ invalidates every outstanding authorization.
   - Exit codes after a stop (the PoC observed 143 for Claude and SIGTERM for Codex).
   - Whether Claude flushes its final stream-json `result` line to a pipe before exiting. Its
     `--help` does not; a lost `result` line would show up as `incomplete_output`.
-  - Whether `--restricted` plus `--permission-prompts none` lets Claude write files in a worktree
-    at all.
+  - That `--permission-mode acceptEdits` (added in SEC-02e.4, after the real 2.1.317 smoke run
+    showed `--permission-prompts none` alone denies every file write) lets Claude edit files in
+    the worktree, while writes that `--restricted` reserves for a person (settings, Git and
+    tool-configuration files) stay denied. `acceptEdits` is a Trusted Local capability choice,
+    not a verified confinement. Claude smoke results from the previous argv do not apply.
 - **Not implemented:** session resume, retries, redaction of secrets in model output or stderr,
   and persistence of events (that belongs to the worker, M4).
 

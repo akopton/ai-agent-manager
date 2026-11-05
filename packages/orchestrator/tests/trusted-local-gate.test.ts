@@ -46,6 +46,7 @@ const cliFacts: Record<AgentRuntime, { version: string; options: string[] }> = {
     options: [
       '--model',
       '--output-format',
+      '--permission-mode',
       '--permission-prompts',
       '--print',
       '--restricted',

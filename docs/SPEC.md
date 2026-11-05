@@ -289,6 +289,8 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
   - The agent may read and write other files, use local credentials (SSH keys, Git credential helpers, CLI logins) and reach the network, as far as the operator's account allows.
   - The agent **could independently run `git commit` or `git push`** if its CLI tools and the OS allow it. The application detects unexpected Git mutations after the run where it can, but does not prevent them.
   - Stop terminates the process group, not every possible descendant.
+  - The agent CLI may keep its own local records outside the application's control. Claude Code can persist session transcripts under `~/.claude/projects/`, which may include prompts, replies, tool inputs and repository content.
+  - A run that ends successfully does not show that the task was done. Only the change review shows what changed.
 
 **Strict Isolated Mode** (deferred):
 

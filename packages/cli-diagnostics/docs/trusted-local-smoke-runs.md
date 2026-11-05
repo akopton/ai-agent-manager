@@ -91,7 +91,7 @@ satisfy the SEC-02 exit criterion on their own.
    (§6). Require the operator to type `<fixture-id-prefix>/<runtime>/<check>` exactly.
 4. Capture the Git integrity baseline. If the `repository` or `taskWorktree` section is not
    observed, stop without launching.
-5. Build `TrustedLocalState` in memory: `enabled: true`, disclosure version `sec-02e-smoke.1`
+5. Build `TrustedLocalState` in memory: `enabled: true`, disclosure version `sec-02e-smoke.2`
    (never a production version), acceptance timestamped at the confirmation, accepted risks =
    the required controls not enforced, `trustedRepositories` = only the fixture repository
    identity. It is never persisted, logged as reusable input, or read from a file or env.
@@ -196,29 +196,76 @@ cd packages/cli-diagnostics
    `git -C <repository> worktree list`.
 5. Record the run as `inconclusive` in the operator log.
 
+### 3.3 Claude profile change and diagnostics (SEC-02e.4)
+
+**Observed (2026-11-05, Claude Code 2.1.317, previous argv).** `coding-edit` completed with exit 0
+and `compat_failure`, with no worktree changes and a clean integrity check. Claude's session
+transcript showed the exact requested `Write` to `src/greeting.ts` inside the worktree. The CLI
+refused it automatically because it needed approval and `--permission-prompts none` provides
+none. The fixture and report are kept as evidence.
+
+**Change.** The shipped Claude profile now adds `--permission-mode acceptEdits`. The full argv is:
+
+```text
+claude --print --restricted --strict-mcp-config --permission-prompts none \
+  --permission-mode acceptEdits --output-format stream-json --verbose [--model <id>]
+```
+
+- `acceptEdits` is an intentional Trusted Local capability choice, so the agent can edit files.
+  It is **not** a verified confinement mechanism, and every capability stays `unverified`.
+- `--permission-prompts none` still auto-denies everything that needs interactive approval.
+- Strict Isolated Mode is unchanged.
+- The smoke disclosure version is now `sec-02e-smoke.2`: its text adds the transcript and
+  "completion is not task completion" statements.
+- **The earlier Claude smoke results (`stdin-token` pass, `coding-edit` `compat_failure`) were
+  produced with the old argv and are not evidence for this profile.** Rerun both. Codex results
+  are unaffected.
+
+**Diagnostics.**
+
+- Each report's `execution.toolActivity` lists per-tool phase counts, for example
+  `[{ toolName: 'Write', started: 1, completed: 0, failed: 1 }]`. It records names only:
+  - unusual names become `other`;
+  - at most 50 distinct names are kept;
+  - no tool input, file content or tool output is recorded.
+- When `coding-edit` fails, the reason distinguishes:
+  - a failed file-writing tool (`Write`, `Edit`, `MultiEdit`, `NotebookEdit`, Codex
+    `file_change`);
+  - no write attempt at all;
+  - other unexpected changes.
+- The parsed events say only that a tool result was an error. A permission denial is therefore
+  never claimed; the reason says it is possible but not confirmed. Claude's transcript (below) is
+  the place to confirm it.
+- **A completed run is not a completed task.** Claude reports `result: success` after a denied
+  write; the worktree changes are the evidence.
+- **Local transcripts.** Claude Code can persist session transcripts under `~/.claude/projects/`
+  (prompts, replies, tool inputs, repository content), one directory per working directory. The
+  smoke runner neither reads nor removes them. They remain after `smoke cleanup`; delete them
+  separately if wanted.
+
 ## 4. Compatibility test matrix
 
 Run every check for both runtimes unless noted. Each run uses a **fresh** compatibility fixture.
 Default limits are the production defaults; the timeout is 180 s unless stated.
 
-| ID   | Check (`--check`)      | Prompt (fixed catalog)                                                                                                                 | Model / limits                           | Expected                                                                                                                                                                                                                                                     | Covers                     |
-| ---- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
-| C-01 | (every run)            | —                                                                                                                                      | —                                        | CLI detected; version supported; identical before and after.                                                                                                                                                                                                 | discovery, version, G10    |
-| C-02 | (every run)            | —                                                                                                                                      | —                                        | Required options detected (`detectedOptions`).                                                                                                                                                                                                               | options                    |
-| C-03 | `stdin-token`          | `Reply with exactly AAM-COMPAT-OK-<nonce> and nothing else.` (nonce generated per run)                                                 | Default model                            | `completed`; the token appears in an assistant output event (checked in memory, reported as a boolean); the prompt is not in argv (boundary binding).                                                                                                        | stdin, success             |
-| C-04 | (same run)             | —                                                                                                                                      | —                                        | No `malformed_output` diagnostics; event types counted. Unknown types are recorded, not failures.                                                                                                                                                            | structured JSON            |
-| C-05 | (same run)             | —                                                                                                                                      | —                                        | Terminal result `completed`; integrity `clean`; no worktree changes.                                                                                                                                                                                         | completion                 |
-| C-07 | (same run)             | —                                                                                                                                      | —                                        | Claude: session ID and model reported. Codex: thread ID reported, no model expected.                                                                                                                                                                         | provider event parsing     |
-| C-10 | (same run)             | —                                                                                                                                      | —                                        | Success with no `--model` in argv.                                                                                                                                                                                                                           | default model              |
-| C-06 | `stdin-token` ×3       | as C-03                                                                                                                                | —                                        | 3/3 `completed` (no `incomplete_output`). Three separate approved invocations.                                                                                                                                                                               | result flushed to pipe     |
-| C-09 | `explicit-model-error` | as C-03                                                                                                                                | `aam-nonexistent-model-000`              | `failed`, code `model_unavailable` (or `provider_error`: an adapter heuristic finding); no event reports another model.                                                                                                                                      | error classification       |
-| C-14 | `coding-edit`          | `Create the file src/greeting.ts containing exactly: export const greeting = 'hello';  Change no other file. Do not run Git commands.` | Default model                            | `completed`; changes = exactly `src/greeting.ts` (untracked), content matches; integrity `clean`. Claude may be unable to write under `--restricted --permission-prompts none`: then `compat_failure` with the outcome recorded, **never** a profile change. | edit, integrity, no FP     |
-| C-11 | `stop`                 | `Count from 1 to 400, one number per line.`                                                                                            | Default model                            | Runner calls `handle.stop()` after the first assistant output event → `stopped`; `lingeringProcesses` recorded; integrity compared.                                                                                                                          | honest stop reporting      |
-| C-12 | (during C-11)          | —                                                                                                                                      | —                                        | Operator runs `ps -o pid,ppid,pgid,sess,command -U "$USER"` in a second terminal before and 5 s after the stop. Survivors outside the group are a SEC-01 finding, not a failure.                                                                             | subprocess layout (report) |
-| C-15 | `timeout`              | as C-11                                                                                                                                | policy `timeoutMs: 15000`                | `failed`, code `timeout`. A run that completes first → `inconclusive`, not pass.                                                                                                                                                                             | honest timeout reporting   |
-| C-16 | `output-limit`         | as C-11                                                                                                                                | `maxStdoutBytes: 65536` (tightened only) | `failed`, code `output_limit_exceeded`. Completion below the limit → `inconclusive`.                                                                                                                                                                         | output limit               |
-| C-13 | (every run)            | —                                                                                                                                      | —                                        | No `malformed_output`; `unrecognized_event` diagnostics listed for adapter review.                                                                                                                                                                           | parser tolerance           |
-| C-08 | —                      | —                                                                                                                                      | —                                        | **Not run on the host.** It needs an unauthenticated CLI; logging out the operator's own sessions is out of scope. Stays with the VM plan.                                                                                                                   | deferred                   |
+| ID   | Check (`--check`)      | Prompt (fixed catalog)                                                                                                                 | Model / limits                           | Expected                                                                                                                                                                                                                             | Covers                     |
+| ---- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| C-01 | (every run)            | —                                                                                                                                      | —                                        | CLI detected; version supported; identical before and after.                                                                                                                                                                         | discovery, version, G10    |
+| C-02 | (every run)            | —                                                                                                                                      | —                                        | Required options detected (`detectedOptions`).                                                                                                                                                                                       | options                    |
+| C-03 | `stdin-token`          | `Reply with exactly AAM-COMPAT-OK-<nonce> and nothing else.` (nonce generated per run)                                                 | Default model                            | `completed`; the token appears in an assistant output event (checked in memory, reported as a boolean); the prompt is not in argv (boundary binding).                                                                                | stdin, success             |
+| C-04 | (same run)             | —                                                                                                                                      | —                                        | No `malformed_output` diagnostics; event types counted. Unknown types are recorded, not failures.                                                                                                                                    | structured JSON            |
+| C-05 | (same run)             | —                                                                                                                                      | —                                        | Terminal result `completed`; integrity `clean`; no worktree changes.                                                                                                                                                                 | completion                 |
+| C-07 | (same run)             | —                                                                                                                                      | —                                        | Claude: session ID and model reported. Codex: thread ID reported, no model expected.                                                                                                                                                 | provider event parsing     |
+| C-10 | (same run)             | —                                                                                                                                      | —                                        | Success with no `--model` in argv.                                                                                                                                                                                                   | default model              |
+| C-06 | `stdin-token` ×3       | as C-03                                                                                                                                | —                                        | 3/3 `completed` (no `incomplete_output`). Three separate approved invocations.                                                                                                                                                       | result flushed to pipe     |
+| C-09 | `explicit-model-error` | as C-03                                                                                                                                | `aam-nonexistent-model-000`              | `failed`, code `model_unavailable` (or `provider_error`: an adapter heuristic finding); no event reports another model.                                                                                                              | error classification       |
+| C-14 | `coding-edit`          | `Create the file src/greeting.ts containing exactly: export const greeting = 'hello';  Change no other file. Do not run Git commands.` | Default model                            | `completed`; changes = exactly `src/greeting.ts` (untracked), content matches; integrity `clean`. A failed write tool is named in the reason (§3.3). The runner never changes a profile; see §3.3 for the reviewed SEC-02e.4 change. | edit, integrity, no FP     |
+| C-11 | `stop`                 | `Count from 1 to 400, one number per line.`                                                                                            | Default model                            | Runner calls `handle.stop()` after the first assistant output event → `stopped`; `lingeringProcesses` recorded; integrity compared.                                                                                                  | honest stop reporting      |
+| C-12 | (during C-11)          | —                                                                                                                                      | —                                        | Operator runs `ps -o pid,ppid,pgid,sess,command -U "$USER"` in a second terminal before and 5 s after the stop. Survivors outside the group are a SEC-01 finding, not a failure.                                                     | subprocess layout (report) |
+| C-15 | `timeout`              | as C-11                                                                                                                                | policy `timeoutMs: 15000`                | `failed`, code `timeout`. A run that completes first → `inconclusive`, not pass.                                                                                                                                                     | honest timeout reporting   |
+| C-16 | `output-limit`         | as C-11                                                                                                                                | `maxStdoutBytes: 65536` (tightened only) | `failed`, code `output_limit_exceeded`. Completion below the limit → `inconclusive`.                                                                                                                                                 | output limit               |
+| C-13 | (every run)            | —                                                                                                                                      | —                                        | No `malformed_output`; `unrecognized_event` diagnostics listed for adapter review.                                                                                                                                                   | parser tolerance           |
+| C-08 | —                      | —                                                                                                                                      | —                                        | **Not run on the host.** It needs an unauthenticated CLI; logging out the operator's own sessions is out of scope. Stays with the VM plan.                                                                                           | deferred                   |
 
 The prompt for C-14 is a request, not a control. Any commit, ref move or metadata change shows up
 as an integrity violation.
@@ -273,7 +320,7 @@ place until the operator has reviewed it. Remove `$FIXTURES` itself manually whe
 - [ ] `pnpm lint && pnpm typecheck && pnpm test` pass on a clean checkout of the reviewed commit.
 - [ ] The owner approves in writing: use of their **existing** Claude Code and Codex logins on
       the host; provider usage costs; the runtimes and checks for the session.
-- [ ] The owner reviews the smoke disclosure (`sec-02e-smoke.1`): the run uses the operator's
+- [ ] The owner reviews the smoke disclosure (`sec-02e-smoke.2`): the run uses the operator's
       account, files, credentials and network; the agent could read other repositories and
       credentials, make network requests, and commit or push; the integrity check detects only
       observable changes in the fixture repository; process cleanup covers the process group only.
@@ -368,7 +415,7 @@ UI, any commit or push by the application, and multiple runs per invocation.
 1. ~~Smoke runner~~ and ~~compatibility fixture~~: implemented and tested offline (§3.1).
    Terminal and interruption behavior verified with fake CLIs (§3.2).
 2. **Owner approvals** (§6): use of existing host logins and costs, the session's runtimes and
-   checks, the smoke disclosure text (`sec-02e-smoke.1`, shown in the approval prompt).
+   checks, the smoke disclosure text (`sec-02e-smoke.2`, shown in the approval prompt).
 3. **CLI versions** re-checked against the adapters' minimums on the day of the run.
 
 4. **Terminal preflight** (§6) in the operator's own terminal application.

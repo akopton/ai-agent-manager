@@ -14,6 +14,12 @@ export type FakeBehavior =
   | 'edit'
   /** The expected edit plus an unrequested file. */
   | 'edit-extra'
+  /**
+   * Claude only: a Write tool call whose result is an error (as observed with Claude Code 2.1.317
+   * and the pre-SEC-02e.4 profile), a Read that completes, a tool with an unreportable name, then a
+   * text reply and a successful result.
+   */
+  | 'write-denied'
   /** Commits on the task branch (an integrity violation). */
   | 'commit'
   /** Writes a key into the repository's common Git config (an integrity violation). */
@@ -95,6 +101,21 @@ function act(behavior, stdin) {
       fs.writeFileSync(path.join(process.cwd(), 'src', 'greeting.ts'), "export const greeting = 'hello';\\n");
       if (behavior === 'edit-extra') fs.writeFileSync(path.join(process.cwd(), 'notes.txt'), 'extra\\n');
       return emit([e.init, e.message, e.success], 0);
+    case 'write-denied': {
+      if (runtime !== 'claude') return process.exit(9);
+      const use = (id, name, input) => ({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name, input }] } });
+      const result = (id, isError, content) => ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: isError, content }] } });
+      return emit([
+        e.init,
+        use('t1', 'Read', { file_path: path.join(process.cwd(), 'src', 'index.ts') }),
+        result('t1', false, 'export const answer = 42;'),
+        use('t2', 'Write', { file_path: path.join(process.cwd(), 'src', 'greeting.ts'), content: ${JSON.stringify(`${'FILE-CONTENT-DO-NOT-REPORT'}`)} }),
+        result('t2', true, 'Permission for this tool use was denied. TOOL-OUTPUT-DO-NOT-REPORT'),
+        use('t3', 'weird<tool>', {}),
+        e.message,
+        e.success,
+      ], 0);
+    }
     case 'commit':
       git('commit', '--allow-empty', '--quiet', '-m', 'agent commit');
       return emit([e.init, e.message, e.success], 0);

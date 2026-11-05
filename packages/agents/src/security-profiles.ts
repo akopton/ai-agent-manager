@@ -24,6 +24,13 @@ const claudeRestrictedPrint = runtimeSecurityProfileSchema.parse({
     '--strict-mcp-config',
     '--permission-prompts',
     'none',
+    // SEC-02e.4: an intentional Trusted Local capability choice so file edits in the working
+    // directory are approved without a prompt. Not a confinement mechanism and not verified.
+    // Anything else that would prompt is still denied by `--permission-prompts none`, and
+    // `--restricted` documents that writes to settings, Git and tool-configuration files need a
+    // person or a permission handler, so they stay denied.
+    '--permission-mode',
+    'acceptEdits',
   ],
   capabilities: [
     {
@@ -48,7 +55,7 @@ const claudeRestrictedPrint = runtimeSecurityProfileSchema.parse({
       coversSubprocesses: false,
       verification: 'unverified',
       notes:
-        'Without command tools, Git state can only change through file tools. Help text states writes to Git files need approval, which --permission-prompts none denies. A linked worktree keeps its Git directory outside the worktree.',
+        'Without command tools, Git state can only change through file tools. Help text states writes to Git files need approval from a person or the permission handler (not covered by acceptEdits), which --permission-prompts none denies. A linked worktree keeps its Git directory outside the worktree.',
     },
     {
       control: 'git_push_denied',
@@ -78,7 +85,8 @@ const claudeRestrictedPrint = runtimeSecurityProfileSchema.parse({
       mechanism: 'cli_permission',
       coversSubprocesses: false,
       verification: 'unverified',
-      notes: '--permission-prompts none is documented to deny anything that would prompt.',
+      notes:
+        '--permission-prompts none is documented to deny anything that would prompt. --permission-mode acceptEdits approves file edits in the working directories without a prompt (intentional); it does not approve writes that --restricted reserves for a person or a permission handler.',
     },
   ],
 });

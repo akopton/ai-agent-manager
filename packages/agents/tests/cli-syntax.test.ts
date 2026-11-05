@@ -58,6 +58,8 @@ test('Claude Code: complete argument arrays, including profile arguments', async
       '--strict-mcp-config',
       '--permission-prompts',
       'none',
+      '--permission-mode',
+      'acceptEdits',
       '--output-format',
       'stream-json',
       '--verbose',
@@ -68,6 +70,8 @@ test('Claude Code: complete argument arrays, including profile arguments', async
       '--strict-mcp-config',
       '--permission-prompts',
       'none',
+      '--permission-mode',
+      'acceptEdits',
       '--output-format',
       'stream-json',
       '--verbose',
@@ -120,6 +124,9 @@ test('every Claude Code option and value is supported by the installed help', as
   assert.match(claudeRealHelp, /choices: "text", "json",\s+"stream-json"/);
   assert.match(claudeRealHelp, /--permission-prompts <target>/);
   assert.match(claudeRealHelp, /"none"\s+\(nobody: anything that would prompt is\s+denied/);
+  // SEC-02e.4: the permission mode the profile selects is a listed choice.
+  assert.match(claudeRealHelp, /--permission-mode <mode>\s+Permission mode to use for the session/);
+  assert.match(claudeRealHelp, /choices: "acceptEdits", "auto",/);
   // The prompt is an optional positional; with --print and no positional it is read from stdin
   // ("Input must be provided either through stdin or as a prompt argument when using --print").
   assert.match(claudeRealHelp, /Usage: claude \[options\] \[command\] \[prompt\]/);

@@ -442,6 +442,17 @@ New denial codes:
   3. the result is persisted with the run, and the publication gate reads it;
   4. the gate adds the safeguard only for a request that carries that baseline, and the launch boundary accepts it only then. Until then, the `safeguard_unavailable` refusal stays.
 
+**SEC-02e.4 notes (Claude Code launch profile).** The first real Claude Code 2.1.317 `coding-edit` smoke run completed with exit 0 but changed nothing. Claude's own session transcript showed the exact requested `Write` inside the worktree, refused because it needed approval and `--permission-prompts none` provides none. The profile `claude-print-restricted` is therefore now:
+
+`--print --restricted --strict-mcp-config --permission-prompts none --permission-mode acceptEdits`, followed by `--output-format stream-json --verbose [--model <id>]`.
+
+- **`acceptEdits` is an intentional Trusted Local capability choice**, so the agent can edit files in its working directory without a prompt. It is **not** a verified confinement mechanism, and no capability changes from `unverified`. Strict Isolated Mode is unchanged and still denies every shipped profile.
+- **`--permission-prompts none` still auto-denies** every request that needs interactive approval. Per the CLI help, `--restricted` reserves writes to settings, Git and tool-configuration files for a person or a permission handler, so `acceptEdits` does not approve them. This is documented behavior, not tested behavior; adversarial checks remain with the VM plan.
+- `auto`, `bypassPermissions`, `--dangerously-*` and `--permission-prompt-tool` stay rejected by the argument deny list.
+- **Successful process completion is not proof that the task was done.** Claude reported `result: success` after the denied write. The worker and review (M4/M5) must judge work by the change review, never by the run outcome alone.
+- **Earlier Claude smoke results used the old argv** and are not evidence for this profile. Claude `stdin-token` and `coding-edit` must be rerun.
+- Claude Code may persist session transcripts under `~/.claude/projects/` (prompts, replies, tool inputs, repository content). The Trusted Local disclosure states this (`SPEC.md` §12.1).
+
 **Accepted risks in Trusted Local Mode** (shown in the disclosure, stored with every run as `acceptedRisks`): all strict controls that are not enforced for the profile. With today's profiles that is all seven:
 
 - writes outside the worktree;

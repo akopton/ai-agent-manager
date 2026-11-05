@@ -53,6 +53,7 @@ import {
 } from './fixture.js';
 import {
   classifyLaunchedRun,
+  maxReportedTools,
   smokeDisclosureVersion,
   smokeLimitations,
   writeSmokeReport,
@@ -129,6 +130,15 @@ const errorKind = (error: unknown): string => {
 /** Error name and message only, bounded; never a stack or an attached cause. Terminal only. */
 const describeError = (error: unknown): string =>
   (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(0, 500);
+
+/**
+ * A tool name as it may appear in a report: a short identifier, otherwise `other`. At most
+ * `maxReportedTools` distinct names; later names are counted under `other`.
+ */
+const reportableToolName = (name: string, seen: ReadonlyMap<string, unknown>): string => {
+  if (!/^[A-Za-z0-9_.:-]{1,64}$/.test(name) || name === 'other') return 'other';
+  return seen.has(name) || seen.size < maxReportedTools ? name : 'other';
+};
 
 const outputEventTypes = new Set(['message', 'tool_activity', 'metadata', 'provider_notice']);
 
@@ -573,8 +583,15 @@ export const createSmokeRunner =
         // Deferred, so it never runs inside the supervisor's emit callback.
         setImmediate(() => void handle?.stop());
       };
+      const tools = new Map<string, { started: number; completed: number; failed: number }>();
       const emit = (event: AgentEvent): void => {
         counts[event.type] = (counts[event.type] ?? 0) + 1;
+        if (event.type === 'tool_activity') {
+          const name = reportableToolName(event.toolName, tools);
+          const entry = tools.get(name) ?? { started: 0, completed: 0, failed: 0 };
+          entry[event.phase] += 1;
+          tools.set(name, entry);
+        }
         if (event.type === 'diagnostic') diagnosticCodes.add(event.code);
         if (event.type === 'metadata') {
           if (event.sessionId !== undefined) sessionIdReported = true;
@@ -644,6 +661,9 @@ export const createSmokeRunner =
         lingeringProcesses: result.lingeringProcesses,
         stopRequestedBy,
         eventCounts: counts,
+        toolActivity: [...tools.entries()]
+          .map(([toolName, phases]) => ({ toolName, ...phases }))
+          .sort((left, right) => (left.toolName < right.toolName ? -1 : 1)),
         diagnosticCodes: [...diagnosticCodes].sort(),
         sessionIdReported,
         reportedModelId,

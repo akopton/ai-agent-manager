@@ -20,6 +20,7 @@ Options:
   --add-dir <directories...>   Additional directories
   --model <model>              Model for the current session
   --output-format <format>     "text", "json", or "stream-json"
+  --permission-mode <mode>     Permission mode to use for the session
   --permission-prompts <target>  "host" or "none"
   -p, --print                  Print response and exit
   --restricted                 Restricted mode

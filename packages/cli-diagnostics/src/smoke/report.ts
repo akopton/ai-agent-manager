@@ -22,7 +22,7 @@ export const smokeVerificationTypes = ['operator_supervised_real_cli', 'offline_
 export type SmokeVerificationType = (typeof smokeVerificationTypes)[number];
 
 /** Disclosure version of the smoke runner's in-memory acceptance. Never a production version. */
-export const smokeDisclosureVersion = 'sec-02e-smoke.1';
+export const smokeDisclosureVersion = 'sec-02e-smoke.2';
 
 export const smokeLimitations = [
   'Trusted Local runs use the operator account: no filesystem, credential or network isolation is claimed or tested.',
@@ -30,7 +30,24 @@ export const smokeLimitations = [
   'The Git integrity check is run by the smoke runner for diagnostics only. It is not the production post_run_git_integrity_check safeguard, which the authorization never lists.',
   'A clean integrity result means no observable before/after change in the fixture repository, not proof that none occurred; pushes to URLs, other repositories and files outside the fixture are not observed.',
   'The evidence is bound to this CLI version, these launch arguments and this host. It never changes a security profile.',
+  'The CLI may keep its own local records: Claude Code can persist session transcripts under ~/.claude/projects/, which may include prompts, replies, tool inputs and repository content.',
+  'A successful process exit is not proof that the coding task was done; the worktree changes are the evidence.',
 ] as const;
+
+/** Distinct tool names kept in a report; further names are counted under `other`. */
+export const maxReportedTools = 50;
+
+/**
+ * Tools that write files, by the names the adapters report: Claude Code's file tools and Codex's
+ * `file_change` item (which Codex reports only once completed).
+ */
+export const fileWriteToolNames: ReadonlySet<string> = new Set([
+  'Write',
+  'Edit',
+  'MultiEdit',
+  'NotebookEdit',
+  'file_change',
+]);
 
 const integrityStatusSchema = z.enum(['clean', 'violation', 'inconclusive', 'not_run']);
 
@@ -101,6 +118,19 @@ export const smokeReportSchema = z
         lingeringProcesses: z.enum(['none', 'terminated', 'unknown']),
         stopRequestedBy: z.enum(['check', 'operator']).nullable(),
         eventCounts: z.record(z.string(), z.number()),
+        /** Per-tool phase counts from parsed tool events: names only, never inputs or output. */
+        toolActivity: z
+          .array(
+            z
+              .object({
+                toolName: z.string().max(64),
+                started: z.number(),
+                completed: z.number(),
+                failed: z.number(),
+              })
+              .strict(),
+          )
+          .max(maxReportedTools + 1),
         diagnosticCodes: z.array(z.string()),
         sessionIdReported: z.boolean(),
         reportedModelId: z.string().nullable(),
@@ -222,13 +252,30 @@ const evaluateCheck = (input: ClassificationInput): Verdict => {
       }
       return compat(`Expected failed/model_unavailable, got ${outcome}.`);
     }
-    case 'coding-edit':
+    case 'coding-edit': {
       if (execution.status !== 'completed') return compat(`Expected completed, got ${outcome}.`);
       if (malformed) return compat('The output contained malformed lines.');
       if (worktreeChanges?.expectedEditMatched !== true) {
+        const writes = execution.toolActivity.filter((tool) =>
+          fileWriteToolNames.has(tool.toolName),
+        );
+        const failed = writes.filter((tool) => tool.failed > 0);
+        if (failed.length > 0) {
+          // The parsed events say only that the tool result was an error. The cause (for example
+          // a permission denial) is not part of the structured evidence, so it is not claimed.
+          return compat(
+            `The file-writing tool ${failed.map((tool) => `${tool.toolName} (${tool.failed} failed)`).join(', ')} reported a failure and the requested edit was not made. The structured events do not record the cause; a permission denial is possible but not confirmed by this report.`,
+          );
+        }
+        if (writes.length === 0 && (noChanges || worktreeChanges === null)) {
+          return compat(
+            'No file-writing tool was observed and the worktree is unchanged: the CLI completed without attempting the edit.',
+          );
+        }
         return compat('The worktree changes are not exactly the requested edit.');
       }
       return pass('The requested edit was made and nothing else changed in the worktree.');
+    }
     case 'stop':
       if (execution.status === 'stopped') return pass('The stop request was reported as stopped.');
       if (execution.status === 'completed')

@@ -31,6 +31,36 @@ test('Claude restrictions are CLI permissions, not an OS sandbox', () => {
   }
 });
 
+test('Claude keeps the restricted, non-interactive profile and approves only edits (SEC-02e.4)', () => {
+  const profile = runtimeSecurityProfiles.claude;
+  assert.equal(profile.assessedVersion, null);
+  assert.deepEqual(profile.launchArguments, [
+    '--print',
+    '--restricted',
+    '--strict-mcp-config',
+    '--permission-prompts',
+    'none',
+    '--permission-mode',
+    'acceptEdits',
+  ]);
+  // The permission modes that approve without denial stay rejected next to the profile.
+  for (const mode of ['auto', 'bypassPermissions']) {
+    assert.equal(
+      findUnsafeLaunchArguments('claude', [...profile.launchArguments, '--permission-mode', mode])
+        .length,
+      1,
+      mode,
+    );
+  }
+  assert.equal(
+    findUnsafeLaunchArguments('claude', [
+      ...profile.launchArguments,
+      '--dangerously-skip-permissions',
+    ]).length,
+    1,
+  );
+});
+
 test('Codex does not claim credential isolation', () => {
   const credential = runtimeSecurityProfiles.codex.capabilities.find(
     (capability) => capability.control === 'credential_isolation',
