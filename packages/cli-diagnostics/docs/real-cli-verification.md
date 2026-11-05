@@ -13,6 +13,8 @@ plan** (§9).
 > personal-use MVP. Benign, operator-approved Trusted Local smoke runs (SEC-02e, compatibility
 > checks C-03 to C-13 only, in a disposable local repository) may run on the host under Trusted
 > Local Mode (`docs/IMPLEMENTATION_PLAN.md` §9.3). Adversarial probes still require the VM (§2.1).
+> The SEC-02e design and host runbook are in
+> [`trusted-local-smoke-runs.md`](trusted-local-smoke-runs.md).
 
 This document covers supervised testing of the real Claude Code and Codex CLIs on macOS. It uses
 the diagnostic harness in this package (see [`../README.md`](../README.md)). It does not change
