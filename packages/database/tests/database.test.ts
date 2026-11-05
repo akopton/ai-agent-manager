@@ -85,14 +85,24 @@ test('applies versioned migrations once and creates only the expected applicatio
     try {
       applyMigrations(connection);
       const firstRun = connection.db.all(sql`SELECT * FROM __drizzle_migrations`);
-      assert.equal(firstRun.length, 3);
+      assert.equal(firstRun.length, 4);
       applyMigrations(connection);
       assert.deepEqual(connection.db.all(sql`SELECT * FROM __drizzle_migrations`), firstRun);
       assert.deepEqual(
         connection.db.all(
           sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
         ),
-        [{ name: '__drizzle_migrations' }, { name: 'projects' }, { name: 'tasks' }],
+        [
+          { name: '__drizzle_migrations' },
+          { name: 'projects' },
+          { name: 'run_events' },
+          { name: 'security_settings' },
+          { name: 'task_runs' },
+          { name: 'tasks' },
+          { name: 'worker_commands' },
+          { name: 'worker_leases' },
+          { name: 'workspaces' },
+        ],
       );
     } finally {
       connection.close();

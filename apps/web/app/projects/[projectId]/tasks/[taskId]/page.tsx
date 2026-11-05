@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { ArrowLeft, CheckCircle2, Info, Pencil } from 'lucide-react';
 import { taskPriorityLabels, taskStatusLabels } from '@ai-agent-manager/core';
 
+import { TaskExecutionPanel } from '@/components/execution/task-execution-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { TaskActions } from '@/components/tasks/task-actions';
 import {
@@ -19,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
+import { getTaskExecution } from '@/lib/server/execution';
 import { loadForPage } from '@/lib/server/load';
 import { findProjectTask } from '@/lib/server/tasks';
 import { taskEditability, taskStatusNotes } from '@/lib/tasks/actions';
@@ -57,7 +59,13 @@ const TaskPage = async ({
   await connection();
   const { projectId, taskId } = await params;
   const feedback = readTaskFeedback(await searchParams);
-  const result = await loadForPage(() => findProjectTask(getDatabase(), projectId, taskId));
+  const result = await loadForPage(() => {
+    const db = getDatabase();
+    const found = findProjectTask(db, projectId, taskId);
+    return found === undefined
+      ? undefined
+      : { ...found, execution: getTaskExecution(db, found.project.id, found.task.id) };
+  });
 
   if (!result.ok) {
     return <DatabaseNotReady message={result.message} />;
@@ -66,7 +74,7 @@ const TaskPage = async ({
     notFound();
   }
 
-  const { project, task } = result.data;
+  const { project, task, execution } = result.data;
   const editability = taskEditability(task.status);
 
   return (
@@ -122,6 +130,12 @@ const TaskPage = async ({
         </AlertDescription>
       </Alert>
 
+      <TaskExecutionPanel
+        projectId={project.id}
+        task={{ id: task.id, status: task.status }}
+        execution={execution}
+      />
+
       <Card>
         <CardHeader>
           <CardTitle>
@@ -169,9 +183,11 @@ const TaskPage = async ({
               <Field label="Queued">{formatTimestamp(task.queuedAt)}</Field>
             ) : null}
             <Field label="Runs">
-              <span className="text-muted-foreground">
-                None. Run history, logs and changes appear here once agent execution is available.
-              </span>
+              {execution.runs.length === 0 ? (
+                <span className="text-muted-foreground">None yet.</span>
+              ) : (
+                `${execution.runs.length} (see Execution above)`
+              )}
             </Field>
           </dl>
         </CardContent>

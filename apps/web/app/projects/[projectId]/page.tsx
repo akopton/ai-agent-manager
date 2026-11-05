@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { ProjectTrustCard } from '@/components/execution/project-trust-card';
 import { DisconnectProjectDialog } from '@/components/projects/disconnect-project-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ import type { ProjectDetails, RepositoryState } from '@/lib/projects/contracts';
 import { wasProjectSaved } from '@/lib/projects/feedback';
 import { describeHead, describeWorkingTree, formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
+import { getExecutionSettings, getProjectTrust } from '@/lib/server/execution';
 import { loadForPage } from '@/lib/server/load';
 import { getProjectDetails } from '@/lib/server/projects';
 import { countProjectTasks } from '@/lib/server/tasks';
@@ -191,6 +193,8 @@ const ProjectPage = async ({
       : {
           ...details,
           taskCounts: countProjectTasks(db).get(details.project.id) ?? emptyTaskCounts(),
+          trust: getProjectTrust(db, details.project.id),
+          trustedLocalEnabled: getExecutionSettings(db).trustedLocal.current,
         };
   });
 
@@ -206,7 +210,7 @@ const ProjectPage = async ({
     notFound();
   }
 
-  const { project, repository, taskCounts } = result.data;
+  const { project, repository, taskCounts, trust, trustedLocalEnabled } = result.data;
   const available = repository.status === 'available' ? repository : undefined;
 
   return (
@@ -314,6 +318,17 @@ const ProjectPage = async ({
       </Card>
 
       <InstructionsCard instructions={project.instructions} />
+
+      <ProjectTrustCard
+        project={{
+          id: project.id,
+          localPath: project.localPath,
+          gitCommonDir: project.gitCommonDir,
+        }}
+        trust={trust}
+        trustedLocalEnabled={trustedLocalEnabled}
+        repositoryAvailable={available !== undefined}
+      />
 
       {available !== undefined ? (
         <RepositoryCards project={project} repository={available} />

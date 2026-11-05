@@ -1,4 +1,5 @@
 import {
+  executionErrorCodes,
   projectRegistrationErrorCodes,
   projectSchema,
   taskErrorCodes,
@@ -11,6 +12,7 @@ import { z } from 'zod';
 export const apiErrorCodes = [
   ...projectRegistrationErrorCodes,
   ...taskErrorCodes,
+  ...executionErrorCodes,
   'invalid_request',
   'unsupported_media_type',
   'payload_too_large',

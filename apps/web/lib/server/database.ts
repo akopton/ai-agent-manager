@@ -6,7 +6,15 @@ import { createDatabase, type DatabaseConnection } from '@ai-agent-manager/datab
 export const databaseMigrateCommand = 'pnpm --filter @ai-agent-manager/database db:migrate';
 
 /** Tables this web build reads or writes. Migrations are applied explicitly, never on startup. */
-const requiredTables = ['projects', 'tasks'] as const;
+const requiredTables = [
+  'projects',
+  'tasks',
+  'security_settings',
+  'workspaces',
+  'task_runs',
+  'run_events',
+  'worker_commands',
+] as const;
 
 export class DatabaseNotReadyError extends Error {
   override name = 'DatabaseNotReadyError';

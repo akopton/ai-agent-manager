@@ -133,7 +133,9 @@ which Drizzle Kit's relative schema/output paths require.
 
 `0000_foundation.sql` contains only `SELECT 1` and establishes Drizzle's migration
 history. `0001_projects.sql` adds the `projects` table. `0002_tasks.sql` adds the
-`tasks` table. Applied migrations are never edited; schema changes get a new migration.
+`tasks` table. `0003_execution.sql` adds `security_settings`, `workspaces`, `task_runs`,
+`run_events`, `worker_commands` and `worker_leases`, and the project execution trust columns
+(see [Execution records](#execution-records)). Applied migrations are never edited; schema changes get a new migration.
 `db:generate` resolves `@ai-agent-manager/core` (task enums used by the schema) from
 its TypeScript sources, so it does not require a prior build. Migrations are never applied
 automatically on startup: run `db:migrate` after pulling schema changes. The web app
@@ -195,3 +197,24 @@ transaction composes them with other writes. There is no task deletion yet.
 
 Disconnecting a project with tasks fails with `ProjectHasDependentsError`; the
 foreign key also blocks deleting the project row directly.
+
+## Execution records
+
+Added by `0003_execution.sql` for the first execution slice (`src/execution.ts`). Timestamps
+are Unix milliseconds; every foreign key is `RESTRICT`.
+
+| Table / columns                                                    | Purpose                                                                                                                                                                                                          |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projects.execution_trust`, `…_trusted_common_dir`, `…_trusted_at` | Per-project Trusted Local trust (`none` by default), bound to the common Git directory.                                                                                                                          |
+| `security_settings` (single row)                                   | Trusted Local enable flag, accepted disclosure version, acceptance time and accepted risks. Disabling clears the acceptance.                                                                                     |
+| `worker_commands`                                                  | Operator start requests (`pending` → `accepted`/`rejected` with a reason). One pending request per task (partial unique index).                                                                                  |
+| `task_runs`                                                        | One row per attempt (`(task_id, attempt)` unique): run status, security mode and Trusted Local metadata, CLI version, exit data, error code, stop intent, Git integrity status/result/baseline, worker instance. |
+| `workspaces`                                                       | Created task worktrees: repository identity, path, branch, base branch and base SHA. Retained.                                                                                                                   |
+| `run_events`                                                       | Normalized, redacted events; `(run_id, sequence)` unique; at most 2,000 per run and 8 KiB per payload (`events_dropped` counts the rest).                                                                        |
+| `worker_leases` (single row)                                       | The single-worker execution lease (owner, PID, heartbeat, expiry).                                                                                                                                               |
+
+Partial unique indexes allow at most one active run (`pending`, `starting`, `running`,
+`stopping`) **per task** and **per agent runtime**, in addition to the checks in
+`claimStartCommand`. `requestTaskExecution`, `claimStartCommand`, `requestRunStop` and
+`finishTaskRun` each run in one `IMMEDIATE` transaction; the claim and finish compose the
+named task transitions (`start`, `complete_execution`, `stop`, `fail`, `interrupt`).

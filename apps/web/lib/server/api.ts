@@ -1,4 +1,9 @@
-import { TaskError, type TaskErrorCode } from '@ai-agent-manager/core';
+import {
+  ExecutionError,
+  TaskError,
+  type ExecutionErrorCode,
+  type TaskErrorCode,
+} from '@ai-agent-manager/core';
 import type { z } from 'zod';
 import type { ApiErrorCode, ApiErrorResponse } from '@/lib/projects/contracts';
 import { DatabaseNotReadyError } from '@/lib/server/database';
@@ -50,6 +55,20 @@ const taskErrorStatus = (code: TaskErrorCode): number => {
   }
 };
 
+const executionErrorStatus = (code: ExecutionErrorCode): number => {
+  switch (code) {
+    case 'invalid_execution_input':
+      return 400;
+    case 'project_not_found':
+    case 'task_not_found':
+      return 404;
+    case 'worker_unavailable':
+      return 503;
+    default:
+      return 409;
+  }
+};
+
 /** Converts expected failures into structured responses; unexpected ones are logged. */
 export const handleRouteError = (error: unknown): Response => {
   if (error instanceof ProjectServiceError) {
@@ -57,6 +76,14 @@ export const handleRouteError = (error: unknown): Response => {
   }
   if (error instanceof TaskError) {
     return errorResponse(error.code, error.message, taskErrorStatus(error.code), error.details);
+  }
+  if (error instanceof ExecutionError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      executionErrorStatus(error.code),
+      error.details,
+    );
   }
   if (error instanceof DatabaseNotReadyError) {
     return errorResponse('database_not_ready', error.message, 503);

@@ -50,16 +50,17 @@ export const taskEditability = (status: TaskStatus): TaskEditability => ({
 export const taskStatusNotes: Readonly<Record<TaskStatus, string>> = {
   backlog: 'Saved but not authorized to run. Edit it freely, then queue it when it is ready.',
   queued:
-    'Eligible for the scheduler, which does not guarantee immediate execution. Agent execution is not available in this version yet, so the task stays queued until you return it to Backlog. Priority and the Urgent flag can still be changed.',
+    'Eligible to run. There is no automatic scheduler yet: start it explicitly with Start execution (requires Trusted Local Mode and a trusted project), or return it to Backlog. Priority and the Urgent flag can still be changed.',
   in_progress:
-    'An agent is working on this task. Logs and Stop will be available once agent execution is implemented.',
+    'An agent is working on this task in its own worktree. Stop terminates the agent’s process group; files are kept.',
   review:
-    'Execution ended. Approve & Push, Request Changes and Discard will be available with the review workflow.',
+    'The agent process completed and no observable Git mutation was found. Inspect the worktree; Approve & Push, Request Changes and Discard will be available with the review workflow.',
   stopped:
-    'Execution was stopped. Retry, Resume and Discard will be available once run history is recorded.',
+    'Execution was stopped. The worktree and partial files are kept. Retry, Resume and Discard will be available in a later version.',
   interrupted:
-    'Execution was interrupted. Retry, Resume and Discard will be available once run history is recorded.',
-  failed: 'Execution failed. Retry and Discard will be available once run history is recorded.',
+    'Execution was interrupted (worker shutdown or restart) and is never resumed automatically. The worktree is kept. Retry, Resume and Discard will be available in a later version.',
+  failed:
+    'Execution failed or its Git integrity check blocked review. The worktree and evidence are kept. Retry and Discard will be available in a later version.',
   discarded: 'Final state. The result was rejected; the task stays in history.',
   done: 'Final state. The approved changes were committed and pushed to the task branch.',
 };

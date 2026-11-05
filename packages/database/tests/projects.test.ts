@@ -46,7 +46,14 @@ const record = (overrides: Partial<NewProjectRecord> = {}): NewProjectRecord => 
 test('stores a project with defaults and persists it across connections', () => {
   withDatabase(({ db }, path) => {
     const stored = insertProject(db, record());
-    assert.deepEqual(stored, { ...record(), priority: 0, instructions: '' });
+    assert.deepEqual(stored, {
+      ...record(),
+      priority: 0,
+      instructions: '',
+      executionTrust: 'none',
+      executionTrustedCommonDir: null,
+      executionTrustedAt: null,
+    });
     assert.deepEqual(findProjectById(db, stored.id), stored);
     assert.equal(findProjectById(db, '00000000-0000-4000-8000-00000000ffff'), undefined);
 

@@ -84,18 +84,19 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M2 — Persistence and domain logic
 
 **M2-01 — Drizzle and SQLite**
-*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). The other core tables remain open.)*
+*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). 2026-11-05, execution slice: migration `0003_execution` adds `task_runs`, `workspaces`, `run_events`, a single-row `security_settings`, `worker_commands` and `worker_leases`, and the project trust columns. `reviews`, `git_operations` and `scheduler_settings` remain open.)*
 - Implement migrations, foreign keys, WAL mode and `busy_timeout` for both processes.
 - Create core tables: `projects`, `tasks`, `task_runs`, `workspaces`, `run_events`, `reviews`, `git_operations`, `scheduler_settings`; add command/lease storage when finalized.
 - Keep SQLite user data out of Git; commit migrations and schema source.
 
 **M2-02 — Domain states and transitions**
-*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Open: run and publish states and their transitions (with `task_runs`, `git_operations`), attempt history, and task deletion.)*
+*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Execution slice: run states, attempt numbering and the run/task mapping (`resolveRunFinish` in the worker; Git integrity status stored separately). Open: publish states (`git_operations`) and task deletion.)*
 - Implement typed task/run/publish states and legal transitions; use Zod schemas at boundaries.
 - Distinguish `Backlog`, `Queued`, `In Progress`, `Review`, `Done`, `Stopped`, `Interrupted`, `Failed`, `Discarded` and separate publish states.
 - Preserve attempts rather than overwriting prior run history.
 
 **M2-03 — Durable command handling**
+*(2026-11-05, execution slice: durable start requests (`worker_commands`, one pending per task, expiry after 5 minutes), persisted stop intent (`task_runs.stop_requested_at`), a single-worker lease (`worker_leases`) and transaction-safe claims. Open: pause/retry/publish commands, idempotency keys and priority ordering.)*
 - Persist enqueue, pause, stop, retry and publish intent with idempotency keys.
 - Introduce one worker ownership/lease strategy and transaction-safe task claims.
 - Add deterministic sorting by urgency, project priority, task priority, enqueue time and ID.
@@ -126,11 +127,13 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M4 — Scheduler and execution
 
 **M4-01 — Scheduler**
+*(2026-11-05: not started. The execution slice runs only explicitly requested tasks; the one-run-per-runtime limit is enforced at claim time and by partial unique indexes.)*
 - One elected worker polls/wakes on durable commands; respects pause/manual mode, global limit and **one active run per CLI** by default.
 - Skip a busy runtime so available capacity in another runtime can be used.
 - Atomic reservation before process launch; release only after termination has been reconciled.
 
 **M4-02 — Workspace and run lifecycle**
+*(2026-11-05, first slice: operator-started Trusted Local runs with worktree creation from the **local** base branch, Git integrity baseline and post-run comparison, bounded/redacted events, stop, timeout and restart reconciliation; see `ARCHITECTURE.md` §7.5 "Worker integration notes". Not yet: `git fetch` and remote-tracking base resolution, global instructions, SSE (M4-03).)*
 - On claim: fetch selected remote when applicable, resolve base ref to exact SHA, create unique task branch and external worktree; record identity.
 - Dispatch to adapter with global/project instructions plus task prompt, chosen model and worktree.
 - Record normalized, size-bounded events, exit status, summary and session ID when available.

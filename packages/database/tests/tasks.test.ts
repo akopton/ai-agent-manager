@@ -508,7 +508,22 @@ test('upgrades a project-only database without touching existing projects', () =
     const connection = createDatabase({ path });
     try {
       migrate(connection.db, { migrationsFolder: previous });
-      const existing = insertProject(connection.db, project(projectA, 'website'));
+      // Raw SQL: the current Drizzle schema has columns that the old schema does not.
+      const old = project(projectA, 'website');
+      connection.sqlite
+        .prepare(
+          'INSERT INTO projects (id, name, local_path, git_common_dir, remote_name, default_base_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          old.id,
+          old.name,
+          old.localPath,
+          old.gitCommonDir,
+          old.remoteName,
+          old.defaultBaseBranch,
+          old.createdAt,
+          old.updatedAt,
+        );
       const tableExists = connection.sqlite.prepare(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasks'",
       );
@@ -516,13 +531,21 @@ test('upgrades a project-only database without touching existing projects', () =
 
       applyMigrations(connection);
       assert.notEqual(tableExists.get(), undefined);
-      assert.deepEqual(findProjectById(connection.db, projectA), existing);
+      assert.deepEqual(findProjectById(connection.db, projectA), {
+        ...old,
+        priority: 0,
+        instructions: '',
+        // Added by 0003_execution with safe defaults: no project is trusted by an upgrade.
+        executionTrust: 'none',
+        executionTrustedCommonDir: null,
+        executionTrustedAt: null,
+      });
       assert.equal(
         connection.sqlite
           .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
           .pluck()
           .get(),
-        3,
+        4,
       );
       assert.deepEqual(connection.sqlite.pragma('foreign_key_check'), []);
       assert.deepEqual(

@@ -11,6 +11,7 @@ export type RunWorkerOptions = {
   logger?: Logger;
   resolvePaths?: WorkerOptions['resolvePaths'];
   openDatabase?: WorkerOptions['openDatabase'];
+  execution?: WorkerOptions['execution'];
   signals?: SignalSource;
   /** Called after the worker has started and shutdown handlers are installed. */
   onStarted?: (worker: Worker) => void;
@@ -25,27 +26,30 @@ const keepAliveIntervalMs = 2 ** 31 - 1;
 /**
  * Starts the worker, waits for SIGINT or SIGTERM, and resolves once shutdown has completed.
  */
-export const runWorker = ({
+export const runWorker = async ({
   logger = createConsoleLogger(),
   resolvePaths,
   openDatabase,
+  execution,
   signals = process,
   onStarted,
 }: RunWorkerOptions = {}): Promise<WorkerExit> => {
-  const worker = createWorker({ logger, resolvePaths, openDatabase });
+  const worker = createWorker({ logger, resolvePaths, openDatabase, execution });
 
   try {
     worker.start();
+    await worker.startExecution();
   } catch (error) {
     logger.error('Worker failed to start.', error);
-    return Promise.resolve({ exitCode: 1 });
+    await worker.stop().catch(() => undefined);
+    return { exitCode: 1 };
   }
 
   return new Promise<WorkerExit>((resolve) => {
     const keepAlive = setInterval(() => {}, keepAliveIntervalMs);
     const listeners = new Map<ShutdownSignal, () => void>();
 
-    const shutdown = (signal: ShutdownSignal): void => {
+    const shutdown = async (signal: ShutdownSignal): Promise<void> => {
       if (worker.state !== 'running') {
         logger.info(`Received ${signal}; shutdown is already in progress.`);
         return;
@@ -53,7 +57,7 @@ export const runWorker = ({
       logger.info(`Received ${signal}; shutting down gracefully.`);
       let exitCode = 0;
       try {
-        worker.stop();
+        await worker.stop();
       } catch (error) {
         exitCode = 1;
         logger.error('Worker shutdown failed.', error);
@@ -68,7 +72,7 @@ export const runWorker = ({
     };
 
     for (const signal of shutdownSignals) {
-      const listener = (): void => shutdown(signal);
+      const listener = (): void => void shutdown(signal);
       listeners.set(signal, listener);
       signals.on(signal, listener);
     }

@@ -206,7 +206,19 @@ const repositoryIdentity = ({ repository }: ValidInspection) => ({
   gitCommonDir: repository.commonDir,
 });
 
-const toProject = (record: ProjectRecord): Project => ({ ...record });
+/** The public project contract. Execution trust is exposed separately (`lib/server/execution`). */
+const toProject = (record: ProjectRecord): Project => ({
+  id: record.id,
+  name: record.name,
+  localPath: record.localPath,
+  gitCommonDir: record.gitCommonDir,
+  remoteName: record.remoteName,
+  defaultBaseBranch: record.defaultBaseBranch,
+  priority: record.priority,
+  instructions: record.instructions,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
+});
 
 export const listProjects = (db: Database): Project[] => listProjectRecords(db).map(toProject);
 

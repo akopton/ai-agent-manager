@@ -266,12 +266,21 @@ importers:
 
   apps/worker:
     dependencies:
+      '@ai-agent-manager/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@ai-agent-manager/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@ai-agent-manager/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@ai-agent-manager/git':
+        specifier: workspace:*
+        version: link:../../packages/git
+      '@ai-agent-manager/orchestrator':
+        specifier: workspace:*
+        version: link:../../packages/orchestrator
     devDependencies:
       '@types/node':
         specifier: ^26.6.6

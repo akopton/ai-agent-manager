@@ -61,8 +61,9 @@ const BoardPage = async ({ params }: { params: Promise<{ projectId: string }> })
               {project.name} board
             </h1>
             <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-              Only queued tasks are eligible to run. Agent execution is not available in this
-              version yet, so queued tasks wait until you return them to Backlog.
+              Only queued tasks are eligible to run. There is no automatic scheduler yet: open a
+              queued task and start it explicitly (Trusted Local Mode and a trusted project are
+              required).
             </p>
           </div>
           {tasks.length > 0 ? <NewTaskButton projectId={project.id} /> : null}

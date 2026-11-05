@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FolderGit2, LayoutDashboard } from 'lucide-react';
+import { FolderGit2, LayoutDashboard, Settings } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
@@ -12,6 +12,7 @@ const isActive = (pathname: string, href: string): boolean =>
 const links = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderGit2 },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export const MainNav = () => {

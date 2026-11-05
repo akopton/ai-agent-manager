@@ -19,8 +19,11 @@ web app register existing local Git repositories read-only, list them, show live
 repository details, edit project settings, and disconnect projects without touching the
 repository; see [Projects](#projects). The M3-02 task slice adds task creation, a
 per-project board, task details and editing, and the explicit Queue / Return to Backlog
-actions; see [Tasks and boards](#tasks-and-boards). Scheduling and agent runs are not
-implemented: queueing changes only the stored status.
+actions; see [Tasks and boards](#tasks-and-boards). The first execution slice (M2/M4 subset)
+lets the operator explicitly start one Queued task in Trusted Local Mode: the worker claims
+it, creates a task worktree, runs the agent CLI through the Trusted Local gate and launch
+boundary, and checks Git integrity after the run; see [Task execution](#task-execution).
+There is still no automatic scheduler.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -129,10 +132,11 @@ See [`packages/cli-diagnostics/README.md`](packages/cli-diagnostics/README.md).
 resolves and validates all runtime paths (see [Runtime configuration](#runtime-configuration)),
 logs them, and only then opens SQLite through `createDatabase()` from
 `@ai-agent-manager/database`. Invalid configuration fails startup with exit code 1 before
-any file is touched. It does not create the worktree root, apply migrations, poll, or
-run jobs yet. A single idle timer keeps it alive
-until SIGINT or SIGTERM, which stop the worker, close the database connection, and exit
-with code 0.
+any file is touched. It never applies migrations. When the execution tables exist, it takes
+the single-worker execution lease and polls for explicit operator commands (start requests
+and stop intents; see [Task execution](#task-execution)); it never picks queued tasks on its
+own. SIGINT or SIGTERM stop active runs (recorded as Interrupted), release the lease, close
+the database connection, and exit with code 0.
 
 ```sh
 AI_AGENT_MANAGER_DATABASE_PATH=/tmp/ai-agent-manager-dev/database.sqlite pnpm --filter @ai-agent-manager/worker dev
@@ -322,6 +326,44 @@ complete, stop, fail, interrupt, mark done) and actions that need run or review 
 (Retry, Resume, Request Changes, Discard, Approve & Push) are not exposed; the task page
 names them honestly instead. There is no drag-and-drop yet. No task operation launches a
 CLI, creates a worktree, or writes to the repository.
+
+## Task execution
+
+First durable execution slice (M2-01/M2-02/M2-03 subset, M4-02 subset, SEC-02 persistence).
+Agents run **only in Trusted Local Mode** (`docs/SPEC.md` §12.1) and only after two explicit,
+persisted operator decisions:
+
+1. **Settings** (`/settings`): read the versioned disclosure and enable Trusted Local Mode
+   (`PUT /api/settings/trusted-local`). Disabling clears the acceptance; a new disclosure
+   version blocks every run until it is accepted again.
+2. **Project page**: trust the repository (`PUT /api/projects/:projectId/execution-trust`). The
+   trust is bound to the repository's canonical root and common Git directory.
+
+Then, on a Queued task's page, **Start execution** (`POST …/tasks/:taskId/start`, 202) records
+a start request. The worker claims it in one transaction (task still Queued, consent and trust
+still valid, no active run for this task, the runtime's single slot free), creates attempt _n_
+as a `task_runs` row and moves the task to In Progress with the named `start` transition. It
+then validates the repository, creates the branch `agent/<task-id>` and its locked worktree
+under the managed worktree root from the **local** base branch (nothing is fetched), detects
+the CLI, captures a Git integrity baseline, re-reads consent and trust from the database,
+authorizes through `authorizeTrustedLocalExecution` and launches through
+`startAgentExecution` in the same process. After every outcome with a baseline it runs the
+post-run Git integrity comparison.
+
+| Outcome                                     | Run status    | Task        |
+| ------------------------------------------- | ------------- | ----------- |
+| Process completed, integrity clean          | `completed`   | Review      |
+| Process completed, integrity violation      | `completed`   | Failed      |
+| Process completed, integrity inconclusive   | `completed`   | Failed      |
+| CLI failure, timeout, output limit, refusal | `failed`      | Failed      |
+| Operator Stop (`POST …/stop`)               | `stopped`     | Stopped     |
+| Worker shutdown or restart while active     | `interrupted` | Interrupted |
+
+Worktrees and files are kept on every outcome. Nothing is committed, pushed, reset or deleted.
+Stop terminates the agent CLI's process group only (SEC-01). Interrupted runs are never resumed
+or retried; after a crash the agent's process group is not signalled and may still be running.
+Start requests that wait more than five minutes expire. The task page shows run state, the Git
+integrity result, recent bounded and redacted events, and refreshes while a run is active.
 
 ## UI foundation
 
