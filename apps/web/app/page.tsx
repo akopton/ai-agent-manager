@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Columns3, LayoutDashboard, Plus } from 'lucide-react';
+import { Bot, LayoutDashboard, Plus } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,10 +14,10 @@ import {
 
 const plannedAreas = [
   {
-    title: 'Project boards',
-    icon: Columns3,
-    description: 'Give each task a clear next step.',
-    detail: 'Organize work from backlog through execution and review on a dedicated project board.',
+    title: 'Agent execution',
+    icon: Bot,
+    description: 'Run queued tasks with Claude Code or Codex.',
+    detail: 'Queued tasks run in a dedicated branch and worktree, then wait for your review.',
   },
   {
     title: 'Overview',
@@ -54,7 +54,7 @@ const HomePage = () => (
         </CardTitle>
         <CardDescription className="max-w-2xl leading-6">
           Coordinate work across local repositories and review agent changes before publishing.
-          Start by adding a local repository; task management is coming next.
+          Start by adding a local repository, then create and queue tasks on its board.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-4">

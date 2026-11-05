@@ -17,8 +17,10 @@ change inventories and file diffs against the recorded base commit for review.
 The Projects slices (M2-01 `projects` table and the M3-01 repository library) let the
 web app register existing local Git repositories read-only, list them, show live
 repository details, edit project settings, and disconnect projects without touching the
-repository; see [Projects](#projects). Tasks, boards, scheduling, and agent runs are not
-implemented in the web app.
+repository; see [Projects](#projects). The M3-02 task slice adds task creation, a
+per-project board, task details and editing, and the explicit Queue / Return to Backlog
+actions; see [Tasks and boards](#tasks-and-boards). Scheduling and agent runs are not
+implemented: queueing changes only the stored status.
 The experimental scripts in `poc/` remain separate from production workspaces.
 
 ## Workspace layout
@@ -263,16 +265,17 @@ Disconnecting asks for confirmation and deletes only the project row in SQLite. 
 inspects or touches the repository: files, uncommitted changes, branches, worktrees,
 remotes, Git configuration, and history stay as they are, and the repository can be
 registered again afterwards. It fails closed with `project_has_dependents` (HTTP 409) if
-any table declares a foreign key to `projects` and still has rows for the project; no
-such tables exist yet, so future tasks, runs, and workspaces are covered automatically
-instead of being removed by a cascade.
+any table declares a foreign key to `projects` and still has rows for the project (today
+`tasks`); future runs and workspaces are covered automatically instead of being removed
+by a cascade. The disconnect dialog shows the task count and disables the action while
+tasks exist; task deletion is not implemented yet.
 
 Request handling (`apps/web/lib/server`): request bodies are validated with Zod and
 errors use `{ error: { code, message, details? } }`. `proxy.ts` rejects requests whose
 `Host` is not a loopback address (DNS rebinding). `POST`, `PATCH`, and `DELETE` routes
-also require an `Origin` header equal to the app's own origin (and `POST`/`PATCH` require
-JSON), so other websites cannot use the browser to reach them; non-browser clients must
-send that header explicitly.
+also require an `Origin` header equal to the app's own origin (and routes with a request
+body require JSON; the task action routes take no body), so other websites cannot use the
+browser to reach them; non-browser clients must send that header explicitly.
 
 To try it with a disposable repository and database:
 
@@ -285,6 +288,40 @@ pnpm --filter @ai-agent-manager/web dev
 ```
 
 Then open <http://127.0.0.1:3000/projects> and add `~/tmp/demo-repo`.
+
+## Tasks and boards
+
+| Route                                                           | Purpose                                                 |
+| --------------------------------------------------------------- | ------------------------------------------------------- |
+| `/projects/[projectId]/board`                                   | Project board: all nine task states                     |
+| `/projects/[projectId]/tasks/new`                               | Create a task (it starts in Backlog)                    |
+| `/projects/[projectId]/tasks/[taskId]`                          | Task details: full prompt, metadata, allowed actions    |
+| `/projects/[projectId]/tasks/[taskId]/edit`                     | Edit a Backlog task, or reprioritize a Queued one       |
+| `GET /api/projects/:projectId/tasks`                            | List the project's tasks                                |
+| `POST /api/projects/:projectId/tasks`                           | Create a task in Backlog                                |
+| `GET /api/projects/:projectId/tasks/:taskId`                    | One task of the project                                 |
+| `PATCH /api/projects/:projectId/tasks/:taskId`                  | Edit fields the current status allows                   |
+| `POST /api/projects/:projectId/tasks/:taskId/queue`             | Named transition `queue` (Backlog → Queued)             |
+| `POST /api/projects/:projectId/tasks/:taskId/return-to-backlog` | Named transition `return_to_backlog` (Queued → Backlog) |
+
+Task routes are nested under their project: a task ID that belongs to another project is
+reported as `task_not_found` (404). Request bodies use the domain schemas from
+`packages/core` (`createTaskInputSchema` without `projectId`, `updateTaskInputSchema`);
+unknown keys such as `status` are rejected. All writes go through the task commands in
+`packages/database`, which enforce the lifecycle: content (title, prompt, runtime,
+model, base branch) is editable only in Backlog, priority and Urgent also in Queued;
+other edits fail with `task_not_editable` and illegal transitions with
+`illegal_transition` (both HTTP 409). Switching the runtime resets the model to
+`Default`. An explicit base branch must exist locally in the registered repository
+(checked read-only; `base_branch_not_found`, HTTP 422).
+
+The board shows Backlog, Queued, In Progress, Review and Done as columns (scrolling
+sideways on narrow screens) and Stopped, Interrupted, Failed and Discarded as a compact
+second row. Only Queue and Return to Backlog are offered. Worker transitions (start,
+complete, stop, fail, interrupt, mark done) and actions that need run or review records
+(Retry, Resume, Request Changes, Discard, Approve & Push) are not exposed; the task page
+names them honestly instead. There is no drag-and-drop yet. No task operation launches a
+CLI, creates a worktree, or writes to the repository.
 
 ## UI foundation
 

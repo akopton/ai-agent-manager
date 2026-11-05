@@ -1,3 +1,4 @@
+import { TaskError, type TaskErrorCode } from '@ai-agent-manager/core';
 import type { z } from 'zod';
 import type { ApiErrorCode, ApiErrorResponse } from '@/lib/projects/contracts';
 import { DatabaseNotReadyError } from '@/lib/server/database';
@@ -36,15 +37,31 @@ const serviceErrorStatus = (code: ProjectServiceErrorCode): number => {
   }
 };
 
+const taskErrorStatus = (code: TaskErrorCode): number => {
+  switch (code) {
+    case 'invalid_task_input':
+      return 400;
+    case 'project_not_found':
+    case 'task_not_found':
+      return 404;
+    case 'task_not_editable':
+    case 'illegal_transition':
+      return 409;
+  }
+};
+
 /** Converts expected failures into structured responses; unexpected ones are logged. */
 export const handleRouteError = (error: unknown): Response => {
   if (error instanceof ProjectServiceError) {
     return errorResponse(error.code, error.message, serviceErrorStatus(error.code), error.details);
   }
+  if (error instanceof TaskError) {
+    return errorResponse(error.code, error.message, taskErrorStatus(error.code), error.details);
+  }
   if (error instanceof DatabaseNotReadyError) {
     return errorResponse('database_not_ready', error.message, 503);
   }
-  console.error('Unexpected error in a project API route.', error);
+  console.error('Unexpected error in an API route.', error);
   return errorResponse('internal_error', 'An unexpected error occurred. See the server log.', 500);
 };
 

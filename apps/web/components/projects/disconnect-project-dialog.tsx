@@ -22,9 +22,11 @@ import { disconnectedProjectsUrl } from '@/lib/projects/feedback';
 
 type DisconnectProjectDialogProps = {
   project: { id: string; name: string; localPath: string };
+  /** Tasks that reference the project. While there are any, disconnecting is refused. */
+  taskCount: number;
 };
 
-export const DisconnectProjectDialog = ({ project }: DisconnectProjectDialogProps) => {
+export const DisconnectProjectDialog = ({ project, taskCount }: DisconnectProjectDialogProps) => {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -96,6 +98,21 @@ export const DisconnectProjectDialog = ({ project }: DisconnectProjectDialogProp
           </p>
         </div>
 
+        {taskCount > 0 ? (
+          <Alert variant="warning">
+            <AlertCircle aria-hidden="true" />
+            <AlertTitle>
+              This project has {taskCount} {taskCount === 1 ? 'task' : 'tasks'}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                It cannot be disconnected while tasks exist. Task deletion is not available yet, so
+                the tasks and the project stay as they are.
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         {error !== null ? (
           <Alert variant="destructive">
             <AlertCircle aria-hidden="true" />
@@ -113,7 +130,11 @@ export const DisconnectProjectDialog = ({ project }: DisconnectProjectDialogProp
             </Button>
           </AlertDialogCancel>
           {/* A plain button keeps the dialog open while the request runs and on failure. */}
-          <Button variant="destructive" onClick={() => void handleDisconnect()} disabled={pending}>
+          <Button
+            variant="destructive"
+            onClick={() => void handleDisconnect()}
+            disabled={pending || taskCount > 0}
+          >
             {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
             {pending ? 'Disconnecting…' : 'Disconnect project'}
           </Button>

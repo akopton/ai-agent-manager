@@ -111,11 +111,13 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Disconnect must not delete source repositories or retained worktrees.
 
 **M3-02 — Task creation and board**
+*(2026-11-05, first slice: task creation (always `Backlog`), per-project board with all nine states (five main columns plus a compact row for Stopped/Interrupted/Failed/Discarded), task details and editing as the domain allows, explicit Queue and Return to Backlog through the named transitions, task counts in the project library and details, and the runtime-change model reset. Deferred: drag-and-drop (must request a named transition), a maintained candidate model list, task deletion and the disconnect decision flow, and actions that need run/review records (Retry, Resume, Request Changes, Discard). Model identifiers are checked for shape only; CLI rejection handling arrives with M4.)*
 - Create tasks with title, prompt, runtime (`claude`/`codex`), model (`Default`/explicit), priority, optional base branch override.
 - Reset model when changing runtimes; display rejected/unsupported models as actionable errors.
 - Render per-project Kanban with drag/drop transitions; only explicit `Queued` tasks are eligible to run.
 
 **M3-03 — REST boundaries**
+*(2026-11-05: task routes are nested under `/api/projects/:projectId/tasks[/:taskId]` so every lookup and mutation is scoped to its project; see `ARCHITECTURE.md` §10. Same Host/Origin/JSON guards and structured errors as the project routes.)*
 - Validate requests with Zod; return structured errors and guard mutations against untrusted origins.
 - Resolve all registered repo paths on the server; never execute a browser-provided filesystem path directly.
 

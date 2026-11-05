@@ -1,10 +1,16 @@
-import { projectRegistrationErrorCodes, projectSchema } from '@ai-agent-manager/core';
+import {
+  projectRegistrationErrorCodes,
+  projectSchema,
+  taskErrorCodes,
+} from '@ai-agent-manager/core';
 import { z } from 'zod';
 
-// Response contracts shared by the project route handlers, server components, and the browser.
+// Response contracts shared by the project and task route handlers, server components, and the
+// browser.
 
 export const apiErrorCodes = [
   ...projectRegistrationErrorCodes,
+  ...taskErrorCodes,
   'invalid_request',
   'unsupported_media_type',
   'payload_too_large',

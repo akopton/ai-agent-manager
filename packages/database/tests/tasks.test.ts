@@ -13,6 +13,7 @@ import {
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import {
   applyMigrations,
+  countTasksByProjectAndStatus,
   createDatabase,
   createTask,
   deleteProject,
@@ -220,6 +221,24 @@ test('lists only the tasks of the requested project', () => {
       [taskId(2)],
     );
     assert.deepEqual(listProjectTasks(db, '00000000-0000-4000-8000-00000000ffff'), []);
+  });
+});
+
+test('counts tasks per project and status', () => {
+  withDatabase(({ db }) => {
+    assert.deepEqual(countTasksByProjectAndStatus(db), []);
+    createTask(db, { id: taskId(1), input: input(), now: 1 });
+    createTask(db, { id: taskId(2), input: input(), now: 2 });
+    createTask(db, { id: taskId(3), input: input({ projectId: projectB }), now: 3 });
+    transitionTask(db, { id: taskId(2), action: 'queue', now: 4 });
+    const counts = countTasksByProjectAndStatus(db).sort((a, b) =>
+      `${a.projectId}${a.status}`.localeCompare(`${b.projectId}${b.status}`),
+    );
+    assert.deepEqual(counts, [
+      { projectId: projectA, status: 'backlog', count: 1 },
+      { projectId: projectA, status: 'queued', count: 1 },
+      { projectId: projectB, status: 'backlog', count: 1 },
+    ]);
   });
 });
 

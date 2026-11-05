@@ -556,6 +556,8 @@ Illustrative route surface (final endpoints and exact payloads will be refined d
 | `GET/PATCH` | `/api/settings` | Scheduler and global instructions |
 | `GET` | `/api/events?after=<id>` | SSE stream, supports reconnect replay |
 
+*Implementation note (2026-11-05, M3-02/M3-03):* task routes are nested under their project, `/api/projects/:projectId/tasks/:taskId[/<action>]`, so a task is always resolved within the project in the URL (a task of another project is `task_not_found`). Implemented so far: list/create, details/edit, `queue` and `return-to-backlog` (the named `return_to_backlog` transition, which the table above omits). The remaining task routes in the table are expected to follow the same nesting.
+
 Validate all bodies, route params, and query params with Zod. Use structured errors (`code`, `message`, `details`) and request/command IDs for deduplication. Never trust a browser-supplied filesystem path after project registration; resolve server-side from the database.
 
 Planned conversation routes are listed in §15.10.

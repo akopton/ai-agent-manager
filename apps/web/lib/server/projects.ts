@@ -374,9 +374,11 @@ type AvailableRepository = Extract<RepositoryState, { status: 'available' }>;
  * Inspects the registered repository (stored canonical path only) and requires it to be the same,
  * usable repository. Used before saving a changed base branch or remote.
  */
-const requireRegisteredRepository = async (record: ProjectRecord): Promise<AvailableRepository> => {
+const requireRegisteredRepository = async (
+  record: ProjectRecord,
+  suffix = 'The base branch and remote cannot be changed until this is resolved.',
+): Promise<AvailableRepository> => {
   const state = await inspectRegisteredRepository(record);
-  const suffix = 'The base branch and remote cannot be changed until this is resolved.';
   switch (state.status) {
     case 'available':
       return state;
@@ -390,6 +392,21 @@ const requireRegisteredRepository = async (record: ProjectRecord): Promise<Avail
     case 'inspection_failed':
       throw new ProjectServiceError('repository_inspection_failed', state.message);
   }
+};
+
+/**
+ * Checks that `branch` exists locally in the registered repository (stored canonical path only,
+ * read-only). Used for task base branch overrides.
+ */
+export const assertRegisteredBranch = async (
+  record: ProjectRecord,
+  branch: string,
+): Promise<void> => {
+  const repository = await requireRegisteredRepository(
+    record,
+    'A task base branch override cannot be checked until this is resolved; use the project default instead.',
+  );
+  assertBranchExists(repository.branches, branch);
 };
 
 /** Keeps only the fields whose value differs from the stored record. */

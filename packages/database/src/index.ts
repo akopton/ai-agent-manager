@@ -34,10 +34,12 @@ export {
 } from './projects.js';
 export { projects, schema, tasks } from './schema.js';
 export {
+  countTasksByProjectAndStatus,
   createTask,
   findTaskById,
   listProjectTasks,
   transitionTask,
   updateTask,
+  type ProjectTaskStatusCount,
   type TaskRecord,
 } from './tasks.js';

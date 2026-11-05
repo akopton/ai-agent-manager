@@ -1,7 +1,15 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { connection } from 'next/server';
-import { CheckCircle2, ChevronRight, FolderGit2, GitBranch, Globe, Plus } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  FolderGit2,
+  GitBranch,
+  Globe,
+  ListTodo,
+  Plus,
+} from 'lucide-react';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -13,6 +21,8 @@ import { formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
 import { listProjects } from '@/lib/server/projects';
+import { countProjectTasks } from '@/lib/server/tasks';
+import { emptyTaskCounts, summarizeTaskCounts } from '@/lib/tasks/board';
 
 export const metadata: Metadata = { title: 'Projects · AI Agent Manager' };
 
@@ -33,7 +43,15 @@ const ProjectsPage = async ({
   // SQLite reads are synchronous; render per request instead of at build time.
   await connection();
   const disconnectedName = readDisconnectedName(await searchParams);
-  const result = await loadForPage(() => listProjects(getDatabase()));
+  const result = await loadForPage(() => {
+    const db = getDatabase();
+    // One grouped count query for all projects, not one query per project.
+    const counts = countProjectTasks(db);
+    return listProjects(db).map((project) => ({
+      ...project,
+      taskCounts: counts.get(project.id) ?? emptyTaskCounts(),
+    }));
+  });
 
   return (
     <>
@@ -111,6 +129,10 @@ const ProjectsPage = async ({
                         <Badge variant="outline">
                           <Globe aria-hidden="true" />
                           {project.remoteName ?? 'No remote'}
+                        </Badge>
+                        <Badge variant="outline">
+                          <ListTodo aria-hidden="true" />
+                          {summarizeTaskCounts(project.taskCounts)}
                         </Badge>
                         {project.priority !== 0 ? (
                           <Badge variant="outline">Priority {project.priority}</Badge>

@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Columns3,
   Eye,
   GitBranch,
   Globe,
@@ -25,6 +26,8 @@ import { describeHead, describeWorkingTree, formatTimestamp } from '@/lib/projec
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
 import { getProjectDetails } from '@/lib/server/projects';
+import { countProjectTasks } from '@/lib/server/tasks';
+import { emptyTaskCounts, summarizeTaskCounts, taskBoardUrl } from '@/lib/tasks/board';
 
 export const metadata: Metadata = { title: 'Project · AI Agent Manager' };
 
@@ -180,7 +183,16 @@ const ProjectPage = async ({
   await connection();
   const { projectId } = await params;
   const saved = wasProjectSaved(await searchParams);
-  const result = await loadForPage(() => getProjectDetails(getDatabase(), projectId));
+  const result = await loadForPage(async () => {
+    const db = getDatabase();
+    const details = await getProjectDetails(db, projectId);
+    return details === undefined
+      ? undefined
+      : {
+          ...details,
+          taskCounts: countProjectTasks(db).get(details.project.id) ?? emptyTaskCounts(),
+        };
+  });
 
   if (!result.ok) {
     return (
@@ -194,7 +206,7 @@ const ProjectPage = async ({
     notFound();
   }
 
-  const { project, repository } = result.data;
+  const { project, repository, taskCounts } = result.data;
   const available = repository.status === 'available' ? repository : undefined;
 
   return (
@@ -209,6 +221,12 @@ const ProjectPage = async ({
             <p className="font-mono text-sm break-all text-muted-foreground">{project.localPath}</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href={taskBoardUrl(project.id)}>
+                <Columns3 aria-hidden="true" />
+                Open board
+              </Link>
+            </Button>
             <Button asChild variant="outline">
               <Link href={`/projects/${project.id}/edit`}>
                 <Pencil aria-hidden="true" />
@@ -217,6 +235,7 @@ const ProjectPage = async ({
             </Button>
             <DisconnectProjectDialog
               project={{ id: project.id, name: project.name, localPath: project.localPath }}
+              taskCount={taskCounts.total}
             />
           </div>
         </div>
@@ -274,6 +293,11 @@ const ProjectPage = async ({
                 </Field>
               </>
             ) : null}
+            <Field label="Tasks">
+              <Link href={taskBoardUrl(project.id)} className="underline-offset-4 hover:underline">
+                {summarizeTaskCounts(taskCounts)}
+              </Link>
+            </Field>
             <Field label="Priority">
               {project.priority}
               <span className="text-muted-foreground"> (lower runs first)</span>

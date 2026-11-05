@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Columns3, FolderGit2, LayoutDashboard } from 'lucide-react';
+import { FolderGit2, LayoutDashboard } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 
@@ -38,11 +38,6 @@ export const MainNav = () => {
           </Button>
         );
       })}
-      <Button variant="ghost" disabled className="h-10 w-full justify-start gap-3">
-        <Columns3 aria-hidden="true" />
-        Project boards
-        <span className="ml-auto text-xs">Soon</span>
-      </Button>
     </nav>
   );
 };

@@ -10,9 +10,10 @@ import {
   updateTaskInputSchema,
   type CreateTaskInput,
   type TaskAction,
+  type TaskStatus,
   type UpdateTaskInput,
 } from '@ai-agent-manager/core';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, count, eq } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import { projects, tasks } from './schema.js';
@@ -101,6 +102,19 @@ export const listProjectTasks = (db: Database, projectId: string): TaskRecord[] 
     .from(tasks)
     .where(eq(tasks.projectId, projectId))
     .orderBy(asc(tasks.createdAt), asc(tasks.id))
+    .all();
+
+export type ProjectTaskStatusCount = { projectId: string; status: TaskStatus; count: number };
+
+/**
+ * Counts tasks per project and status in one grouped query (served by the `(project_id, status)`
+ * index). Projects without tasks are absent from the result.
+ */
+export const countTasksByProjectAndStatus = (db: Database): ProjectTaskStatusCount[] =>
+  db
+    .select({ projectId: tasks.projectId, status: tasks.status, count: count() })
+    .from(tasks)
+    .groupBy(tasks.projectId, tasks.status)
     .all();
 
 /**
