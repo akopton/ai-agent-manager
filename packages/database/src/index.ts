@@ -32,4 +32,12 @@ export {
   type ProjectRecord,
   type ProjectSettingsUpdate,
 } from './projects.js';
-export { projects, schema } from './schema.js';
+export { projects, schema, tasks } from './schema.js';
+export {
+  createTask,
+  findTaskById,
+  listProjectTasks,
+  transitionTask,
+  updateTask,
+  type TaskRecord,
+} from './tasks.js';

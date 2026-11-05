@@ -84,12 +84,13 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M2 — Persistence and domain logic
 
 **M2-01 — Drizzle and SQLite**
-*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`). The other core tables remain open.)*
+*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). The other core tables remain open.)*
 - Implement migrations, foreign keys, WAL mode and `busy_timeout` for both processes.
 - Create core tables: `projects`, `tasks`, `task_runs`, `workspaces`, `run_events`, `reviews`, `git_operations`, `scheduler_settings`; add command/lease storage when finalized.
 - Keep SQLite user data out of Git; commit migrations and schema source.
 
 **M2-02 — Domain states and transitions**
+*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Open: run and publish states and their transitions (with `task_runs`, `git_operations`), attempt history, and task deletion.)*
 - Implement typed task/run/publish states and legal transitions; use Zod schemas at boundaries.
 - Distinguish `Backlog`, `Queued`, `In Progress`, `Review`, `Done`, `Stopped`, `Interrupted`, `Failed`, `Discarded` and separate publish states.
 - Preserve attempts rather than overwriting prior run history.

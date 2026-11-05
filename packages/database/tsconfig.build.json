@@ -4,7 +4,9 @@
     "rootDir": "src",
     "outDir": "dist",
     "noEmit": false,
-    "declaration": true
+    "declaration": true,
+    // Compile against the built workspace packages, which `pnpm build` produces first.
+    "customConditions": []
   },
   "include": ["src/**/*.ts"]
 }

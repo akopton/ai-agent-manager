@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { chmodSync, mkdirSync, renameSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { RegisterProjectRequest } from '@ai-agent-manager/core';
-import type { DatabaseConnection } from '@ai-agent-manager/database';
+import { createTask, type DatabaseConnection } from '@ai-agent-manager/database';
 import {
   disconnectProject,
   getProjectDetails,
@@ -455,13 +456,11 @@ test('refuses to disconnect while other records reference the project', async ()
   try {
     const root = createRepository(join(directory, 'repo'));
     const project = await registerProject(connection.db, request(root));
-    // A stand-in for a future `tasks` table.
-    connection.sqlite.exec(
-      'CREATE TABLE tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE)',
-    );
-    connection.sqlite
-      .prepare('INSERT INTO tasks (id, project_id) VALUES (?, ?)')
-      .run('t', project.id);
+    createTask(connection.db, {
+      id: randomUUID(),
+      input: { projectId: project.id, title: 'Task', prompt: 'Prompt', agentRuntime: 'claude' },
+      now: Date.now(),
+    });
 
     const error = await rejectsWith(
       () => disconnectProject(connection.db, project.id),
