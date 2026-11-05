@@ -104,3 +104,20 @@ test('renders every state as a column, with task metadata and honest actions', (
   assert.doesNotMatch(html, /Retry|Resume|Request Changes|Mark Done|Start/);
   assert.match(html, new RegExp(`href="/projects/${projectId}/tasks/${id(1)}"`));
 });
+
+test('links Review tasks to Review Changes, and only those', () => {
+  const html = render(
+    createElement(TaskBoard, {
+      projectDefaultBranch: 'main',
+      tasks: [
+        task({ id: id(1), title: 'Awaiting review', status: 'review' }),
+        task({ id: id(2), title: 'Broken', status: 'failed' }),
+        task({ id: id(3), title: 'Draft', status: 'backlog' }),
+      ],
+    }),
+  );
+  const review = columnHtml(html, 'review');
+  assert.match(review, new RegExp(`href="/projects/${projectId}/tasks/${id(1)}/review"`));
+  assert.match(review, />Review changes</);
+  assert.equal(html.match(/\/review"/g)?.length, 1);
+});

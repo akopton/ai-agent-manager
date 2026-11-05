@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkHost, checkMutationRequest, isLoopbackHost } from '@/lib/server/request-guard';
+import {
+  checkContentRead,
+  checkHost,
+  checkMutationRequest,
+  isLoopbackHost,
+} from '@/lib/server/request-guard';
 
 test('accepts only loopback Host headers', () => {
   for (const host of ['127.0.0.1', '127.0.0.1:3000', 'localhost', 'LOCALHOST:3000', '[::1]:3000']) {
@@ -55,4 +60,24 @@ test('requires the exact application Origin for mutations', () => {
       ?.code,
     'forbidden_host',
   );
+});
+
+test('content reads allow same-origin and direct navigation, and refuse cross-origin requests', () => {
+  const headers = (values: Record<string, string>) => new Headers(values);
+  const host = '127.0.0.1:3000';
+  assert.equal(checkContentRead(headers({ host })), undefined);
+  assert.equal(checkContentRead(headers({ host, 'sec-fetch-site': 'same-origin' })), undefined);
+  assert.equal(checkContentRead(headers({ host, 'sec-fetch-site': 'none' })), undefined);
+  assert.equal(checkContentRead(headers({ host, origin: 'http://127.0.0.1:3000' })), undefined);
+  const crossOrigin: Record<string, string>[] = [
+    { origin: 'http://evil.example' },
+    { origin: 'http://127.0.0.1:4000' },
+    { origin: 'null' },
+    { 'sec-fetch-site': 'cross-site' },
+    { 'sec-fetch-site': 'same-site' },
+  ];
+  for (const extra of crossOrigin) {
+    assert.equal(checkContentRead(headers({ host, ...extra }))?.code, 'forbidden_origin');
+  }
+  assert.equal(checkContentRead(headers({ host: 'evil.example' }))?.code, 'forbidden_host');
 });

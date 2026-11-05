@@ -219,7 +219,7 @@ const parseFindings = (
 
 const activeStatuses: readonly TaskRunStatus[] = ['pending', 'starting', 'running', 'stopping'];
 
-const toRunView = (run: TaskRunRecord): TaskRunView => {
+export const toRunView = (run: TaskRunRecord): TaskRunView => {
   const { findings, total } = parseFindings(run.gitIntegrityResultJson);
   return {
     id: run.id,

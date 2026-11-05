@@ -14,7 +14,7 @@ export type ClientResult<T> = { ok: true; data: T } | { ok: false; error: Client
  * is sent as JSON; without one, no body or content type is sent.
  */
 export const requestJson = async <T>(
-  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   schema: z.ZodType<T>,
   body?: unknown,

@@ -167,6 +167,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M6 — Review and safe publishing
 
 **M6-01 — Change inventory and snapshot**
+*(2026-11-05, first slice: read-only Review Changes. `GET /api/projects/:projectId/tasks/:taskId/review` (run metadata, Git integrity, eligibility, change inventory) and `GET …/review/diff?path=` (one file's diff, only for inventory paths), page `/projects/:projectId/tasks/:taskId/review`, linked from the Review column and the task page. The worktree comes from the latest run's stored workspace and is verified against the task, project and managed layout before `inspectTaskChanges` reads it. Integrity violations and inconclusive checks are shown and block eligibility. Not yet: the persisted review snapshot (`reviews` table, snapshot hash), actual test results, and an "open in editor" action; an unreadable file makes the whole inventory unavailable instead of being listed.)*
 - Inventory staged/unstaged/untracked/deleted/renamed/binary files using robust Git commands and NUL-delimited paths.
 - Record branch, HEAD and canonical content hashes in a review snapshot; show diffs and actual test results, not invented pass indicators.
 

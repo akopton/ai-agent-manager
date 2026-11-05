@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { ArrowLeft, CheckCircle2, Info, Pencil } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileDiff, Info, Pencil } from 'lucide-react';
 import { taskPriorityLabels, taskStatusLabels } from '@ai-agent-manager/core';
 
 import { TaskExecutionPanel } from '@/components/execution/task-execution-panel';
@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatTimestamp } from '@/lib/projects/format';
+import { taskReviewUrl } from '@/lib/review/format';
 import { getDatabase } from '@/lib/server/database';
 import { getTaskExecution } from '@/lib/server/execution';
 import { loadForPage } from '@/lib/server/load';
@@ -76,6 +77,10 @@ const TaskPage = async ({
 
   const { project, task, execution } = result.data;
   const editability = taskEditability(task.status);
+  const [latestRun] = execution.runs;
+  // Changes can be inspected once the latest run has ended and created a worktree.
+  const changesInspectable =
+    latestRun !== undefined && !latestRun.active && execution.workspace !== null;
 
   return (
     <>
@@ -99,6 +104,14 @@ const TaskPage = async ({
             </div>
           </div>
           <div className="flex flex-wrap items-start gap-2">
+            {changesInspectable ? (
+              <Button asChild variant={task.status === 'review' ? 'default' : 'outline'}>
+                <Link href={taskReviewUrl(project.id, task.id)}>
+                  <FileDiff aria-hidden="true" />
+                  {task.status === 'review' ? 'Review changes' : 'Inspect changes'}
+                </Link>
+              </Button>
+            ) : null}
             {editability.content || editability.priority ? (
               <Button asChild variant="outline">
                 <Link href={`/projects/${project.id}/tasks/${task.id}/edit`}>

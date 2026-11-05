@@ -40,3 +40,30 @@ export const checkMutationRequest = (headers: Headers): RequestGuardFailure | un
   }
   return undefined;
 };
+
+const crossOriginFailure: RequestGuardFailure = {
+  code: 'forbidden_origin',
+  message: 'Repository content is available only to the AI Agent Manager web app.',
+};
+
+/**
+ * For reads that return repository content (review diffs): the Host must be loopback, and a
+ * request that a browser marks as cross-origin is rejected. Same-origin `fetch` GETs usually send
+ * no Origin, so a missing Origin is allowed; a present Origin must be this application's origin,
+ * and `Sec-Fetch-Site` (when sent) must be `same-origin` or `none` (typed URL, bookmark).
+ */
+export const checkContentRead = (headers: Headers): RequestGuardFailure | undefined => {
+  const hostFailure = checkHost(headers);
+  if (hostFailure !== undefined) {
+    return hostFailure;
+  }
+  const site = headers.get('sec-fetch-site')?.toLowerCase();
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') {
+    return crossOriginFailure;
+  }
+  const origin = headers.get('origin')?.toLowerCase();
+  if (origin !== undefined && origin !== `http://${headers.get('host')?.toLowerCase()}`) {
+    return crossOriginFailure;
+  }
+  return undefined;
+};

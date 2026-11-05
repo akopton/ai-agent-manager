@@ -54,7 +54,7 @@ export const taskStatusNotes: Readonly<Record<TaskStatus, string>> = {
   in_progress:
     'An agent is working on this task in its own worktree. Stop terminates the agent’s process group; files are kept.',
   review:
-    'The agent process completed and no observable Git mutation was found. Inspect the worktree; Approve & Push, Request Changes and Discard will be available with the review workflow.',
+    'The agent process completed and no observable Git mutation was found. Open Review Changes to inspect what the agent changed; Approve & Push, Request Changes and Discard will be available with the review workflow.',
   stopped:
     'Execution was stopped. The worktree and partial files are kept. Retry, Resume and Discard will be available in a later version.',
   interrupted:

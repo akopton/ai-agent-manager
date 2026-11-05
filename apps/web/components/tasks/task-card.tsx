@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { GitBranch } from 'lucide-react';
+import { FileDiff, GitBranch } from 'lucide-react';
 import type { Task } from '@ai-agent-manager/core';
 
 import { TaskActions } from '@/components/tasks/task-actions';
@@ -9,6 +9,8 @@ import {
   TaskStatusBadge,
   UrgentBadge,
 } from '@/components/tasks/task-badges';
+import { Button } from '@/components/ui/button';
+import { taskReviewUrl } from '@/lib/review/format';
 import { taskUrl } from '@/lib/tasks/board';
 
 type TaskCardProps = { task: Task; projectDefaultBranch: string };
@@ -39,6 +41,14 @@ export const TaskCard = ({ task, projectDefaultBranch }: TaskCardProps) => (
         {task.baseBranch === null ? ' (default)' : null}
       </span>
     </p>
+    {task.status === 'review' ? (
+      <Button asChild size="sm" variant="outline">
+        <Link href={taskReviewUrl(task.projectId, task.id)}>
+          <FileDiff aria-hidden="true" />
+          Review changes
+        </Link>
+      </Button>
+    ) : null}
     <TaskActions projectId={task.projectId} task={task} size="sm" />
   </article>
 );

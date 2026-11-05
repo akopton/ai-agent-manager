@@ -8,7 +8,8 @@ import type { z } from 'zod';
 import type { ApiErrorCode, ApiErrorResponse } from '@/lib/projects/contracts';
 import { DatabaseNotReadyError } from '@/lib/server/database';
 import { ProjectServiceError, type ProjectServiceErrorCode } from '@/lib/server/projects';
-import { checkHost, checkMutationRequest } from '@/lib/server/request-guard';
+import { ReviewError, reviewErrorStatus } from '@/lib/review/errors';
+import { checkContentRead, checkHost, checkMutationRequest } from '@/lib/server/request-guard';
 
 const maxBodyBytes = 64 * 1024;
 const noStore = { 'Cache-Control': 'no-store' };
@@ -85,6 +86,9 @@ export const handleRouteError = (error: unknown): Response => {
       error.details,
     );
   }
+  if (error instanceof ReviewError) {
+    return errorResponse(error.code, error.message, reviewErrorStatus(error.code), error.details);
+  }
   if (error instanceof DatabaseNotReadyError) {
     return errorResponse('database_not_ready', error.message, 503);
   }
@@ -95,6 +99,15 @@ export const handleRouteError = (error: unknown): Response => {
 /** Guards a read-only route. Returns a response to send when the request is rejected. */
 export const guardRead = (request: Request): Response | undefined => {
   const failure = checkHost(request.headers);
+  return failure === undefined ? undefined : errorResponse(failure.code, failure.message, 403);
+};
+
+/**
+ * Guards a read-only route that returns repository content: loopback Host, and no request that
+ * the browser marks as cross-origin. Returns a response to send when the request is rejected.
+ */
+export const guardContentRead = (request: Request): Response | undefined => {
+  const failure = checkContentRead(request.headers);
   return failure === undefined ? undefined : errorResponse(failure.code, failure.message, 403);
 };
 

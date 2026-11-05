@@ -5,6 +5,7 @@ import {
   taskErrorCodes,
 } from '@ai-agent-manager/core';
 import { z } from 'zod';
+import { reviewErrorCodes } from '@/lib/review/errors';
 
 // Response contracts shared by the project and task route handlers, server components, and the
 // browser.
@@ -24,6 +25,7 @@ export const apiErrorCodes = [
   'repository_identity_changed',
   'database_not_ready',
   'repository_inspection_failed',
+  ...reviewErrorCodes,
   'internal_error',
 ] as const;
 
