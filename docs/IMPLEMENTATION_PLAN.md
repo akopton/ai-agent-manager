@@ -84,7 +84,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 ### M2 — Persistence and domain logic
 
 **M2-01 — Drizzle and SQLite**
-*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). 2026-11-05, execution slice: migration `0003_execution` adds `task_runs`, `workspaces`, `run_events`, a single-row `security_settings`, `worker_commands` and `worker_leases`, and the project trust columns. `reviews`, `git_operations` and `scheduler_settings` remain open.)*
+*(2026-11-05: connection settings and migrations exist; the `projects` table is added (migration `0001_projects`) and the `tasks` table (migration `0002_tasks`, `RESTRICT` reference to `projects`, indexes `(status, queued_at)` and `(project_id, status)`). 2026-11-05, execution slice: migration `0003_execution` adds `task_runs`, `workspaces`, `run_events`, a single-row `security_settings`, `worker_commands` and `worker_leases`, and the project trust columns. `git_operations` and `scheduler_settings` remain open. 2026-11-05, M6-02 slice: migration `0004_reviews` adds `reviews` (review decisions; snapshot columns still open).)*
 - Implement migrations, foreign keys, WAL mode and `busy_timeout` for both processes.
 - Create core tables: `projects`, `tasks`, `task_runs`, `workspaces`, `run_events`, `reviews`, `git_operations`, `scheduler_settings`; add command/lease storage when finalized.
 - Keep SQLite user data out of Git; commit migrations and schema source.
@@ -172,6 +172,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Record branch, HEAD and canonical content hashes in a review snapshot; show diffs and actual test results, not invented pass indicators.
 
 **M6-02 — Review actions**
+*(2026-11-05, first slice: Request Changes. `POST /api/projects/:projectId/tasks/:taskId/review/request-changes` (`{runId, revision, feedback}`) re-inspects the review, requires normal-review eligibility, the same latest run and the same change-inventory revision, then stores the feedback in `reviews` (migration `0004_reviews`) and applies `request_changes` (Review → Queued) in one transaction. No agent starts: the follow-up attempt runs only after an explicit Start execution, through the normal claim, consent, trust and per-runtime checks. It continues in the **same** retained worktree and branch (re-verified before launch, never reset or recreated) with the original prompt plus the latest feedback. The Review Changes page has the form, the pending request and the attempt history; the task page explains the continuation. Not yet: Discard, agent session resume, per-attempt file snapshots, and Retry/Resume for a follow-up attempt that failed or was stopped.)*
 - Implement `Request Changes` with stored follow-up prompt and new run on the intended retained workspace.
 - Implement `Discard` as a state transition; deletion requires a separate explicit cleanup action.
 

@@ -3,11 +3,21 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { AlertTriangle, ArrowLeft, FileCheck2, FolderX, Info, ShieldAlert } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  FileCheck2,
+  FolderX,
+  Info,
+  ListRestart,
+  ShieldAlert,
+} from 'lucide-react';
 import { ExecutionError, taskRunStatusLabels } from '@ai-agent-manager/core';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { AttemptHistory } from '@/components/review/attempt-history';
 import { RefreshReviewButton } from '@/components/review/refresh-review-button';
+import { RequestChangesForm } from '@/components/review/request-changes-form';
 import { ReviewFileList } from '@/components/review/review-file-list';
 import { TaskRuntimeBadge, TaskStatusBadge } from '@/components/tasks/task-badges';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -72,8 +82,44 @@ const IntegrityBanner = ({ run }: { run: NonNullable<TaskReviewView['run']> }) =
   );
 };
 
+/** A change request that waits for its follow-up attempt. */
+const PendingChangeRequest = ({ review }: { review: TaskReviewView }) => {
+  const pending = review.decisions.find((decision) => decision.followUpRunId === null);
+  if (pending === undefined) {
+    return null;
+  }
+  return (
+    <Alert>
+      <ListRestart aria-hidden="true" />
+      <AlertTitle>Changes requested for attempt {pending.attempt}</AlertTitle>
+      <AlertDescription>
+        <p>
+          The task is {review.task.status === 'queued' ? 'back in Queued' : 'not in Review'}. No
+          agent was started. Start attempt {pending.attempt + 1} explicitly with Start execution on
+          the{' '}
+          <Link className="underline" href={taskUrl(review.task.projectId, review.task.id)}>
+            task page
+          </Link>
+          ; it continues in this worktree from the changes shown below, with your feedback.
+        </p>
+        <p className="mt-2 rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap text-foreground">
+          {pending.feedback}
+        </p>
+      </AlertDescription>
+    </Alert>
+  );
+};
+
 const EligibilityBanner = ({ review }: { review: TaskReviewView }) => {
   const { eligibility } = review;
+  if (
+    !eligibility.eligible &&
+    review.task.status === 'queued' &&
+    review.decisions.some((decision) => decision.followUpRunId === null)
+  ) {
+    // The pending change request explains the state; the review path resumes after the next run.
+    return null;
+  }
   if (eligibility.eligible) {
     return (
       <Alert>
@@ -83,7 +129,8 @@ const EligibilityBanner = ({ review }: { review: TaskReviewView }) => {
           <p>
             The agent process completed and the Git integrity check found no observable Git
             mutation. Neither shows that the implementation is correct: judge the result by the
-            changes below. Approve &amp; Push, Request Changes and Discard are not available yet.
+            changes below. You can request changes below; Approve &amp; Push and Discard are not
+            available yet.
           </p>
         </AlertDescription>
       </Alert>
@@ -343,9 +390,20 @@ const ReviewPage = async ({
       </section>
 
       {run !== null ? <IntegrityBanner run={run} /> : null}
+      <PendingChangeRequest review={review} />
       <EligibilityBanner review={review} />
       <RunDetails review={review} />
       <ChangesSection review={review} />
+      {review.eligibility.eligible && run !== null && review.changes.state === 'available' ? (
+        <RequestChangesForm
+          projectId={task.projectId}
+          taskId={task.id}
+          runId={run.id}
+          attempt={run.attempt}
+          revision={review.changes.revision}
+        />
+      ) : null}
+      <AttemptHistory attempts={review.attempts} decisions={review.decisions} />
     </>
   );
 };

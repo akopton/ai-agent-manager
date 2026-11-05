@@ -4,6 +4,7 @@ import {
   executionSecurityModes,
   gitIntegrityResultStatuses,
   projectExecutionTrusts,
+  reviewStatuses,
   taskPriorities,
   taskRunStatuses,
   taskStatuses,
@@ -297,6 +298,51 @@ export const workerLeases = sqliteTable(
   (table) => [check('worker_leases_singleton_check', sql`${table.id} = 1`)],
 );
 
+/**
+ * Review decisions (ARCHITECTURE §4, M6-02). Each row is a decision about one run (attempt) and the
+ * workspace it ran in; at most one decision per run. `changes_requested` keeps the reviewer's
+ * feedback for the next attempt, which continues in the same workspace: `follow_up_run_id` is set
+ * when the worker claims that attempt. At most one change request per task waits for a follow-up.
+ * `inventory_revision` is the change-inventory revision the reviewer saw (not a publish snapshot;
+ * the snapshot hash for Approve & Push is a later slice). Rows are never deleted or overwritten.
+ */
+export const reviews = sqliteTable(
+  'reviews',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    runId: text('run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    status: text('status', { enum: reviewStatuses }).notNull(),
+    feedback: text('feedback').notNull(),
+    inventoryRevision: text('inventory_revision').notNull(),
+    followUpRunId: text('follow_up_run_id').references(() => taskRuns.id, {
+      onDelete: 'restrict',
+      onUpdate: 'restrict',
+    }),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    unique('reviews_run_unique').on(table.runId),
+    index('reviews_task_id_idx').on(table.taskId),
+    uniqueIndex('reviews_follow_up_run_unique')
+      .on(table.followUpRunId)
+      .where(sql`follow_up_run_id IS NOT NULL`),
+    uniqueIndex('reviews_one_pending_change_request_per_task_idx')
+      .on(table.taskId)
+      .where(sql`status = 'changes_requested' AND follow_up_run_id IS NULL`),
+    check('reviews_status_check', sql`${table.status} IN (${sqlList(reviewStatuses)})`),
+    check('reviews_feedback_check', sql`length(trim(${table.feedback})) > 0`),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -306,4 +352,5 @@ export const schema = {
   runEvents,
   workerCommands,
   workerLeases,
+  reviews,
 };

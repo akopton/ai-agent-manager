@@ -1,9 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
 import { basename, dirname, isAbsolute } from 'node:path';
 import {
   ExecutionError,
   isActiveTaskRunStatus,
   projectIdSchema,
+  ReviewActionError,
+  type RequestChangesInput,
   type TaskRunStatus,
 } from '@ai-agent-manager/core';
 import {
@@ -11,6 +14,7 @@ import {
   findTaskById,
   findWorkspace,
   listTaskRuns,
+  requestTaskChanges,
   type DatabaseConnection,
   type ProjectRecordWithTrust,
   type TaskRecord,
@@ -30,20 +34,22 @@ import {
 import type { TaskRunView } from '@/lib/execution/contracts';
 import type {
   FileDiffView,
+  RequestChangesResponse,
   ReviewBlockReason,
   ReviewChanges,
   TaskReviewView,
 } from '@/lib/review/contracts';
 import { ReviewError } from '@/lib/review/errors';
-import { toRunView } from '@/lib/server/execution';
+import { listReviewDecisionViews, toRunView } from '@/lib/server/execution';
 
-// Read-only Review Changes (M6-01, first slice). Everything here only reads: the database, the
+// Review Changes (M6-01, first slice) and Request Changes (M6-02). Inspection only reads: the database, the
 // registered repository's identity and the task worktree, through the hardened inspection
 // utilities of `packages/git` (plumbing commands, no index refresh, no external diff drivers or
 // textconv, inventory-only file access). Nothing stages, commits, resets, cleans, pushes, locks or
 // writes, and no agent is started. Every filesystem location comes from the database records of
 // the task's latest run, never from the request: a browser-supplied path is only ever matched
-// against the change inventory of the verified worktree.
+// against the change inventory of the verified worktree. `requestChangesForTask` writes only a
+// database record (the feedback and the named `request_changes` transition); it starts no agent.
 
 type Database = DatabaseConnection['db'];
 
@@ -54,6 +60,8 @@ type ReviewContext = {
   task: TaskRecord;
   run: TaskRunRecord | null;
   workspace: WorkspaceRecord | null;
+  /** Every run of the task, newest attempt first. */
+  runs: TaskRunRecord[];
 };
 
 /** Resolves the task within its project, then its latest run and that run's workspace. */
@@ -67,12 +75,13 @@ const loadContext = (db: Database, projectId: string, taskId: string): ReviewCon
   if (task === undefined || task.projectId !== project.id) {
     throw new ExecutionError('task_not_found', 'The task does not exist.');
   }
-  const [run] = listTaskRuns(db, task.id);
+  const runs = listTaskRuns(db, task.id);
+  const [run] = runs;
   const workspace =
     run?.workspaceId === undefined || run.workspaceId === null
       ? undefined
       : findWorkspace(db, run.workspaceId);
-  return { project, task, run: run ?? null, workspace: workspace ?? null };
+  return { project, task, run: run ?? null, workspace: workspace ?? null, runs };
 };
 
 type ReviewTarget = ReviewContext & { run: TaskRunRecord; workspace: WorkspaceRecord };
@@ -344,6 +353,75 @@ export const getTaskReview = async (
           },
     eligibility: { eligible: reasons.length === 0, reasons },
     changes,
+    attempts: context.runs.map(toRunView),
+    decisions: listReviewDecisionViews(db, context.task.id, context.runs),
+  };
+};
+
+/**
+ * `Request Changes` (M6-02). Re-inspects the review exactly as the page does and requires the
+ * result to be eligible for the normal review path, for the attempt (`runId`) and change-inventory
+ * revision the reviewer saw. Then stores the feedback and moves the task Review → Queued in one
+ * transaction. No start request is created: the next attempt runs only after an explicit Start.
+ */
+export const requestChangesForTask = async (
+  db: Database,
+  projectId: string,
+  taskId: string,
+  input: RequestChangesInput,
+  { now = Date.now, createId = randomUUID }: { now?: () => number; createId?: () => string } = {},
+): Promise<RequestChangesResponse> => {
+  const review = await getTaskReview(db, projectId, taskId);
+  if (review.run === null || review.run.id !== input.runId) {
+    throw new ReviewActionError(
+      'review_run_changed',
+      'A newer attempt exists than the one you reviewed. Reload the page.',
+    );
+  }
+  if (review.decisions.some((decision) => decision.runId === input.runId)) {
+    throw new ReviewActionError(
+      'changes_already_requested',
+      'Changes were already requested for this attempt. Reload the page.',
+    );
+  }
+  if (!review.eligibility.eligible) {
+    const { reasons } = review.eligibility;
+    throw reasons.length === 1 && reasons[0] === 'task_not_in_review'
+      ? new ReviewActionError(
+          'task_not_in_review',
+          'Changes can be requested only while the task is in Review. Reload the page.',
+          { status: review.task.status },
+        )
+      : new ReviewActionError(
+          'run_not_review_eligible',
+          'This attempt is not eligible for the normal review path, so changes cannot be requested.',
+          { reasons: review.eligibility.reasons },
+        );
+  }
+  if (review.changes.state !== 'available' || review.changes.revision !== input.revision) {
+    throw new ReviewActionError(
+      'review_changes_changed',
+      'The worktree changed after you loaded the review. Refresh, review the current changes and submit again.',
+    );
+  }
+  const { review: record, task } = requestTaskChanges(db, {
+    id: createId(),
+    taskId: review.task.id,
+    input,
+    now: now(),
+  });
+  return {
+    task: { id: task.id, status: task.status },
+    decision: {
+      id: record.id,
+      status: record.status,
+      runId: record.runId,
+      attempt: review.run.attempt,
+      feedback: record.feedback,
+      createdAt: record.createdAt,
+      followUpRunId: record.followUpRunId,
+      followUpAttempt: null,
+    },
   };
 };
 

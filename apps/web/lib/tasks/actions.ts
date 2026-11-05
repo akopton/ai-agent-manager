@@ -6,9 +6,10 @@ import {
   type TaskStatus,
 } from '@ai-agent-manager/core';
 
-// The task actions the web app exposes today. They are a subset of the domain's named transitions;
-// worker-only transitions (start, complete, stop, fail, interrupt, mark done) and actions that
-// need run or review records (retry, resume, request changes, discard) are not offered yet.
+// The body-less task actions the web app exposes as generic buttons. They are a subset of the
+// domain's named transitions; worker-only transitions (start, complete, stop, fail, interrupt,
+// mark done) are never offered. Request Changes needs feedback and a reviewed attempt, so it has
+// its own route on the Review Changes page; retry, resume and discard are not offered yet.
 
 export const userTaskActions = [
   'queue',
@@ -50,11 +51,11 @@ export const taskEditability = (status: TaskStatus): TaskEditability => ({
 export const taskStatusNotes: Readonly<Record<TaskStatus, string>> = {
   backlog: 'Saved but not authorized to run. Edit it freely, then queue it when it is ready.',
   queued:
-    'Eligible to run. There is no automatic scheduler yet: start it explicitly with Start execution (requires Trusted Local Mode and a trusted project), or return it to Backlog. Priority and the Urgent flag can still be changed.',
+    'Eligible to run. There is no automatic scheduler yet: start it explicitly with Start execution (requires Trusted Local Mode and a trusted project), or return it to Backlog. After Request Changes, the next run continues in the existing worktree with your feedback. Priority and the Urgent flag can still be changed.',
   in_progress:
     'An agent is working on this task in its own worktree. Stop terminates the agent’s process group; files are kept.',
   review:
-    'The agent process completed and no observable Git mutation was found. Open Review Changes to inspect what the agent changed; Approve & Push, Request Changes and Discard will be available with the review workflow.',
+    'The agent process completed and no observable Git mutation was found. Open Review Changes to inspect what the agent changed and, if needed, request changes (the task returns to Queued and waits for an explicit Start). Approve & Push and Discard will be available in a later version.',
   stopped:
     'Execution was stopped. The worktree and partial files are kept. Retry, Resume and Discard will be available in a later version.',
   interrupted:

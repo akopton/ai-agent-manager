@@ -31,6 +31,7 @@ const executionTables = [
   'run_events',
   'worker_commands',
   'worker_leases',
+  'reviews',
 ] as const;
 
 const databaseMigrateCommand = 'pnpm --filter @ai-agent-manager/database db:migrate';

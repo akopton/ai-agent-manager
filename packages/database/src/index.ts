@@ -34,6 +34,7 @@ export {
 } from './projects.js';
 export {
   projects,
+  reviews,
   runEvents,
   schema,
   securitySettings,
@@ -89,6 +90,7 @@ export {
   type NewWorkspace,
   type ProjectRecordWithTrust,
   type RunEventRecord,
+  type RunContinuation,
   type RunFinish,
   type TaskRunProgress,
   type TaskRunRecord,
@@ -96,3 +98,9 @@ export {
   type WorkerLeaseRecord,
   type WorkspaceRecord,
 } from './execution.js';
+export {
+  findPendingChangeRequest,
+  listTaskReviews,
+  requestTaskChanges,
+  type ReviewRecord,
+} from './reviews.js';

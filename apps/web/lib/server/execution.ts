@@ -16,6 +16,7 @@ import {
   findTaskById,
   getTrustedLocalConsent,
   listRunEvents,
+  listTaskReviews,
   listTaskRuns,
   listTaskWorkspaces,
   requestRunStop,
@@ -29,6 +30,7 @@ import { validateRepository } from '@ai-agent-manager/git';
 import type {
   ExecutionSettingsView,
   ProjectTrustView,
+  ReviewDecisionView,
   TaskExecutionView,
   TaskRunView,
 } from '@/lib/execution/contracts';
@@ -255,7 +257,30 @@ export const toRunView = (run: TaskRunRecord): TaskRunView => {
   };
 };
 
-/** Runs (newest first), the latest workspace, the latest start request and recent events. */
+/** The task's review decisions (newest first), with the attempt numbers they refer to. */
+export const listReviewDecisionViews = (
+  db: Database,
+  taskId: string,
+  runs: readonly TaskRunRecord[],
+): ReviewDecisionView[] => {
+  const attempts = new Map(runs.map((run) => [run.id, run.attempt]));
+  return listTaskReviews(db, taskId).map((review) => ({
+    id: review.id,
+    status: review.status,
+    runId: review.runId,
+    attempt: attempts.get(review.runId) ?? 0,
+    feedback: review.feedback,
+    createdAt: review.createdAt,
+    followUpRunId: review.followUpRunId,
+    followUpAttempt:
+      review.followUpRunId === null ? null : (attempts.get(review.followUpRunId) ?? null),
+  }));
+};
+
+/**
+ * Runs (newest first), the latest workspace, review decisions, the latest start request and
+ * recent events.
+ */
 export const getTaskExecution = (
   db: Database,
   projectId: string,
@@ -279,6 +304,7 @@ export const getTaskExecution = (
             baseSha: workspace.baseSha,
             createdAt: workspace.createdAt,
           },
+    reviews: listReviewDecisionViews(db, id, runs),
     lastCommand:
       command === undefined
         ? null

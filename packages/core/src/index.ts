@@ -177,3 +177,18 @@ export {
   type TaskRunStatus,
   type TrustedLocalConsent,
 } from './execution.js';
+export {
+  requestChangesInputSchema,
+  ReviewActionError,
+  reviewActionErrorCodes,
+  reviewActionErrorCodeSchema,
+  reviewFeedbackMaxLength,
+  reviewFeedbackMinLength,
+  reviewFeedbackSchema,
+  reviewStatuses,
+  reviewStatusLabels,
+  reviewStatusSchema,
+  type RequestChangesInput,
+  type ReviewActionErrorCode,
+  type ReviewStatus,
+} from './review.js';

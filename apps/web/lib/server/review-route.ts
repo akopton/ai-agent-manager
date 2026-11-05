@@ -1,10 +1,17 @@
-import { fileDiffQuerySchema } from '@/lib/review/contracts';
-import { errorResponse, guardContentRead, handleRouteError, jsonResponse } from '@/lib/server/api';
+import { fileDiffQuerySchema, requestChangesRequestSchema } from '@/lib/review/contracts';
+import {
+  errorResponse,
+  guardContentRead,
+  handleRouteError,
+  jsonResponse,
+  parseMutationRequest,
+} from '@/lib/server/api';
 import { getDatabase } from '@/lib/server/database';
-import { getTaskReview, getTaskReviewFileDiff } from '@/lib/server/review';
+import { getTaskReview, getTaskReviewFileDiff, requestChangesForTask } from '@/lib/server/review';
 
-// Read-only Review Changes routes. Both are GET-only, run no agent and change nothing: the server
-// resolves the worktree from the task's stored workspace record, never from the request.
+// Review Changes routes. The GET routes are read-only, run no agent and change nothing: the server
+// resolves the worktree from the task's stored workspace record, never from the request. The
+// Request Changes POST records feedback and the named `request_changes` transition only.
 
 type RouteContext = { params: Promise<{ projectId: string; taskId: string }> };
 
@@ -49,6 +56,26 @@ export const taskReviewDiffGet = async (
     return jsonResponse({
       diff: await getTaskReviewFileDiff(getDatabase(), projectId, taskId, query.data.path),
     });
+  } catch (error) {
+    return handleRouteError(error);
+  }
+};
+
+/**
+ * `POST {runId, revision, feedback}`: Request Changes for the reviewed attempt. Same Host/Origin
+ * and JSON guards as every mutation. Returns 201; never starts an agent.
+ */
+export const taskRequestChangesPost = async (
+  request: Request,
+  { params }: RouteContext,
+): Promise<Response> => {
+  const { data, response } = await parseMutationRequest(request, requestChangesRequestSchema);
+  if (response !== undefined) {
+    return response;
+  }
+  try {
+    const { projectId, taskId } = await params;
+    return jsonResponse(await requestChangesForTask(getDatabase(), projectId, taskId, data), 201);
   } catch (error) {
     return handleRouteError(error);
   }

@@ -5,6 +5,7 @@ import {
   gitIntegrityResultStatusSchema,
   projectExecutionTrustInputSchema,
   projectExecutionTrustSchema,
+  reviewStatusSchema,
   taskRunStatusSchema,
 } from '@ai-agent-manager/core';
 import { z } from 'zod';
@@ -97,6 +98,24 @@ export const taskRunViewSchema = z.object({
 
 export type TaskRunView = z.infer<typeof taskRunViewSchema>;
 
+/**
+ * A stored review decision about one attempt (M6-02). `followUpRunId` is set once the worker has
+ * claimed the attempt that continues from this change request; until then it is pending.
+ */
+export const reviewDecisionViewSchema = z.object({
+  id: z.string(),
+  status: reviewStatusSchema,
+  runId: z.string(),
+  /** Attempt number of the reviewed run. */
+  attempt: z.number(),
+  feedback: z.string(),
+  createdAt: z.number(),
+  followUpRunId: z.string().nullable(),
+  followUpAttempt: z.number().nullable(),
+});
+
+export type ReviewDecisionView = z.infer<typeof reviewDecisionViewSchema>;
+
 export const taskExecutionViewSchema = z.object({
   runs: z.array(taskRunViewSchema),
   workspace: z
@@ -117,6 +136,8 @@ export const taskExecutionViewSchema = z.object({
       processedAt: z.number().nullable(),
     })
     .nullable(),
+  /** Review decisions of the task's attempts, newest first. */
+  reviews: z.array(reviewDecisionViewSchema),
   /** Recent events of the latest run; `payload` is the stored, redacted JSON text. */
   events: z.array(
     z.object({

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { AlertCircle, AlertTriangle, Loader2, Play, Square } from 'lucide-react';
-import { taskRunStatusLabels, type TaskStatus } from '@ai-agent-manager/core';
+import { AlertCircle, AlertTriangle, ListRestart, Loader2, Play, Square } from 'lucide-react';
+import { reviewStatusLabels, taskRunStatusLabels, type TaskStatus } from '@ai-agent-manager/core';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -104,6 +104,8 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
   const startRequested = command?.status === 'pending';
   const canStart = task.status === 'queued' && !startRequested;
   const canStop = latest?.active === true && latest.stopRequestedAt === null;
+  const pendingChangeRequest = execution.reviews.find((review) => review.followUpRunId === null);
+  const decisionByRun = new Map(execution.reviews.map((review) => [review.runId, review]));
 
   return (
     <Card>
@@ -149,6 +151,32 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
             </Button>
           ) : null}
         </div>
+        {pendingChangeRequest !== undefined && task.status === 'queued' ? (
+          <Alert>
+            <ListRestart aria-hidden="true" />
+            <AlertTitle>
+              Start continues attempt {pendingChangeRequest.attempt} as attempt{' '}
+              {pendingChangeRequest.attempt + 1}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                Changes were requested. The next run reuses the existing task worktree and branch
+                {execution.workspace !== null ? (
+                  <>
+                    {' '}
+                    (<span className="font-mono text-xs">{execution.workspace.branch}</span>)
+                  </>
+                ) : null}{' '}
+                and continues from its current uncommitted and untracked changes, with the original
+                prompt and this feedback. The worktree is re-verified before launch; if it was
+                moved, switched or committed to, the run is refused and nothing is reset.
+              </p>
+              <p className="mt-2 rounded-lg border bg-muted/30 p-3 break-words whitespace-pre-wrap text-foreground">
+                {pendingChangeRequest.feedback}
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {canStop || latest?.stopRequestedAt != null ? (
           <p className="text-xs text-muted-foreground">
             Stop terminates the agent’s process group. Processes that left the group are not
@@ -263,12 +291,16 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
               <div className="space-y-1">
                 <p className="font-medium">Earlier attempts</p>
                 <ul className="space-y-1 text-muted-foreground">
-                  {earlier.map((run) => (
-                    <li key={run.id}>
-                      Attempt {run.attempt}: {taskRunStatusLabels[run.status]} —{' '}
-                      {describeRunOutcome(run)}
-                    </li>
-                  ))}
+                  {earlier.map((run) => {
+                    const decision = decisionByRun.get(run.id);
+                    return (
+                      <li key={run.id}>
+                        Attempt {run.attempt}: {taskRunStatusLabels[run.status]} —{' '}
+                        {describeRunOutcome(run)}
+                        {decision !== undefined ? ` · ${reviewStatusLabels[decision.status]}` : ''}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ) : null}

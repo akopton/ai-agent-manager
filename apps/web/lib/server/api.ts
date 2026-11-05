@@ -1,7 +1,9 @@
 import {
   ExecutionError,
+  ReviewActionError,
   TaskError,
   type ExecutionErrorCode,
+  type ReviewActionErrorCode,
   type TaskErrorCode,
 } from '@ai-agent-manager/core';
 import type { z } from 'zod';
@@ -70,6 +72,9 @@ const executionErrorStatus = (code: ExecutionErrorCode): number => {
   }
 };
 
+const reviewActionErrorStatus = (code: ReviewActionErrorCode): number =>
+  code === 'invalid_review_input' ? 400 : 409;
+
 /** Converts expected failures into structured responses; unexpected ones are logged. */
 export const handleRouteError = (error: unknown): Response => {
   if (error instanceof ProjectServiceError) {
@@ -83,6 +88,14 @@ export const handleRouteError = (error: unknown): Response => {
       error.code,
       error.message,
       executionErrorStatus(error.code),
+      error.details,
+    );
+  }
+  if (error instanceof ReviewActionError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      reviewActionErrorStatus(error.code),
       error.details,
     );
   }

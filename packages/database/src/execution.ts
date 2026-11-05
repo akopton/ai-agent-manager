@@ -17,11 +17,13 @@ import {
   type TaskRunStatus,
   type TrustedLocalConsent,
 } from '@ai-agent-manager/core';
-import { and, asc, desc, eq, inArray, isNotNull, lt, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
+import { findPendingChangeRequest, type ReviewRecord } from './reviews.js';
 import {
   projects,
+  reviews,
   runEvents,
   securitySettings,
   taskRuns,
@@ -326,11 +328,24 @@ export const expirePendingCommands = (
     .where(and(eq(workerCommands.status, 'pending'), lt(workerCommands.createdAt, olderThan)))
     .run().changes;
 
+/**
+ * A follow-up attempt after `Request Changes`: it continues in the reviewed run's retained
+ * workspace, with the reviewer's feedback. The worker re-verifies the worktree before launch.
+ */
+export type RunContinuation = {
+  review: ReviewRecord;
+  /** Attempt number of the reviewed run. */
+  reviewedAttempt: number;
+  workspace: WorkspaceRecord;
+};
+
 export type ClaimedRun = {
   run: TaskRunRecord;
   task: TaskRecord;
   project: ProjectRecordWithTrust;
   consent: TrustedLocalConsent;
+  /** `null` for a first attempt, which creates a new task worktree. */
+  continuation: RunContinuation | null;
 };
 
 export type ClaimResult =
@@ -343,6 +358,12 @@ export type ClaimResult =
  * task is active and the runtime has a free slot; then creates the next attempt in `starting`,
  * transitions the task with the named `start` action and marks the command accepted. On any
  * refusal the command is rejected and nothing else changes.
+ *
+ * Continuation (M6-02): when a change request waits for its follow-up, the new attempt is bound to
+ * it and to the reviewed run's workspace in the same transaction. The change request must belong
+ * to the task's latest run and that run's workspace. A task that already has a retained workspace
+ * but no pending change request is refused (`continuation_unavailable`): Retry and Resume are not
+ * implemented, and a fresh worktree would collide with the retained one.
  */
 export const claimStartCommand = (
   db: Database,
@@ -401,10 +422,46 @@ export const claimStartCommand = (
       );
     }
     const previous = tx
-      .select({ attempt: max(taskRuns.attempt) })
+      .select()
       .from(taskRuns)
       .where(eq(taskRuns.taskId, task.id))
+      .orderBy(desc(taskRuns.attempt))
+      .limit(1)
       .get();
+    const changeRequest = findPendingChangeRequest(tx, task.id);
+    let continuation: RunContinuation | null = null;
+    if (changeRequest !== undefined) {
+      const workspace = tx
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.id, changeRequest.workspaceId))
+        .get();
+      if (
+        previous === undefined ||
+        previous.id !== changeRequest.runId ||
+        previous.workspaceId !== changeRequest.workspaceId ||
+        workspace === undefined ||
+        workspace.taskId !== task.id
+      ) {
+        return refuse(
+          'continuation_unavailable',
+          'The change request no longer matches the latest attempt and its worktree. Nothing was started.',
+        );
+      }
+      continuation = { review: changeRequest, reviewedAttempt: previous.attempt, workspace };
+    } else {
+      const retained = tx
+        .select({ id: workspaces.id })
+        .from(workspaces)
+        .where(eq(workspaces.taskId, task.id))
+        .get();
+      if (retained !== undefined) {
+        return refuse(
+          'continuation_unavailable',
+          'This task already has a retained worktree but no pending change request. Starting it again (Retry/Resume) is not available yet.',
+        );
+      }
+    }
     const run = tx
       .insert(taskRuns)
       .values({
@@ -419,17 +476,32 @@ export const claimStartCommand = (
         acceptedRisksJson: JSON.stringify(consent.acceptedRisks),
         timeoutMs,
         workerInstanceId,
+        // A follow-up attempt runs in the reviewed workspace; a first attempt records its own
+        // workspace once the worker has created it.
+        workspaceId: continuation?.workspace.id ?? null,
         createdAt: now,
         updatedAt: now,
       })
       .returning()
       .get();
+    if (continuation !== null) {
+      const bound = tx
+        .update(reviews)
+        .set({ followUpRunId: run.id, updatedAt: now })
+        .where(and(eq(reviews.id, continuation.review.id), isNull(reviews.followUpRunId)))
+        .returning()
+        .get();
+      if (bound === undefined) {
+        throw new ExecutionError('continuation_unavailable', 'The change request changed.');
+      }
+      continuation = { ...continuation, review: bound };
+    }
     const started = transitionTask(tx, { id: task.id, action: 'start', now });
     tx.update(workerCommands)
       .set({ status: 'accepted', runId: run.id, processedAt: now })
       .where(eq(workerCommands.id, commandId))
       .run();
-    return { claimed: true, claim: { run, task: started, project, consent } };
+    return { claimed: true, claim: { run, task: started, project, consent, continuation } };
   }, immediate);
 
 // ---------------------------------------------------------------------------------------------

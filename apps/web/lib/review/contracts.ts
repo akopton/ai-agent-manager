@@ -1,6 +1,6 @@
-import { taskStatusSchema } from '@ai-agent-manager/core';
+import { requestChangesInputSchema, taskStatusSchema } from '@ai-agent-manager/core';
 import { z } from 'zod';
-import { taskRunViewSchema } from '@/lib/execution/contracts';
+import { reviewDecisionViewSchema, taskRunViewSchema } from '@/lib/execution/contracts';
 import { reviewErrorCodes } from '@/lib/review/errors';
 
 // Response contracts of the read-only Review Changes routes. Shared by route handlers, server
@@ -126,6 +126,10 @@ export const taskReviewViewSchema = z.object({
     reasons: z.array(z.enum(reviewBlockReasons)),
   }),
   changes: reviewChangesSchema,
+  /** Every attempt of the task, newest first. Earlier attempts keep their recorded evidence. */
+  attempts: z.array(taskRunViewSchema),
+  /** Review decisions of the task's attempts, newest first. */
+  decisions: z.array(reviewDecisionViewSchema),
 });
 
 export type TaskReviewView = z.infer<typeof taskReviewViewSchema>;
@@ -153,3 +157,13 @@ export const fileDiffQuerySchema = z.object({
     .max(4096, 'The path is too long.')
     .refine((value) => !value.includes('\0'), 'The path is invalid.'),
 });
+
+/** `POST …/review/request-changes`: feedback for the attempt and inventory revision shown. */
+export const requestChangesRequestSchema = requestChangesInputSchema;
+
+export const requestChangesResponseSchema = z.object({
+  task: z.object({ id: z.string(), status: taskStatusSchema }),
+  decision: reviewDecisionViewSchema,
+});
+
+export type RequestChangesResponse = z.infer<typeof requestChangesResponseSchema>;

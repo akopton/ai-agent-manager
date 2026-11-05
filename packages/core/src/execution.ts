@@ -161,6 +161,8 @@ export const executionErrorCodes = [
   'command_expired',
   'run_not_active',
   'repository_changed',
+  /** A follow-up attempt cannot safely continue in the retained workspace of the reviewed run. */
+  'continuation_unavailable',
   'worker_unavailable',
 ] as const;
 

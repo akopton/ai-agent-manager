@@ -13,20 +13,26 @@ import {
   findTaskById,
   findTaskRun,
   finishTaskRun,
+  listTaskReviews,
   recordGitIntegrity,
+  workerCommands,
   recordRunWorkspace,
   requestTaskExecution,
   setProjectExecutionTrust,
 } from '@ai-agent-manager/database';
 import { createTaskWorktree } from '@ai-agent-manager/git';
+import { GET as executionRoute } from '@/app/api/projects/[projectId]/tasks/[taskId]/execution/route';
 import { GET as diffRoute } from '@/app/api/projects/[projectId]/tasks/[taskId]/review/diff/route';
+import { POST as requestChangesRoute } from '@/app/api/projects/[projectId]/tasks/[taskId]/review/request-changes/route';
 import { GET as reviewRoute } from '@/app/api/projects/[projectId]/tasks/[taskId]/review/route';
 import { POST as queueRoute } from '@/app/api/projects/[projectId]/tasks/[taskId]/queue/route';
 import { POST as createTaskRoute } from '@/app/api/projects/[projectId]/tasks/route';
 import { POST as registerRoute } from '@/app/api/projects/route';
+import { taskExecutionResponseSchema } from '@/lib/execution/contracts';
 import { apiErrorResponseSchema, projectResponseSchema } from '@/lib/projects/contracts';
 import {
   fileDiffResponseSchema,
+  requestChangesResponseSchema,
   taskReviewResponseSchema,
   type TaskReviewView,
 } from '@/lib/review/contracts';
@@ -680,4 +686,190 @@ test('tampered workspace records are refused before anything is read', async () 
     connection.close();
   }
   assert.equal((await fetchReview(fixture.projectId, fixture.taskId)).changes.state, 'available');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Request Changes (M6-02)
+
+const requestChanges = (
+  { projectId, taskId }: { projectId: string; taskId: string },
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<Response> =>
+  requestChangesRoute(
+    new Request(`${origin}/api/projects/${projectId}/tasks/${taskId}/review/request-changes`, {
+      method: 'POST',
+      headers: {
+        host: '127.0.0.1:3000',
+        origin,
+        'content-type': 'application/json',
+        ...headers,
+      },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+    }),
+    taskParams(projectId, taskId),
+  );
+
+const reviewedRevision = async (fixture: Fixture): Promise<string> => {
+  const review = await fetchReview(fixture.projectId, fixture.taskId);
+  assert.equal(review.eligibility.eligible, true);
+  assert.equal(review.changes.state, 'available');
+  return review.changes.state === 'available' ? review.changes.revision : '';
+};
+
+const taskCommands = (taskId: string) =>
+  getDatabase()
+    .select()
+    .from(workerCommands)
+    .all()
+    .filter((command) => command.taskId === taskId);
+
+const feedback = 'Rename hello.txt to greeting.txt.';
+
+test('Request Changes stores the feedback, returns the task to Queued and starts nothing', async () => {
+  const fixture = await setUpRun('request changes repo', {
+    change: (worktree) => writeFile(join(worktree, 'hello.txt'), 'Hello\n'),
+  });
+  const db = getDatabase();
+  const revision = await reviewedRevision(fixture);
+  const repositoryBefore = snapshot(fixture.root);
+  const worktreeBefore = snapshot(fixture.worktree);
+  const runBefore = findTaskRun(db, fixture.runId);
+  const commandsBefore = taskCommands(fixture.taskId);
+
+  const response = await requestChanges(fixture, {
+    runId: fixture.runId,
+    revision,
+    feedback: `  ${feedback}  `,
+  });
+  assert.equal(response.status, 201);
+  const body = requestChangesResponseSchema.parse(await response.json());
+  assert.equal(body.task.status, 'queued');
+  assert.equal(body.decision.attempt, 1);
+  assert.equal(body.decision.feedback, feedback);
+  assert.equal(body.decision.followUpRunId, null);
+
+  // Durable: the decision is tied to the reviewed run and workspace.
+  const [stored] = listTaskReviews(db, fixture.taskId);
+  assert.equal(stored?.runId, fixture.runId);
+  assert.equal(stored?.workspaceId, runBefore?.workspaceId);
+  assert.equal(stored?.inventoryRevision, revision);
+  assert.equal(findTaskById(db, fixture.taskId)?.status, 'queued');
+  // No start request, no run, no file or Git change.
+  assert.deepEqual(taskCommands(fixture.taskId), commandsBefore);
+  assert.deepEqual(findTaskRun(db, fixture.runId), runBefore);
+  assert.deepEqual(snapshot(fixture.root), repositoryBefore);
+  assert.deepEqual(snapshot(fixture.worktree), worktreeBefore);
+  assert.match(git(fixture.worktree, 'status', '--porcelain'), /^\?\? hello\.txt$/m);
+
+  // The review page and the execution view show the pending request and the attempt history.
+  const after = await fetchReview(fixture.projectId, fixture.taskId);
+  assert.equal(after.task.status, 'queued');
+  assert.deepEqual(after.eligibility.reasons, ['task_not_in_review']);
+  assert.equal(after.attempts.length, 1);
+  assert.equal(after.decisions[0]?.feedback, feedback);
+  assert.equal(after.decisions[0]?.followUpRunId, null);
+  const execution = await executionRoute(
+    get(`/api/projects/${fixture.projectId}/tasks/${fixture.taskId}/execution`),
+    taskParams(fixture.projectId, fixture.taskId),
+  );
+  const view = taskExecutionResponseSchema.parse(await execution.json()).execution;
+  assert.equal(view.reviews[0]?.attempt, 1);
+  assert.equal(view.lastCommand?.status, 'accepted');
+
+  // A second submission (double click, second tab) is a conflict, not a second record.
+  const again = await requestChanges(fixture, { runId: fixture.runId, revision, feedback });
+  assert.equal(again.status, 409);
+  assert.equal(await errorCode(again), 'changes_already_requested');
+  assert.equal(listTaskReviews(db, fixture.taskId).length, 1);
+});
+
+test('Request Changes validates the feedback and the request', async () => {
+  const fixture = await setUpRun('request changes validation repo', {
+    change: (worktree) => writeFile(join(worktree, 'hello.txt'), 'Hello\n'),
+  });
+  const revision = await reviewedRevision(fixture);
+  const invalid: unknown[] = [
+    { runId: fixture.runId, revision, feedback: '' },
+    { runId: fixture.runId, revision, feedback: '   \n ' },
+    { runId: fixture.runId, revision, feedback: 'no' },
+    { runId: fixture.runId, revision, feedback: 'x'.repeat(10_001) },
+    { runId: fixture.runId, feedback },
+    { runId: 'not-a-run', revision, feedback },
+    { runId: fixture.runId, revision, feedback, status: 'queued' },
+  ];
+  for (const body of invalid) {
+    const response = await requestChanges(fixture, body);
+    assert.equal(response.status, 400, JSON.stringify(body).slice(0, 80));
+    assert.equal(await errorCode(response), 'invalid_request');
+  }
+  const notJson = await requestChanges(fixture, 'feedback=hi', { 'content-type': 'text/plain' });
+  assert.equal(notJson.status, 415);
+  const crossOrigin = await requestChanges(
+    fixture,
+    { runId: fixture.runId, revision, feedback },
+    { origin: 'http://evil.example' },
+  );
+  assert.equal(crossOrigin.status, 403);
+  assert.equal(findTaskById(getDatabase(), fixture.taskId)?.status, 'review');
+  assert.deepEqual(listTaskReviews(getDatabase(), fixture.taskId), []);
+});
+
+test('a stale review page cannot attach feedback to another attempt or worktree state', async () => {
+  const fixture = await setUpRun('request changes stale repo', {
+    change: (worktree) => writeFile(join(worktree, 'hello.txt'), 'Hello\n'),
+  });
+  const revision = await reviewedRevision(fixture);
+
+  const wrongRun = await requestChanges(fixture, { runId: randomUUID(), revision, feedback });
+  assert.equal(wrongRun.status, 409);
+  assert.equal(await errorCode(wrongRun), 'review_run_changed');
+
+  // The worktree changes after the page was loaded.
+  writeFile(join(fixture.worktree, 'later.txt'), 'changed after review\n');
+  const changed = await requestChanges(fixture, { runId: fixture.runId, revision, feedback });
+  assert.equal(changed.status, 409);
+  assert.equal(await errorCode(changed), 'review_changes_changed');
+
+  // Another project's route never reaches this task.
+  const other = await registerProject('request changes other repo');
+  const scoped = await requestChanges(
+    { projectId: other.projectId, taskId: fixture.taskId },
+    { runId: fixture.runId, revision, feedback },
+  );
+  assert.equal(scoped.status, 404);
+
+  assert.equal(findTaskById(getDatabase(), fixture.taskId)?.status, 'review');
+  assert.deepEqual(listTaskReviews(getDatabase(), fixture.taskId), []);
+});
+
+test('Request Changes is refused for a run that is not eligible for normal review', async () => {
+  const fixture = await setUpRun('request changes violation repo', {
+    change: (worktree) => writeFile(join(worktree, 'hello.txt'), 'hi\n'),
+    integrity: 'violation',
+  });
+  const review = await fetchReview(fixture.projectId, fixture.taskId);
+  const revision = review.changes.state === 'available' ? review.changes.revision : 'x';
+  const response = await requestChanges(fixture, { runId: fixture.runId, revision, feedback });
+  assert.equal(response.status, 409);
+  assert.equal(await errorCode(response), 'run_not_review_eligible');
+  assert.equal(findTaskById(getDatabase(), fixture.taskId)?.status, 'failed');
+  assert.deepEqual(listTaskReviews(getDatabase(), fixture.taskId), []);
+});
+
+test('the Request Changes route never imports agent execution or creates start requests', () => {
+  const source = readFileSync(
+    join(
+      import.meta.dirname,
+      '..',
+      'app/api/projects/[projectId]/tasks/[taskId]/review/request-changes/route.ts',
+    ),
+    'utf8',
+  );
+  assert.deepEqual(source.match(/export const (\w+)/g), ['export const POST']);
+  for (const path of ['lib/server/review.ts', 'lib/server/review-route.ts']) {
+    const contents = readFileSync(join(import.meta.dirname, '..', path), 'utf8');
+    assert.doesNotMatch(contents, /requestTaskExecution|claimStartCommand|startTaskExecution/);
+    assert.doesNotMatch(contents, /@ai-agent-manager\/(?:agents|orchestrator)/);
+  }
 });
