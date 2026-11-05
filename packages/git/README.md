@@ -91,7 +91,7 @@ repository as `cwd`; the process working directory is never changed. In addition
   leading dashes, or non-ASCII characters are handled.
 
 The only mutating operations are the task worktree functions below; change review
-is read-only. Committing,
+and the Git integrity check are read-only. Committing,
 pushing, fetching, merging, and deleting branches are not implemented.
 
 ## Task worktrees
@@ -338,6 +338,130 @@ revision saw the same state as far as these signals can detect, so an approval w
 should re-inspect and compare revisions before committing. This is change detection,
 not a content hash: the approval snapshot with content hashes (ARCHITECTURE §9) is
 still to be built, and agents must be stopped before approval.
+
+## Git integrity check (SEC-02d)
+
+A read-only before/after inventory of the Git state around a task worktree, for Trusted Local
+runs (`ARCHITECTURE.md` §7.5). It **detects observable changes; it prevents nothing**, and a clean
+result does not prove that no Git mutation happened.
+
+```ts
+import {
+  captureGitIntegritySnapshot,
+  compareGitIntegritySnapshots,
+  verifyGitIntegrity,
+} from '@ai-agent-manager/git';
+
+// Before the launch:
+const baseline = await captureGitIntegritySnapshot({
+  repositoryPath: worktree.repository.root,
+  worktreePath: worktree.path,
+  branchName: worktree.branch,
+  baseCommit: worktree.baseCommit,
+  // limits: { maxRefs, maxWorktrees, maxConfigEntries, maxHookEntries, maxMetadataFileBytes, maxDurationMs },
+  // expectedRepository: { root, commonDir }, // e.g. the authorization's trusted repository
+});
+
+// After the run, on every terminal outcome:
+const { after, comparison } = await verifyGitIntegrity(baseline);
+// or: compareGitIntegritySnapshots(baseline, after)
+// comparison: { status: 'clean' | 'violation' | 'inconclusive', publication, findings,
+//               totalFindings, findingsTruncated, beforeDigest, afterDigest, coverage }
+```
+
+- `captureGitIntegritySnapshot` returns a `GitIntegritySnapshot` (version 1, plain JSON). It throws
+  only `GitInputError` for invalid arguments; every inspection problem becomes a `failed` section.
+- `compareGitIntegritySnapshots(before, after)` is pure and deterministic. It validates both
+  snapshots with `gitIntegritySnapshotSchema` first, so persisted snapshots can be compared.
+- `verifyGitIntegrity(baseline)` captures the post-run snapshot with the baseline's target, limits
+  and repository identity (paths **and** `dev`/`ino`), then compares.
+- `digestGitIntegritySnapshot` is a SHA-256 of the observed state (array order and `capturedAt`
+  excluded), for binding a later operator review decision to the exact comparison.
+
+### Snapshot contents
+
+Each section is `{ status: 'observed', value }` or `{ status: 'failed', failure: { reason, message } }`;
+a section is never partially recorded.
+
+| Section              | Recorded                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repository`         | Canonical root and common Git dir, with their `dev`/`ino`.                                                                                                                                 |
+| `taskWorktree`       | `inspectTaskWorktree` state and issues, path identity, lock, HEAD branch/commit, verified per-worktree Git dir, whether the base commit exists.                                            |
+| `worktrees`          | The worktree registry (`worktree list`): path, role (`main`/`task`/`other`), HEAD, branch, detached, bare, lock (reason as digest), prunable.                                              |
+| `refs`               | Every ref (`for-each-ref`): branches, remote-tracking refs, tags, notes, stash; target and symref.                                                                                         |
+| `config`             | Keys of the common `config`, `config.worktree`, and the task worktree's `config.worktree` (`--no-includes`), each with a value count and a SHA-256 of its values. Values are never stored. |
+| `metadataFiles`      | Kind, size, mode and digest of `config`, `config.worktree`, `info/attributes`, `objects/info/alternates`, the task admin `commondir`/`gitdir`/`config.worktree`, and the task `.git` file. |
+| `hooks`              | The common `hooks/` directory: kind, and per entry kind, size, executable bit and digest.                                                                                                  |
+| `mainCheckoutStatus` | Digest and record count of the main checkout's `status --porcelain=v2 -z --untracked-files=normal` (which paths are dirty, not their content).                                             |
+
+The task worktree's files, its index, reflogs, the object database, and the contents of other
+worktrees are **not** recorded.
+
+### Findings and dispositions
+
+| Status         | Meaning                                                              | `publication`                                         |
+| -------------- | -------------------------------------------------------------------- | ----------------------------------------------------- |
+| `clean`        | No observable integrity violation (not proof that none occurred).    | `proceed_to_review` (normal human change review only) |
+| `violation`    | At least one finding with disposition `violation`.                   | `blocked`, `integrity_violation`                      |
+| `inconclusive` | No violation found, but something could not be observed or compared. | `blocked`, `inspection_inconclusive`                  |
+
+- **Violations:** `task_branch_moved` (an agent commit, reset or deletion of the task branch),
+  `task_head_changed` (detached or switched), `task_worktree_changed` (registration, lock, path
+  identity, Git dir), `base_commit_missing`, `ref_created` / `ref_deleted` / `ref_moved` (with
+  `refCategory`: `branch`, `remote_tracking`, `tag`, `other`), `main_checkout_head_changed`,
+  `main_checkout_status_changed`, `other_worktree_head_changed`, `worktree_added`,
+  `worktree_removed`, `worktree_registry_changed`, `config_changed`, `hooks_path_changed`
+  (`core.hooksPath`), `remote_config_changed` (`remote.*`, `url.*`, `branch.*.remote|pushremote|merge`),
+  `hooks_changed`, `metadata_file_changed`, `repository_identity_changed`.
+- **Inconclusive:** `inspection_incomplete` (a section failed on either side; `before`/`after` carry
+  the reason), `baseline_not_verified` (the baseline worktree was not `ready` or its base commit was
+  missing), `snapshot_invalid`, `snapshot_mismatch` (different targets, or the after snapshot is
+  older).
+- Findings carry a `subject` (ref name, worktree path, `<file>:<key>`, metadata file) and commit IDs
+  or states as `before`/`after`; never config values or file contents. At most 500 are returned
+  (`findingsTruncated`, `totalFindings`); the status is computed from all of them.
+- **Normal coding edits** (tracked, untracked, staged, deleted or ignored files inside the task
+  worktree) are not part of the snapshot and never produce findings. Commits are not normal edits:
+  agents are not supposed to commit, so any task branch movement is a violation.
+- Changes made by the operator during a run (for example, working in the main checkout) are
+  reported as well; the inventory cannot tell who made a change.
+
+### Safety
+
+- Read-only: `rev-parse`, `for-each-ref`, `worktree list`, `config --file --no-includes --list`,
+  `status` (in the main checkout and, through `inspectTaskWorktree`, in the task worktree), plus
+  `lstat`/`readdir`/bounded reads of the fixed metadata files. Same environment as inspection
+  (hooks, fsmonitor and filters disabled, no optional locks, no lazy fetch, no prompts). A test
+  checks that capture and verification leave every file of the fixture, including both indexes,
+  byte-for-byte unchanged and run no repository-defined command.
+- Never repairs, resets, cleans, commits, fetches, pushes or checks out anything.
+- Only the configured repository is inspected. If the repository path no longer resolves to the
+  expected root, common dir and inodes, only the `repository` section is recorded and every other
+  section fails with `identity_mismatch`. Commands run only in the repository root and in a task
+  worktree that `inspectTaskWorktree` verified as belonging to it; other worktrees are only listed.
+- Files are read without following symlinks (`O_NOFOLLOW`, parent directories must resolve to
+  themselves; otherwise the entry is recorded as `symlink` or `redirected`).
+- Bounded: per-command timeout and output limit, an overall deadline (`maxDurationMs`, default
+  60 s), and limits on refs, worktrees, config entries, hooks and metadata file size. Exceeding a
+  limit fails the section instead of truncating it. Broken refs (Git warnings) and unparsable config
+  fail their section as `malformed`.
+- Failure messages contain only the Git subcommand and error codes, never stderr, file contents or
+  config values. Config keys with credentials in URL subsections are redacted
+  (`url.https://***@host/.insteadof`).
+
+### Known detection limits
+
+- **Transient changes** that are undone before the post-run capture (a commit followed by a reset,
+  a config change reverted, a hook added and removed) leave no observable difference.
+- **Pushes are not proven absent.** A push is visible only through local refs it updates (for
+  example `refs/remotes/<remote>/*`). A push to a URL or an unconfigured remote updates no local ref
+  and is not detected; remote repositories are never inspected. A test demonstrates both cases.
+- Not covered: reflogs, objects (new unreachable commits), `FETCH_HEAD`/`ORIG_HEAD`, the task
+  worktree's index, files included through `include.path`, the contents of a custom
+  `core.hooksPath` directory (its value is covered), global and system Git config, other
+  repositories, and file changes outside these locations. Content changes of files that were
+  already dirty in the main checkout do not change its status digest.
+- Changes made and reverted between the two captures, or made while a capture runs, can be missed.
 
 ## Tests
 

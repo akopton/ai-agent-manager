@@ -562,7 +562,7 @@ test('refuses when a mandatory runtime safeguard cannot be applied', async () =>
       }),
       'safeguard_unavailable',
     );
-    // Claiming the (unimplemented) Git integrity check is not honest; refused.
+    // Claiming the Git integrity check before the lifecycle applies it is not honest; refused.
     assert.equal(
       await codeOf(context, {
         authorization: issue(context, {

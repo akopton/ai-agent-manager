@@ -257,7 +257,7 @@ const checkTrustedLocalAuthorization = (
   if (authorization.safeguards.includes('post_run_git_integrity_check')) {
     return {
       code: 'safeguard_unavailable',
-      message: 'The post-run Git integrity check is not implemented yet (SEC-02d).',
+      message: 'The post-run Git integrity check is not wired into the execution lifecycle yet.',
     };
   }
   const uid = dependencies.effectiveUid();

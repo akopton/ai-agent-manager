@@ -235,7 +235,7 @@ On macOS/POSIX, the PoC used a dedicated process group and `SIGTERM`, followed b
 
 ### 7.5 Execution security modes (SEC-02)
 
-> Design decided 2026-11-04 for the personal-use MVP. **Partly implemented:** contracts (SEC-02a), gate (SEC-02b) and launch boundary (SEC-02c) exist; the Git integrity check (SEC-02d) and the smoke runs (SEC-02e) do not. No worker, scheduler or UI calls them yet, so nothing executes agents (`IMPLEMENTATION_PLAN.md` §9.3). Strict Isolated Mode stays fail-closed.
+> Design decided 2026-11-04 for the personal-use MVP. **Partly implemented:** contracts (SEC-02a), gate (SEC-02b), launch boundary (SEC-02c) and the Git integrity check (SEC-02d, not yet wired into a run lifecycle) exist; the smoke runs (SEC-02e) do not. No worker, scheduler or UI calls them yet, so nothing executes agents (`IMPLEMENTATION_PLAN.md` §9.3). Strict Isolated Mode stays fail-closed.
 
 **Threat model** (`SPEC.md` §12.1):
 
@@ -300,7 +300,7 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
 - **Schema invariants:**
   - every control is assessed exactly once;
   - accepted risks equal the unenforced assessments;
-  - the mandatory safeguards are present (`post_run_git_integrity_check` stays optional until SEC-02d);
+  - the mandatory safeguards are present (`post_run_git_integrity_check` stays optional until the worker applies it; see the SEC-02d notes);
   - the workspace matches the trusted repository identity;
   - the invocation starts with the launch arguments.
 
@@ -316,7 +316,7 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
 - **Safeguards recorded:**
   - verified at authorization: `invocation_binding`, `worktree_verification`, `allow_listed_environment`, `non_root`;
   - bound as obligations of the Trusted Local launch boundary (enforced since SEC-02c): `mandatory_timeout`, `output_limits`, `process_group_stop`;
-  - not yet recorded: `post_run_git_integrity_check` (until SEC-02d).
+  - not yet recorded: `post_run_git_integrity_check` (until the worker runs it; see the SEC-02d notes).
 - **Run binding (added in SEC-02c).** The request carries `run: { runId, prompt }`. The gate re-prepares the invocation for that run and prompt instead of a probe prompt, and binds the authorization to them (below).
 
 **SEC-02c implementation notes (launch boundary, `packages/agents`).**
@@ -334,7 +334,7 @@ type ExecutionAuthorization = StrictExecutionAuthorization | TrustedLocalExecuti
   - the policy's `timeoutMs` always applies, and a different `request.timeoutMs` is refused;
   - execution limits may only be tightened: finite, positive and at most the defaults (`safeguard_unavailable`);
   - process-group stop must be available on the platform; it is not on Windows (`safeguard_unavailable`);
-  - an authorization that lists `post_run_git_integrity_check` is refused until SEC-02d exists (`safeguard_unavailable`);
+  - an authorization that lists `post_run_git_integrity_check` is refused until the check is wired into the run lifecycle (`safeguard_unavailable`);
   - the effective UID is checked again and must be known and non-zero (`elevated_privileges`).
 
   Output limits, SIGTERM/SIGKILL escalation, termination after a throwing `emit`, and `processContainment: 'process_group_only'` come from the existing supervisor, unchanged.
@@ -401,6 +401,46 @@ New denial codes:
   - a digest of the main checkout's HEAD and status.
 - **Any difference** other than working-tree changes inside the task worktree marks the run *needs attention: unexpected Git mutation*. `Approve & Push` stays blocked until the operator reviews it.
 - **It detects; it does not prevent.** It cannot see pushes to a URL that update no local ref, changes to other repositories, or file changes outside these repositories. The UI says so.
+
+**SEC-02d implementation notes (Git integrity check, `packages/git`).** Details: `packages/git/README.md`, "Git integrity check".
+
+- **API.**
+  - `captureGitIntegritySnapshot(target)` takes repository path, worktree path, branch, base commit, limits and an optional expected repository identity. It returns a versioned, JSON-safe `GitIntegritySnapshot`.
+  - `compareGitIntegritySnapshots(before, after)` is pure and returns `GitIntegrityComparison`: `status`, `publication`, `findings`, the digests of both sides and `coverage: 'observable_before_after_state'`.
+  - `verifyGitIntegrity(baseline)` captures the after snapshot with the baseline's target, limits and repository identity, then compares.
+  - `digestGitIntegritySnapshot` hashes the observed state.
+- **Inventory**, extending the sketch above:
+  - the repository identity (canonical root and common dir with `dev`/`ino`);
+  - the task worktree's verification state;
+  - the full worktree registry with every HEAD and branch;
+  - every ref (local branches, remote-tracking refs, tags, notes, stash);
+  - config keys of the common and per-worktree config files, as value digests only;
+  - a fixed set of redirecting metadata files (`objects/info/alternates`, `info/attributes`, the task `.git` file and admin files);
+  - the common `hooks/` directory;
+  - a digest of the main checkout status.
+- **Each section is observed or failed, never partial.** The result is:
+  - `violation` if any observable change is found;
+  - otherwise `inconclusive` if any section failed, the snapshots are invalid or mismatched, or the baseline worktree was not verified;
+  - otherwise `clean`.
+
+  Normal tracked, untracked, staged and ignored edits inside the task worktree are not part of the inventory. A task branch movement (agent commit) is a violation.
+- **Inspection safety.** It reuses the inspection runner and environment: hooks, fsmonitor and filters are disabled, there are no optional locks and no lazy fetch. It is bounded by per-command limits, an overall deadline and per-section entry and byte limits. A limit that is exceeded fails its section and never truncates it. Files are read without following symlinks, and config values, stderr and file contents are never stored or reported. If the repository path stops resolving to the expected repository (paths and inodes), nothing else is inspected.
+- **Detection limits (stated in the UI and the disclosure).** The check does not detect:
+  - transient mutations reverted before the post-run capture;
+  - pushes that update no local ref (by URL, to an unconfigured remote);
+  - reflogs, unreachable objects, included config files, a custom `core.hooksPath` directory's contents, global config, or other repositories.
+
+  A clean result is "no observable violation", not proof of absence.
+- **Publication contract** (for the worker, M4, and Approve & Push, M5/M7):
+  - `violation` and `inconclusive` set the run to *needs attention: unexpected Git mutation* or *integrity check inconclusive*. Approve & Push stays blocked. Nothing is repaired, reset or silently accepted.
+  - Unblocking needs an explicit operator review decision. It is recorded with the run and bound to `beforeDigest`/`afterDigest`, so a later different state needs a new decision.
+  - `clean` only allows the normal human change review; it never approves or publishes anything.
+  - The comparison is persisted as `task_runs.git_integrity_result` (M2).
+- **When `post_run_git_integrity_check` may be recorded as applied.** It is not recorded today: the gate omits it, and the launch boundary refuses it with `safeguard_unavailable`. It may be recorded only when all of these exist:
+  1. the worker captures a baseline whose `repository` and `taskWorktree` sections are observed and whose target equals the authorization's workspace (root, common dir, worktree, branch, base commit), **before** authorizing. A failed baseline denies the launch;
+  2. the worker is obligated to run `verifyGitIntegrity` after **every** terminal outcome: completed, failed, timed out, stopped, output-limited, and worker-restart recovery;
+  3. the result is persisted with the run, and the publication gate reads it;
+  4. the gate adds the safeguard only for a request that carries that baseline, and the launch boundary accepts it only then. Until then, the `safeguard_unavailable` refusal stays.
 
 **Accepted risks in Trusted Local Mode** (shown in the disclosure, stored with every run as `acceptedRisks`): all strict controls that are not enforced for the profile. With today's profiles that is all seven:
 

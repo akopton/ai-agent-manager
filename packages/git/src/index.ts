@@ -58,3 +58,42 @@ export {
   type TaskWorktreeTarget,
 } from './task-worktree.js';
 export { listWorktrees, type WorktreeEntry } from './worktree-list.js';
+export {
+  captureGitIntegritySnapshot,
+  type CaptureGitIntegrityOptions,
+} from './integrity-capture.js';
+export {
+  compareGitIntegritySnapshots,
+  digestGitIntegritySnapshot,
+  maxReportedFindings,
+  verifyGitIntegrity,
+  type GitIntegrityComparison,
+  type GitIntegrityDisposition,
+  type GitIntegrityFinding,
+  type GitIntegrityFindingCode,
+  type GitIntegrityPublication,
+  type GitIntegrityStatus,
+  type RefCategory,
+  type VerifyGitIntegrityResult,
+} from './integrity-compare.js';
+export {
+  configFiles,
+  gitIntegrityLimitsSchema,
+  gitIntegritySections,
+  gitIntegritySnapshotSchema,
+  integrityFailureReasons,
+  type ConfigEntry,
+  type ConfigFile,
+  type FileIdentity,
+  type GitIntegrityLimits,
+  type GitIntegritySection,
+  type GitIntegritySnapshot,
+  type GitIntegritySnapshotTarget,
+  type IntegrityFailureReason,
+  type IntegrityInspectionFailure,
+  type MetadataEntry,
+  type Observation,
+  type RefRecord,
+  type ResolvedGitIntegrityLimits,
+  type WorktreeRecord,
+} from './integrity-schema.js';

@@ -153,7 +153,9 @@ const issuer = claimTrustedLocalIssuer();
  *   `startAgentExecution` enforces for Trusted Local launches (the policy's timeout, non-widened
  *   output limits, process-group stop), refusing the launch where it cannot.
  *
- * `post_run_git_integrity_check` is deliberately absent until SEC-02d implements it.
+ * `post_run_git_integrity_check` is deliberately absent. SEC-02d provides the check
+ * (`captureGitIntegritySnapshot` / `verifyGitIntegrity` in `@ai-agent-manager/git`), but no worker
+ * captures the pre-run baseline and runs the post-run comparison yet, so it is not applied.
  */
 const appliedSafeguards: readonly TrustedLocalSafeguard[] = mandatoryTrustedLocalSafeguards;
 
