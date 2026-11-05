@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react';
 import { Bot, Flame } from 'lucide-react';
 import {
   taskPriorityLabels,
@@ -10,15 +11,15 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { agentRuntimeLabels, describeModel } from '@/lib/tasks/board';
 
-type BadgeVariant =
-  'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' | 'info';
+type BadgeVariant = NonNullable<ComponentProps<typeof Badge>['variant']>;
 
-// Status color lives in compact labels and dots only; board columns stay neutral.
+// Status color lives in compact labels and dots only; board columns stay neutral. Status tones
+// use fixed status tokens, never the user-selected accent.
 const statusVariants: Readonly<Record<TaskStatus, BadgeVariant>> = {
   backlog: 'outline',
   queued: 'info',
   in_progress: 'success',
-  review: 'default',
+  review: 'review',
   done: 'secondary',
   stopped: 'warning',
   interrupted: 'warning',
@@ -31,7 +32,7 @@ export const taskStatusDotClassName: Readonly<Record<TaskStatus, string>> = {
   backlog: 'bg-muted-foreground/60',
   queued: 'bg-info',
   in_progress: 'bg-success',
-  review: 'bg-primary',
+  review: 'bg-review',
   done: 'bg-success/50',
   stopped: 'bg-warning',
   interrupted: 'bg-warning',

@@ -43,6 +43,7 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
+  --color-review: var(--review);
   --color-info-foreground: var(--info-foreground);
   --color-hover: var(--hover);
   --color-disabled: var(--disabled);
@@ -100,10 +101,7 @@
   --muted: #2a2d33;
   --muted-foreground: #a0a3ac;
 
-  /* Primary: violet accent, never a surface colour. Dark text on it keeps ≥ 6:1 contrast. */
-  --primary: #9385ed;
-  --primary-hover: #ab9dff;
-  --primary-foreground: #16151f;
+  /* Primary (`--primary*`) comes from the accent theme blocks below; never a surface colour. */
   --secondary: #2c2f36;
   --secondary-foreground: #f1f1f3;
   --accent: #32353d;
@@ -118,6 +116,8 @@
   --destructive-foreground: #2a1013;
   --info: #86aee8;
   --info-foreground: #0f1a2b;
+  /* The Review status keeps its own violet so it never depends on the chosen accent. */
+  --review: #9d91ef;
 
   --disabled: #1e2024;
   --disabled-foreground: #6b6e77;
@@ -126,7 +126,7 @@
   /* Subtle separators; fields and outline controls get a slightly clearer edge. */
   --border-strong: #464951;
   --input: #464951;
-  --ring: #9385ed;
+  --ring: var(--primary);
 
   --diff-added: rgb(101 202 187 / 0.11);
   --diff-added-foreground: #d3f0ea;
@@ -134,7 +134,7 @@
   --diff-removed-foreground: #f6d7da;
   --diff-hunk: rgb(255 255 255 / 0.035);
 
-  --chart-1: #9385ed;
+  --chart-1: var(--primary);
   --chart-2: #65cabb;
   --chart-3: #86aee8;
   --chart-4: #e2b46b;
@@ -142,12 +142,46 @@
 
   --sidebar: #191b1f;
   --sidebar-foreground: #f1f1f3;
-  --sidebar-primary: #9385ed;
-  --sidebar-primary-foreground: #16151f;
-  --sidebar-accent: rgb(147 133 237 / 0.14);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: color-mix(in srgb, var(--primary) 14%, transparent);
   --sidebar-accent-foreground: #f1f1f3;
   --sidebar-border: #26282d;
-  --sidebar-ring: #9385ed;
+  --sidebar-ring: var(--primary);
+  --selection: color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+/*
+ * Accent themes (UI-03). Only the brand/interactive accent changes; surfaces, text, borders and
+ * status colors are shared by every theme. `lib/theme/accent-theme.ts` lists the theme ids, and an
+ * inline script in the root layout sets `data-accent` on <html> before first paint. The attribute
+ * selectors also scope a theme locally, which the Settings swatches use for their previews.
+ * Dark `--primary-foreground` text keeps ≥ 5.8:1 contrast on every accent, and each accent stays
+ * ≥ 4.5:1 as text on the page, surface and elevated backgrounds (see tests/accent-theme.test.ts).
+ */
+:root,
+[data-accent='violet'] {
+  --primary: #9385ed;
+  --primary-hover: #ab9dff;
+  --primary-foreground: #16151f;
+}
+
+[data-accent='ocean'] {
+  --primary: #70a8f5;
+  --primary-hover: #91bdfb;
+  --primary-foreground: #0c1624;
+}
+
+[data-accent='teal'] {
+  --primary: #59c7b4;
+  --primary-hover: #7ad9c8;
+  --primary-foreground: #0a1d1a;
+}
+
+[data-accent='amber'] {
+  --primary: #e4b365;
+  --primary-hover: #f0c888;
+  --primary-foreground: #241907;
 }
 
 @layer base {
@@ -162,7 +196,7 @@
     @apply bg-background text-foreground;
   }
   ::selection {
-    background-color: rgb(147 133 237 / 0.32);
+    background-color: var(--selection);
     color: var(--foreground);
   }
   /* Native select popups follow `color-scheme`; options also get explicit colors for engines that do not. */
@@ -174,6 +208,29 @@
   input[type='checkbox'],
   input[type='radio'] {
     accent-color: var(--primary);
+  }
+  /*
+   * Cursor contract (UI-03): enabled native controls and their wrapping labels show a pointer;
+   * disabled ones show `not-allowed`; text fields keep the browser's text cursor. Links already get
+   * a pointer from the browser. Static containers, badges and labels of text fields stay default.
+   */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  select:not(:disabled),
+  summary,
+  input:is([type='checkbox'], [type='radio'], [type='submit'], [type='button'], [type='reset']):not(
+      :disabled
+    ),
+  label:has(> input:is([type='checkbox'], [type='radio']):not(:disabled)) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled,
+  [aria-disabled='true'],
+  label:has(> input:is([type='checkbox'], [type='radio']):disabled) {
+    cursor: not-allowed;
   }
   summary {
     @apply rounded-sm transition-colors hover:text-primary;

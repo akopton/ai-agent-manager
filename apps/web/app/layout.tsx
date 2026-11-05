@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { AppShell } from '@/components/app-shell';
+import { accentThemeInitScript } from '@/lib/theme/accent-theme';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -16,7 +17,12 @@ export const viewport: Viewport = {
 
 const RootLayout = ({ children }: { children: ReactNode }) => {
   return (
-    <html lang="en" className="dark">
+    // The init script may set `data-accent` on <html> before hydration; that attribute is expected.
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <head>
+        {/* Applies the stored accent theme before first paint, so it never flashes the default. */}
+        <script dangerouslySetInnerHTML={{ __html: accentThemeInitScript }} />
+      </head>
       <body className="antialiased">
         <AppShell>{children}</AppShell>
       </body>

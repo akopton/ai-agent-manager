@@ -369,7 +369,12 @@ export const TaskForm = ({ project, branches, task }: TaskFormProps) => {
                 aria-describedby={`${fieldId}-urgent-hint`}
               />
               <div className="space-y-1">
-                <Label htmlFor={`${fieldId}-urgent`}>Urgent</Label>
+                <Label
+                  htmlFor={`${fieldId}-urgent`}
+                  className={priorityLocked ? 'cursor-not-allowed' : 'cursor-pointer'}
+                >
+                  Urgent
+                </Label>
                 <p id={`${fieldId}-urgent-hint`} className="text-xs text-muted-foreground">
                   Urgent tasks are scheduled before all others, regardless of project and task
                   priority.
