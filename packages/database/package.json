@@ -21,6 +21,7 @@
     "db:init": "tsx --conditions=@ai-agent-manager/source scripts/init.ts",
     "db:generate": "NODE_OPTIONS=--conditions=@ai-agent-manager/source drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "tsx --conditions=@ai-agent-manager/source scripts/migrate.ts",
+    "db:migrate:dev": "tsx --conditions=@ai-agent-manager/source scripts/migrate-dev.ts",
     "db:migrate:kit": "tsx --conditions=@ai-agent-manager/source scripts/init.ts && drizzle-kit migrate --config=drizzle.config.ts"
   },
   "dependencies": {

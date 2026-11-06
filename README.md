@@ -63,6 +63,27 @@ pnpm list --recursive --depth -1
 pnpm dev
 ```
 
+With Node.js 24 active, `pnpm dev` is the only command needed to resume development. It runs
+[`scripts/dev.mjs`](scripts/dev.mjs), a local development launcher (not a production
+deployment path), which:
+
+1. Stops with instructions if the active Node.js is not version 24.
+2. Selects the database: an existing `AI_AGENT_MANAGER_DATABASE_PATH` or
+   `AI_AGENT_MANAGER_DATA_ROOT` is respected; otherwise `AI_AGENT_MANAGER_DATABASE_PATH`
+   defaults to `~/tmp/ai-agent-manager-dev/database.sqlite`.
+3. Applies pending migrations synchronously (`db:migrate:dev` in the database package). If an
+   existing database has pending migrations, it first writes a consistent copy to
+   `backups/<name>-pre-migration-<UTC timestamp>.sqlite` beside the database file; earlier
+   backups are never overwritten, and nothing is copied when the schema is already up to date or
+   the file is new. A failed migration is rolled back and stops startup: the web app and worker
+   are not started.
+4. Starts the web app and worker (`pnpm dev:apps`) with exactly the same environment, so the
+   migration, the web server and the worker use the same database file. The resolved path is
+   printed by the `[db]` step and again by the worker.
+
+Ctrl+C stops the web app and the worker; `SIGTERM`/`SIGHUP` sent to the launcher are forwarded.
+`pnpm dev:apps` starts both processes without the version check or migrations.
+
 ### Node.js 24 on macOS
 
 On macOS (Apple Silicon), install Node.js 24 with a version manager or Homebrew and make
@@ -88,11 +109,8 @@ open the database with a `NODE_MODULE_VERSION` error:
 pnpm rebuild better-sqlite3
 ```
 
-Apply database migrations once (and after pulling schema changes) before starting:
-
-```sh
-pnpm --filter @ai-agent-manager/database db:migrate
-```
+`pnpm dev` applies pending database migrations itself (see above), so no separate migration
+command is needed for local development.
 
 Open <http://127.0.0.1:3000>. `pnpm dev` also starts the worker in watch mode;
 stop both with Ctrl+C. The web `dev` script first builds the workspace packages it
@@ -132,7 +150,8 @@ See [`packages/cli-diagnostics/README.md`](packages/cli-diagnostics/README.md).
 resolves and validates all runtime paths (see [Runtime configuration](#runtime-configuration)),
 logs them, and only then opens SQLite through `createDatabase()` from
 `@ai-agent-manager/database`. Invalid configuration fails startup with exit code 1 before
-any file is touched. It never applies migrations. When the execution tables exist, it takes
+any file is touched. It never applies migrations (the local `pnpm dev` launcher applies them
+before starting the worker). When the execution tables exist, it takes
 the single-worker execution lease and polls for explicit operator commands (start requests
 and stop intents; see [Task execution](#task-execution)); it never picks queued tasks on its
 own. SIGINT or SIGTERM stop active runs (recorded as Interrupted), release the lease, close
@@ -166,7 +185,8 @@ variables in the shell.
 | `AI_AGENT_MANAGER_WORKTREE_ROOT` | `<data root>/worktrees`                          |
 
 A specific variable wins over a path derived from the data root, which wins over the
-macOS default; the home directory is resolved at run time. Values must be absolute or
+macOS default (`pnpm dev` instead defaults the database to
+`~/tmp/ai-agent-manager-dev/database.sqlite` when neither database variable is set); the home directory is resolved at run time. Values must be absolute or
 start with `~/`, may contain spaces, and are validated before any filesystem access. See
 [`packages/database/README.md`](packages/database/README.md#runtime-paths) for the full
 precedence and validation rules. Directories are created only by explicit calls,
@@ -284,11 +304,9 @@ browser to reach them; non-browser clients must send that header explicitly.
 To try it with a disposable repository and database:
 
 ```sh
-export AI_AGENT_MANAGER_DATABASE_PATH="$HOME/tmp/ai-agent-manager-dev/database.sqlite"
-pnpm --filter @ai-agent-manager/database db:migrate
 mkdir -p ~/tmp/demo-repo && git -C ~/tmp/demo-repo init -b main
 git -C ~/tmp/demo-repo commit --allow-empty -m "Initial commit"
-pnpm --filter @ai-agent-manager/web dev
+pnpm dev   # uses ~/tmp/ai-agent-manager-dev/database.sqlite and applies migrations
 ```
 
 Then open <http://127.0.0.1:3000/projects> and add `~/tmp/demo-repo`.

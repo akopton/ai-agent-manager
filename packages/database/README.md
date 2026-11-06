@@ -112,6 +112,12 @@ pnpm --filter @ai-agent-manager/database db:smoke
   better-sqlite3 migrator and the configured connection. Exported `applyMigrations`
   uses the same migration directory from source or compiled code, independently
   of the working directory. Keep `migrations/` alongside `dist/` when distributing.
+- `db:migrate:dev` is the step the root `pnpm dev` launcher runs before starting the web app
+  and worker (local development only). It lists pending migrations with
+  `listPendingMigrations` (read-only, mirroring Drizzle's migrator), backs up an existing
+  database with `backupDatabase` (`VACUUM INTO` a new file under `backups/` beside the
+  database; never overwrites) only when something is pending, then applies them. It exits
+  non-zero on any failure.
 - `db:migrate:kit` initializes the file and then invokes `drizzle-kit migrate`
   with the same configuration and migration history. This alternate CLI uses its
   own connection; use `db:migrate` when connection PRAGMAs must govern migration SQL.
@@ -137,8 +143,9 @@ history. `0001_projects.sql` adds the `projects` table. `0002_tasks.sql` adds th
 `run_events`, `worker_commands` and `worker_leases`, and the project execution trust columns
 (see [Execution records](#execution-records)). Applied migrations are never edited; schema changes get a new migration.
 `db:generate` resolves `@ai-agent-manager/core` (task enums used by the schema) from
-its TypeScript sources, so it does not require a prior build. Migrations are never applied
-automatically on startup: run `db:migrate` after pulling schema changes. The web app
+its TypeScript sources, so it does not require a prior build. The web app and worker never apply
+migrations on startup; the root `pnpm dev` launcher runs `db:migrate:dev` before starting them,
+and outside it run `db:migrate` after pulling schema changes. The web app
 checks that the tables it needs exist and otherwise reports the command to run.
 
 ## Projects

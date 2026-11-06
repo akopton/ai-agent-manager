@@ -4,7 +4,8 @@
   "private": true,
   "description": "Local-first orchestration for coding agents",
   "scripts": {
-    "dev": "pnpm --recursive --parallel --if-present run dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:apps": "pnpm --recursive --parallel --if-present run dev",
     "build": "pnpm --recursive --if-present run build",
     "typecheck": "tsc --noEmit && pnpm --recursive --if-present run typecheck",
     "lint": "eslint . --max-warnings 0",

@@ -17,7 +17,8 @@ export {
   initializeDataRoot,
   type DirectoryResult,
 } from './directories.js';
-export { applyMigrations } from './migrations.js';
+export { applyMigrations, listPendingMigrations, type PendingMigration } from './migrations.js';
+export { backupDatabase, type BackupDatabaseOptions } from './backup.js';
 export {
   deleteProject,
   findProjectById,
