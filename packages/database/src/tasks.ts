@@ -16,7 +16,7 @@ import {
 import { and, asc, count, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
-import { projects, tasks } from './schema.js';
+import { projects, tasks, workerCommands, workspaces } from './schema.js';
 
 export type TaskRecord = typeof tasks.$inferSelect;
 
@@ -146,7 +146,8 @@ export const countArchivedTasksByProject = (db: Database): { projectId: string; 
 /**
  * Changes editable task fields. Content (title, prompt, runtime, model, base branch) is editable
  * only in `Backlog`; priority and the urgent flag also in `Queued`. Switching the runtime without
- * choosing a model resets the model to `Default`.
+ * choosing a model resets the model to `Default`. The base branch is fixed once the task has a
+ * worktree, because later attempts continue in that worktree.
  */
 export const updateTask = (
   db: Database,
@@ -172,6 +173,24 @@ export const updateTask = (
           'task_not_editable',
           `These fields cannot be changed while the task is ${taskStatusLabels[current.status]}.`,
           { status: current.status },
+        );
+      }
+      if (
+        parsed.data.baseBranch !== undefined &&
+        parsed.data.baseBranch !== current.baseBranch &&
+        tx
+          .select({ id: workspaces.id })
+          .from(workspaces)
+          .where(eq(workspaces.taskId, taskId))
+          .get() !== undefined
+      ) {
+        // A task returned to Backlog after Request Changes, Retry or Resume keeps its worktree,
+        // and the next attempt continues in it. Its base was fixed when the worktree was created,
+        // so a new base branch would be stored but silently ignored.
+        throw new TaskError(
+          'task_not_editable',
+          'The task already has a worktree, and later attempts continue in it from its original base. The base branch can no longer change.',
+          { status: current.status, field: 'baseBranch' },
         );
       }
       const changes = resolveTaskUpdate(current, parsed.data);
@@ -204,7 +223,8 @@ export const updateTask = (
 /**
  * Applies a named lifecycle transition. Rejects actions that are not allowed from the task's
  * current status with `illegal_transition`; nothing is changed in that case. Queueing actions set
- * `queuedAt`; returning to `Backlog` clears it. Pass a transaction to compose the transition with
+ * `queuedAt`; returning to `Backlog` clears it and rejects a pending start request, so a later
+ * Queue never inherits an old Start. Pass a transaction to compose the transition with
  * other writes (for example a run claim) atomically.
  */
 export const transitionTask = (
@@ -247,6 +267,19 @@ export const transitionTask = (
           action: parsedAction.data,
           status: current.status,
         });
+      }
+      if (to === 'backlog') {
+        // Withdrawing a task also withdraws its pending start request. Otherwise a request left
+        // by a stopped worker would run the task after it is queued again, without a new Start.
+        tx.update(workerCommands)
+          .set({
+            status: 'rejected',
+            resultCode: 'task_not_queued',
+            resultMessage: 'The task was returned to Backlog before the worker started it.',
+            processedAt: now,
+          })
+          .where(and(eq(workerCommands.taskId, taskId), eq(workerCommands.status, 'pending')))
+          .run();
       }
       return updated;
     },

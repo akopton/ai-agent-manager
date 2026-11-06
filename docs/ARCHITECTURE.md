@@ -139,6 +139,12 @@ Implement transitions through named domain methods / transactions; reject invali
 - **Prompt.** Original prompt; the latest review feedback when a change request preceded the failed follow-up; and a note that this is a new attempt in a new agent session that continues from the existing changes. Native CLI session resume is not used. The claim, consent re-read, trust, per-runtime limit, gate, launch boundary, Stop, timeout, reconciliation and post-run integrity check are unchanged.
 - **Accepted v1 semantics (decided 2026-11-05, `SPEC.md` §11).** Retry and Resume both continue the retained worktree and start a new agent session; nothing is reset or overwritten. Retry from scratch (fresh workspace) and native CLI session resume are future capabilities and would need a second-workspace or adapter-session design.
 
+**TM-03 notes (2026-11-06, Manual Task Management v1 lifecycle QA).**
+
+- **Withdrawn start requests.** `transitionTask(return_to_backlog)` rejects the task's pending `worker_commands` row (`task_not_queued`) in the same IMMEDIATE transaction. Before, a request left by a stopped worker stayed pending for up to 5 minutes and could be claimed after the task was queued again, without a new Start.
+- **Base branch fixed by the worktree.** `updateTask` refuses a base-branch change (`task_not_editable`, `details.field = 'baseBranch'`) once the task has a workspace record, because follow-up and recovered attempts continue in the retained worktree and never read `tasks.base_branch`. The edit page disables the field and names the worktree's base.
+- **Journeys.** `apps/worker/tests/lifecycle-journeys.test.ts` runs complete v1 journeys end to end (fake CLIs, disposable repository and bare remote): Request Changes → failure → Retry → Stop → Resume → Approve & Push with a failed push and Retry push → Archive → Remove local worktree → Restore; Discard → Archive/Restore with a fail-closed cleanup; and Start → Return to Backlog → Queue without execution.
+
 **TM-02 implementation notes (2026-11-06, Task Archiving; accepted v1 semantics in `SPEC.md` §7.1).**
 
 - **Not a state.** Archive sets `tasks.archived_at`; Restore clears it. No named transition is applied and no other column (including `updated_at`) or table changes. Rules in `packages/core/src/task-archive.ts`; commands `archiveTask`/`restoreTask` in `packages/database/src/task-archive.ts`, each one IMMEDIATE transaction that re-reads the facts; both are idempotent.

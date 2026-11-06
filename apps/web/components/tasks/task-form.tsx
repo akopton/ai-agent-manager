@@ -74,9 +74,14 @@ type TaskFormProps = {
   branches: readonly string[] | null;
   /** The task being edited; omitted when creating a task. */
   task?: Task;
+  /**
+   * The base branch of the task's existing worktree, or `null`/omitted when it has none. Later
+   * attempts continue in that worktree, so the base branch is then locked.
+   */
+  worktreeBaseBranch?: string | null;
 };
 
-export const TaskForm = ({ project, branches, task }: TaskFormProps) => {
+export const TaskForm = ({ project, branches, task, worktreeBaseBranch = null }: TaskFormProps) => {
   const router = useRouter();
   const fieldId = useId();
   const initial = task === undefined ? newTaskFormValues() : taskFormValuesFromTask(task);
@@ -94,6 +99,7 @@ export const TaskForm = ({ project, branches, task }: TaskFormProps) => {
   );
   const contentLocked = !editability.content;
   const priorityLocked = !editability.priority;
+  const baseBranchLocked = contentLocked || worktreeBaseBranch !== null;
   // Keep a stored override selectable even if the branch no longer exists.
   const branchOptions =
     task?.baseBranch !== undefined &&
@@ -310,7 +316,7 @@ export const TaskForm = ({ project, branches, task }: TaskFormProps) => {
                 onChange={(event) =>
                   update('baseBranch', { ...values, baseBranch: event.target.value })
                 }
-                disabled={contentLocked}
+                disabled={baseBranchLocked}
                 aria-invalid={fieldErrors.baseBranch !== undefined}
                 aria-describedby={describedBy('baseBranch', `${fieldId}-branch-hint`)}
               >
@@ -325,9 +331,11 @@ export const TaskForm = ({ project, branches, task }: TaskFormProps) => {
                 ))}
               </NativeSelect>
               <p id={`${fieldId}-branch-hint`} className="text-xs text-muted-foreground">
-                {branches === null
-                  ? 'The repository cannot be read right now, so only the project default can be chosen.'
-                  : 'The project default is resolved when the task first starts. An override must exist locally.'}
+                {worktreeBaseBranch !== null
+                  ? `This task already has a worktree based on ${worktreeBaseBranch}. Later attempts continue in it, so the base branch can no longer change.`
+                  : branches === null
+                    ? 'The repository cannot be read right now, so only the project default can be chosen.'
+                    : 'The project default is resolved when the task first starts. An override must exist locally.'}
               </p>
               <FieldError id={`${fieldId}-baseBranch-error`} message={fieldErrors.baseBranch} />
             </div>

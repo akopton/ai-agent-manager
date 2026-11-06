@@ -131,8 +131,8 @@ const EligibilityBanner = ({ review }: { review: TaskReviewView }) => {
           <p>
             The agent process completed and the Git integrity check found no observable Git
             mutation. Neither shows that the implementation is correct: judge the result by the
-            changes below. You can request changes or approve and push below; Discard is not
-            available yet.
+            changes below. You can request changes or approve and push below. To reject the result
+            without publishing, use Discard on the task page; it deletes nothing.
           </p>
         </AlertDescription>
       </Alert>

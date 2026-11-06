@@ -34,6 +34,7 @@ import {
   requestTaskRecovery,
   setProjectExecutionTrust,
   transitionTask,
+  updateTask,
   updateTaskRunProgress,
   type DatabaseConnection,
   type RunFinish,
@@ -495,6 +496,51 @@ test('a failed follow-up attempt keeps its review feedback for the recovered att
     assert.deepEqual(listTaskReviews(db, taskId), [
       { ...review, followUpRunId: uuid(711), updatedAt: 37 },
     ]);
+  });
+});
+
+test('a recovered task returned to Backlog keeps its worktree base; Queue and Start continue it', () => {
+  withDatabase((db) => {
+    const { taskId, runId, workspaceId } = endedTask(db, 1, failed);
+    recover(db, { n: 900, taskId, kind: 'retry', runId, workspaceId });
+    transitionTask(db, { id: taskId, action: 'return_to_backlog', now: 41 });
+
+    // Content stays editable in Backlog, but the base branch is fixed by the existing worktree:
+    // the next attempt continues in it, so a new base would be stored and silently ignored.
+    assert.throws(
+      () => updateTask(db, { id: taskId, input: { baseBranch: 'develop' }, now: 42 }),
+      (error: unknown) =>
+        error instanceof TaskError &&
+        error.code === 'task_not_editable' &&
+        error.details?.field === 'baseBranch',
+    );
+    assert.equal(findTaskById(db, taskId)?.baseBranch, null);
+    assert.equal(
+      updateTask(db, { id: taskId, input: { title: 'Renamed' }, now: 43 }).title,
+      'Renamed',
+    );
+
+    // The Retry decision survives the detour and binds the next explicitly started attempt.
+    transitionTask(db, { id: taskId, action: 'queue', now: 44 });
+    requestTaskExecution(db, { id: uuid(901), taskId, now: 45 });
+    const result = claim(db, uuid(901), uuid(902), 46);
+    assert.ok(result.claimed);
+    assert.equal(result.claim.run.attempt, 2);
+    assert.equal(result.claim.run.workspaceId, workspaceId);
+    assert.equal(result.claim.recovery?.recovery.followUpRunId, uuid(902));
+    assert.equal(listTaskWorkspaces(db, taskId).length, 1);
+  });
+});
+
+test('a task without a worktree may still change its base branch in Backlog', () => {
+  withDatabase((db) => {
+    const { taskId, runId } = endedTask(db, 1, failed, { workspace: false });
+    recover(db, { n: 900, taskId, kind: 'retry', runId, workspaceId: null });
+    transitionTask(db, { id: taskId, action: 'return_to_backlog', now: 41 });
+    assert.equal(
+      updateTask(db, { id: taskId, input: { baseBranch: 'develop' }, now: 42 }).baseBranch,
+      'develop',
+    );
   });
 });
 

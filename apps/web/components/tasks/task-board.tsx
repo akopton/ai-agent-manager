@@ -13,7 +13,8 @@ import {
 
 const columnDescriptions: Readonly<Record<TaskStatus, string>> = {
   backlog: 'Saved, not authorized to run',
-  queued: 'Eligible for the scheduler',
+  // No automatic scheduler in v1: a queued task runs only after Start execution on its page.
+  queued: 'Runs only when you start it',
   in_progress: 'An agent is working',
   review: 'Awaiting your decision',
   done: 'Committed and pushed',

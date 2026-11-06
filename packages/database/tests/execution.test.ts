@@ -360,6 +360,33 @@ test('pending start requests expire instead of running after a long worker outag
   });
 });
 
+test('Return to Backlog withdraws a pending start request; queueing again needs a new Start', () => {
+  withDatabase(({ db }) => {
+    accept(db);
+    trust(db);
+    const task = queuedTask(db, 1);
+    // The operator clicked Start while the worker was not polling, then withdrew the task.
+    requestTaskExecution(db, { id: uuid(100), taskId: task, now: 25 });
+    transitionTask(db, { id: task, action: 'return_to_backlog', now: 26 });
+    const withdrawn = findLatestTaskCommand(db, task);
+    assert.equal(withdrawn?.status, 'rejected');
+    assert.equal(withdrawn?.resultCode, 'task_not_queued');
+    assert.equal(withdrawn?.processedAt, 26);
+
+    // Queueing again is not a Start: the old request can never be claimed later.
+    transitionTask(db, { id: task, action: 'queue', now: 27 });
+    const stale = claim(db, uuid(100), uuid(200), 28);
+    assert.equal(stale.claimed, false);
+    assert.equal(findTaskById(db, task)?.status, 'queued');
+    assert.equal(listTaskRuns(db, task).length, 0);
+
+    // A new explicit Start is accepted and claimed normally.
+    requestTaskExecution(db, { id: uuid(101), taskId: task, now: 29 });
+    assert.equal(claim(db, uuid(101), uuid(201), 30).claimed, true);
+    assert.equal(findTaskById(db, task)?.status, 'in_progress');
+  });
+});
+
 test('the worker lease admits one live owner and can be taken over only after expiry', () => {
   withDatabase(({ db }) => {
     assert.equal(

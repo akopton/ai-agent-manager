@@ -178,6 +178,7 @@ Archive and Restore (§7.1) are not lifecycle actions and do not appear in this 
 - On execution error, preserve files and present diagnostics. Exit code `0` alone does not prove that the implementation is correct.
 - `Done` requires both a successful commit **and** a successful push. If push fails after commit, retain the commit and allow a safe push retry without duplicating it.
 - Completed and discarded tasks remain in history until explicitly deleted by the user. *(Permanent task deletion is deferred; Manual Task Management v1 offers only reversible archiving, §7.1.)*
+- *(TM-03, 2026-11-06.)* Returning a `Queued` task to `Backlog` also withdraws its pending start request: queueing it again never inherits an earlier Start. Once a task has a worktree (it has run at least once and was returned to `Backlog` after Request Changes, Retry or Resume), its base branch can no longer change, because later attempts continue in that worktree; other fields stay editable in `Backlog`.
 
 ### 7.1 Task archiving
 

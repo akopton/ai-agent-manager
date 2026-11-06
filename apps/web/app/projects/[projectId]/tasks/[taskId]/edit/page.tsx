@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
 import { getProjectDetails } from '@/lib/server/projects';
-import { findProjectTask } from '@/lib/server/tasks';
+import { findProjectTask, findTaskWorktreeBase } from '@/lib/server/tasks';
 import { taskUrl } from '@/lib/tasks/board';
 
 export const metadata: Metadata = { title: 'Edit task · AI Agent Manager' };
@@ -30,7 +30,13 @@ const EditTaskPage = async ({
     }
     // Branches for the base branch select are read live (read-only) from the repository.
     const details = await getProjectDetails(db, projectId);
-    return details === undefined ? undefined : { ...found, repository: details.repository };
+    return details === undefined
+      ? undefined
+      : {
+          ...found,
+          repository: details.repository,
+          worktreeBaseBranch: findTaskWorktreeBase(db, found.task.id),
+        };
   });
 
   if (!result.ok) {
@@ -40,7 +46,7 @@ const EditTaskPage = async ({
     notFound();
   }
 
-  const { project, task, repository } = result.data;
+  const { project, task, repository, worktreeBaseBranch } = result.data;
   return (
     <>
       <section aria-labelledby="page-title" className="space-y-3">
@@ -59,6 +65,7 @@ const EditTaskPage = async ({
         project={{ id: project.id, defaultBaseBranch: project.defaultBaseBranch }}
         branches={repository.status === 'available' ? repository.branches : null}
         task={task}
+        worktreeBaseBranch={worktreeBaseBranch}
       />
     </>
   );

@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Archive, Info, Loader2, RotateCcw, StepForward } from 'lucide-react';
+import { AlertCircle, Ban, Info, Loader2, RotateCcw, StepForward } from 'lucide-react';
 import { taskRecoveryKindLabels, type TaskStatus } from '@ai-agent-manager/core';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -250,7 +250,8 @@ const DiscardDialog = ({ projectId, task, options, size }: ActionProps) => {
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
         <Button type="button" size={size} variant="outline" aria-label={`Discard: ${task.title}`}>
-          <Archive aria-hidden="true" />
+          {/* Not the Archive icon: Discard rejects the result, Archive only hides the task. */}
+          <Ban aria-hidden="true" />
           Discard…
         </Button>
       </AlertDialogTrigger>

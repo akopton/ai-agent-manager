@@ -13,6 +13,7 @@ import {
   findProjectById,
   findTaskById,
   listProjectTasks,
+  listTaskWorkspaces,
   transitionTask,
   updateTask,
   type DatabaseConnection,
@@ -104,6 +105,13 @@ export const findProjectTask = (
     task: toTask(task),
   };
 };
+
+/**
+ * The base branch of the task's worktree, or `null` while the task has none. Once a worktree
+ * exists, later attempts continue in it, so the task's base branch can no longer change.
+ */
+export const findTaskWorktreeBase = (db: Database, taskId: string): string | null =>
+  listTaskWorkspaces(db, taskId)[0]?.baseBranch ?? null;
 
 /**
  * Active task counts per project and status for the project library, plus archived task counts

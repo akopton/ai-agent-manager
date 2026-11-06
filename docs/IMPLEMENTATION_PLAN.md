@@ -96,7 +96,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Preserve attempts rather than overwriting prior run history.
 
 **M2-03 — Durable command handling**
-*(2026-11-05, execution slice: durable start requests (`worker_commands`, one pending per task, expiry after 5 minutes), persisted stop intent (`task_runs.stop_requested_at`), a single-worker lease (`worker_leases`) and transaction-safe claims. Open: pause/retry/publish commands, idempotency keys and priority ordering.)*
+*(2026-11-05, execution slice: durable start requests (`worker_commands`, one pending per task, expiry after 5 minutes), persisted stop intent (`task_runs.stop_requested_at`), a single-worker lease (`worker_leases`) and transaction-safe claims. Open: pause/retry/publish commands, idempotency keys and priority ordering. TM-03 (2026-11-06): Return to Backlog withdraws a pending start request; see `ARCHITECTURE.md` §5.1 "TM-03 notes".)*
 - Persist enqueue, pause, stop, retry and publish intent with idempotency keys.
 - Introduce one worker ownership/lease strategy and transaction-safe task claims.
 - Add deterministic sorting by urgency, project priority, task priority, enqueue time and ID.

@@ -458,8 +458,14 @@ test('stop reaches only the process group; a descendant in its own session survi
       try {
         assert.equal(result.status, 'stopped');
         assert.equal(result.processContainment, 'process_group_only');
-        // The group was signalled during stop, so nothing was left in it to report.
-        assert.equal(result.lingeringProcesses, 'none');
+        // The group was signalled during stop. Whether the in-group child is already gone when the
+        // main process exit is handled is a scheduling race: if it is not, the supervisor reaps it
+        // and reports `terminated`. Either way the group is empty; only `unknown` (a member that
+        // survived SIGKILL) would be a containment failure. The child's death is asserted below.
+        assert.ok(
+          result.lingeringProcesses === 'none' || result.lingeringProcesses === 'terminated',
+          `unexpected lingeringProcesses: ${result.lingeringProcesses}`,
+        );
         assert.equal(isAlive(context.fake.lingeringChildPid()), false);
         assert.equal(isAlive(detachedPid), true, 'the escaped descendant is expected to survive');
       } finally {

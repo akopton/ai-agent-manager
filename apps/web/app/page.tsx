@@ -14,10 +14,11 @@ import {
 
 const plannedAreas = [
   {
-    title: 'Agent execution',
+    title: 'Automatic scheduling',
     icon: Bot,
-    description: 'Run queued tasks with Claude Code or Codex.',
-    detail: 'Queued tasks run in a dedicated branch and worktree, then wait for your review.',
+    description: 'Start queued tasks automatically when a runtime is free.',
+    detail:
+      'Today every queued task waits for you: open it and click Start execution. It runs in its own branch and worktree, then waits for your review.',
   },
   {
     title: 'Overview',
@@ -54,7 +55,8 @@ const HomePage = () => (
         </CardTitle>
         <CardDescription className="max-w-2xl leading-6">
           Coordinate work across local repositories and review agent changes before publishing.
-          Start by adding a local repository, then create and queue tasks on its board.
+          Start by adding a local repository, then create and queue tasks on its board and start
+          each one from its task page.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-wrap items-center gap-4">

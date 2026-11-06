@@ -110,16 +110,23 @@ test('observes Git, network, credential and stop effects through independent cha
     results.push(stop);
     // The same-group descendant is stopped; the one that started its own session survives the
     // process-group stop and is then terminated by PID after a nonce check.
-    assert.deepEqual(stop.observed.processes, {
+    assert.ok(stop.observed.processes !== null);
+    const { supervisorGroupState, ...processes } = stop.observed.processes;
+    assert.deepEqual(processes, {
       tracked: 2,
       survivors: 1,
       unverifiable: 0,
       survivorKinds: ['new_session'],
-      // The supervisor reports an empty process group after the stop although a descendant
-      // outside the group is still running: its report is not a containment guarantee.
-      supervisorGroupState: 'none',
       remainingAfterCleanup: 0,
     });
+    // The supervisor reports its process group as cleared after the stop although a descendant
+    // outside the group is still running: its report is not a containment guarantee. Whether the
+    // same-group child is already gone when the CLI's exit is handled is a scheduling race, so
+    // the report is `none` or `terminated` (the supervisor reaped it); never `unknown`.
+    assert.ok(
+      supervisorGroupState === 'none' || supervisorGroupState === 'terminated',
+      `unexpected supervisorGroupState: ${supervisorGroupState}`,
+    );
     assert.equal(stop.outcome, 'allowed');
     assert.ok(
       stop.limitations.some((note) =>
