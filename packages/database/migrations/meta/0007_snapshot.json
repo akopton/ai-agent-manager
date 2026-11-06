@@ -1,0 +1,1959 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "c4f378a3-6261-459c-b210-5eb31ffb7540",
+  "prevId": "13014541-72ef-4978-9102-1a5fb06b5c18",
+  "tables": {
+    "git_operations": {
+      "name": "git_operations",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "publication_id": {
+          "name": "publication_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "commit_sha": {
+          "name": "commit_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "remote_name": {
+          "name": "remote_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ref": {
+          "name": "ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "outcome": {
+          "name": "outcome",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "git_operations_publication_id_idx": {
+          "name": "git_operations_publication_id_idx",
+          "columns": ["publication_id"],
+          "isUnique": false
+        },
+        "git_operations_one_running_per_publication_idx": {
+          "name": "git_operations_one_running_per_publication_idx",
+          "columns": ["publication_id"],
+          "isUnique": true,
+          "where": "status = 'running'"
+        },
+        "git_operations_publication_kind_attempt_unique": {
+          "name": "git_operations_publication_kind_attempt_unique",
+          "columns": ["publication_id", "kind", "attempt"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "git_operations_publication_id_publications_id_fk": {
+          "name": "git_operations_publication_id_publications_id_fk",
+          "tableFrom": "git_operations",
+          "tableTo": "publications",
+          "columnsFrom": ["publication_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "git_operations_task_id_tasks_id_fk": {
+          "name": "git_operations_task_id_tasks_id_fk",
+          "tableFrom": "git_operations",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "git_operations_kind_check": {
+          "name": "git_operations_kind_check",
+          "value": "\"git_operations\".\"kind\" IN ('commit', 'push')"
+        },
+        "git_operations_status_check": {
+          "name": "git_operations_status_check",
+          "value": "\"git_operations\".\"status\" IN ('running', 'succeeded', 'failed')"
+        },
+        "git_operations_attempt_check": {
+          "name": "git_operations_attempt_check",
+          "value": "\"git_operations\".\"attempt\" >= 1"
+        }
+      }
+    },
+    "projects": {
+      "name": "projects",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_path": {
+          "name": "local_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "git_common_dir": {
+          "name": "git_common_dir",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_name": {
+          "name": "remote_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "default_base_branch": {
+          "name": "default_base_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "instructions": {
+          "name": "instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "execution_trust": {
+          "name": "execution_trust",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'none'"
+        },
+        "execution_trusted_common_dir": {
+          "name": "execution_trusted_common_dir",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "execution_trusted_at": {
+          "name": "execution_trusted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "projects_local_path_unique": {
+          "name": "projects_local_path_unique",
+          "columns": ["local_path"],
+          "isUnique": true
+        },
+        "projects_git_common_dir_unique": {
+          "name": "projects_git_common_dir_unique",
+          "columns": ["git_common_dir"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "publications": {
+      "name": "publications",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "failure_stage": {
+          "name": "failure_stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "inventory_revision": {
+          "name": "inventory_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_hash": {
+          "name": "snapshot_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_json": {
+          "name": "snapshot_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "file_count": {
+          "name": "file_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_commit": {
+          "name": "base_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_name": {
+          "name": "remote_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_url": {
+          "name": "remote_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "remote_url_digest": {
+          "name": "remote_url_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "commit_message": {
+          "name": "commit_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "commit_sha": {
+          "name": "commit_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "tree_sha": {
+          "name": "tree_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "worker_instance_id": {
+          "name": "worker_instance_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "committed_at": {
+          "name": "committed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pushed_at": {
+          "name": "pushed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "publications_request_id_unique": {
+          "name": "publications_request_id_unique",
+          "columns": ["request_id"],
+          "isUnique": true
+        },
+        "publications_task_id_idx": {
+          "name": "publications_task_id_idx",
+          "columns": ["task_id"],
+          "isUnique": false
+        },
+        "publications_status_idx": {
+          "name": "publications_status_idx",
+          "columns": ["status"],
+          "isUnique": false
+        },
+        "publications_one_active_per_task_idx": {
+          "name": "publications_one_active_per_task_idx",
+          "columns": ["task_id"],
+          "isUnique": true,
+          "where": "status IN ('approved', 'committing', 'committed', 'push_requested', 'pushing')"
+        }
+      },
+      "foreignKeys": {
+        "publications_task_id_tasks_id_fk": {
+          "name": "publications_task_id_tasks_id_fk",
+          "tableFrom": "publications",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "publications_run_id_task_runs_id_fk": {
+          "name": "publications_run_id_task_runs_id_fk",
+          "tableFrom": "publications",
+          "tableTo": "task_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "publications_workspace_id_workspaces_id_fk": {
+          "name": "publications_workspace_id_workspaces_id_fk",
+          "tableFrom": "publications",
+          "tableTo": "workspaces",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "publications_status_check": {
+          "name": "publications_status_check",
+          "value": "\"publications\".\"status\" IN ('approved', 'committing', 'committed', 'push_requested', 'pushing', 'pushed', 'failed')"
+        },
+        "publications_failure_stage_check": {
+          "name": "publications_failure_stage_check",
+          "value": "(\"publications\".\"status\" = 'failed') = (\"publications\".\"failure_stage\" IS NOT NULL) AND (\"publications\".\"failure_stage\" IS NULL OR \"publications\".\"failure_stage\" IN ('validation', 'commit', 'push'))"
+        },
+        "publications_commit_check": {
+          "name": "publications_commit_check",
+          "value": "\"publications\".\"status\" NOT IN ('committed', 'push_requested', 'pushing', 'pushed') OR \"publications\".\"commit_sha\" IS NOT NULL"
+        },
+        "publications_file_count_check": {
+          "name": "publications_file_count_check",
+          "value": "\"publications\".\"file_count\" >= 1"
+        }
+      }
+    },
+    "reviews": {
+      "name": "reviews",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "feedback": {
+          "name": "feedback",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "inventory_revision": {
+          "name": "inventory_revision",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "follow_up_run_id": {
+          "name": "follow_up_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "reviews_task_id_idx": {
+          "name": "reviews_task_id_idx",
+          "columns": ["task_id"],
+          "isUnique": false
+        },
+        "reviews_follow_up_run_unique": {
+          "name": "reviews_follow_up_run_unique",
+          "columns": ["follow_up_run_id"],
+          "isUnique": true,
+          "where": "follow_up_run_id IS NOT NULL"
+        },
+        "reviews_one_pending_change_request_per_task_idx": {
+          "name": "reviews_one_pending_change_request_per_task_idx",
+          "columns": ["task_id"],
+          "isUnique": true,
+          "where": "status = 'changes_requested' AND follow_up_run_id IS NULL"
+        },
+        "reviews_run_unique": {
+          "name": "reviews_run_unique",
+          "columns": ["run_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "reviews_task_id_tasks_id_fk": {
+          "name": "reviews_task_id_tasks_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "reviews_run_id_task_runs_id_fk": {
+          "name": "reviews_run_id_task_runs_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "task_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "reviews_workspace_id_workspaces_id_fk": {
+          "name": "reviews_workspace_id_workspaces_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "workspaces",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "reviews_follow_up_run_id_task_runs_id_fk": {
+          "name": "reviews_follow_up_run_id_task_runs_id_fk",
+          "tableFrom": "reviews",
+          "tableTo": "task_runs",
+          "columnsFrom": ["follow_up_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "reviews_status_check": {
+          "name": "reviews_status_check",
+          "value": "\"reviews\".\"status\" IN ('changes_requested')"
+        },
+        "reviews_feedback_check": {
+          "name": "reviews_feedback_check",
+          "value": "length(trim(\"reviews\".\"feedback\")) > 0"
+        }
+      }
+    },
+    "run_events": {
+      "name": "run_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload_json": {
+          "name": "payload_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "run_events_run_sequence_unique": {
+          "name": "run_events_run_sequence_unique",
+          "columns": ["run_id", "sequence"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "run_events_run_id_task_runs_id_fk": {
+          "name": "run_events_run_id_task_runs_id_fk",
+          "tableFrom": "run_events",
+          "tableTo": "task_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "security_settings": {
+      "name": "security_settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "trusted_local_enabled": {
+          "name": "trusted_local_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "trusted_local_disclosure_version": {
+          "name": "trusted_local_disclosure_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trusted_local_accepted_at": {
+          "name": "trusted_local_accepted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "trusted_local_accepted_risks_json": {
+          "name": "trusted_local_accepted_risks_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "security_settings_singleton_check": {
+          "name": "security_settings_singleton_check",
+          "value": "\"security_settings\".\"id\" = 1"
+        },
+        "security_settings_enabled_check": {
+          "name": "security_settings_enabled_check",
+          "value": "\"security_settings\".\"trusted_local_enabled\" IN (0, 1)"
+        },
+        "security_settings_acceptance_check": {
+          "name": "security_settings_acceptance_check",
+          "value": "\"security_settings\".\"trusted_local_enabled\" = 0 OR (\"security_settings\".\"trusted_local_disclosure_version\" IS NOT NULL AND \"security_settings\".\"trusted_local_accepted_at\" IS NOT NULL AND \"security_settings\".\"trusted_local_accepted_risks_json\" IS NOT NULL)"
+        }
+      }
+    },
+    "task_recoveries": {
+      "name": "task_recoveries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_run_id": {
+          "name": "source_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_status": {
+          "name": "source_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "review_id": {
+          "name": "review_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "process_check": {
+          "name": "process_check",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "follow_up_run_id": {
+          "name": "follow_up_run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_recoveries_task_id_idx": {
+          "name": "task_recoveries_task_id_idx",
+          "columns": ["task_id"],
+          "isUnique": false
+        },
+        "task_recoveries_follow_up_run_unique": {
+          "name": "task_recoveries_follow_up_run_unique",
+          "columns": ["follow_up_run_id"],
+          "isUnique": true,
+          "where": "follow_up_run_id IS NOT NULL"
+        },
+        "task_recoveries_one_pending_per_task_idx": {
+          "name": "task_recoveries_one_pending_per_task_idx",
+          "columns": ["task_id"],
+          "isUnique": true,
+          "where": "follow_up_run_id IS NULL"
+        },
+        "task_recoveries_source_run_unique": {
+          "name": "task_recoveries_source_run_unique",
+          "columns": ["source_run_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "task_recoveries_task_id_tasks_id_fk": {
+          "name": "task_recoveries_task_id_tasks_id_fk",
+          "tableFrom": "task_recoveries",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "task_recoveries_source_run_id_task_runs_id_fk": {
+          "name": "task_recoveries_source_run_id_task_runs_id_fk",
+          "tableFrom": "task_recoveries",
+          "tableTo": "task_runs",
+          "columnsFrom": ["source_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "task_recoveries_workspace_id_workspaces_id_fk": {
+          "name": "task_recoveries_workspace_id_workspaces_id_fk",
+          "tableFrom": "task_recoveries",
+          "tableTo": "workspaces",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "task_recoveries_review_id_reviews_id_fk": {
+          "name": "task_recoveries_review_id_reviews_id_fk",
+          "tableFrom": "task_recoveries",
+          "tableTo": "reviews",
+          "columnsFrom": ["review_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "task_recoveries_follow_up_run_id_task_runs_id_fk": {
+          "name": "task_recoveries_follow_up_run_id_task_runs_id_fk",
+          "tableFrom": "task_recoveries",
+          "tableTo": "task_runs",
+          "columnsFrom": ["follow_up_run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "task_recoveries_kind_check": {
+          "name": "task_recoveries_kind_check",
+          "value": "\"task_recoveries\".\"kind\" IN ('retry', 'resume')"
+        },
+        "task_recoveries_source_status_check": {
+          "name": "task_recoveries_source_status_check",
+          "value": "\"task_recoveries\".\"source_status\" IN ('failed', 'stopped', 'interrupted')"
+        },
+        "task_recoveries_process_check_check": {
+          "name": "task_recoveries_process_check_check",
+          "value": "\"task_recoveries\".\"process_check\" IN ('not_launched', 'process_group_gone', 'operator_confirmed')"
+        }
+      }
+    },
+    "task_runs": {
+      "name": "task_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "attempt": {
+          "name": "attempt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_runtime": {
+          "name": "agent_runtime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requested_model_id": {
+          "name": "requested_model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "effective_model_id": {
+          "name": "effective_model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "security_mode": {
+          "name": "security_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "disclosure_version": {
+          "name": "disclosure_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "launch_profile_id": {
+          "name": "launch_profile_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cli_version": {
+          "name": "cli_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "authorization_id": {
+          "name": "authorization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "control_assessment_json": {
+          "name": "control_assessment_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_risks_json": {
+          "name": "accepted_risks_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "safeguards_json": {
+          "name": "safeguards_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "process_containment": {
+          "name": "process_containment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "timeout_ms": {
+          "name": "timeout_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "worker_instance_id": {
+          "name": "worker_instance_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pid": {
+          "name": "pid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "exit_code": {
+          "name": "exit_code",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signal": {
+          "name": "signal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lingering_processes": {
+          "name": "lingering_processes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stop_requested_at": {
+          "name": "stop_requested_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "git_integrity_status": {
+          "name": "git_integrity_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'not_run'"
+        },
+        "git_integrity_baseline_json": {
+          "name": "git_integrity_baseline_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "git_integrity_result_json": {
+          "name": "git_integrity_result_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "git_integrity_checked_at": {
+          "name": "git_integrity_checked_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "events_dropped": {
+          "name": "events_dropped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_runs_status_idx": {
+          "name": "task_runs_status_idx",
+          "columns": ["status"],
+          "isUnique": false
+        },
+        "task_runs_one_active_per_task_idx": {
+          "name": "task_runs_one_active_per_task_idx",
+          "columns": ["task_id"],
+          "isUnique": true,
+          "where": "status IN ('pending', 'starting', 'running', 'stopping')"
+        },
+        "task_runs_one_active_per_runtime_idx": {
+          "name": "task_runs_one_active_per_runtime_idx",
+          "columns": ["agent_runtime"],
+          "isUnique": true,
+          "where": "status IN ('pending', 'starting', 'running', 'stopping')"
+        },
+        "task_runs_task_attempt_unique": {
+          "name": "task_runs_task_attempt_unique",
+          "columns": ["task_id", "attempt"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "task_runs_task_id_tasks_id_fk": {
+          "name": "task_runs_task_id_tasks_id_fk",
+          "tableFrom": "task_runs",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "task_runs_workspace_id_workspaces_id_fk": {
+          "name": "task_runs_workspace_id_workspaces_id_fk",
+          "tableFrom": "task_runs",
+          "tableTo": "workspaces",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "task_runs_agent_runtime_check": {
+          "name": "task_runs_agent_runtime_check",
+          "value": "\"task_runs\".\"agent_runtime\" IN ('claude', 'codex')"
+        },
+        "task_runs_status_check": {
+          "name": "task_runs_status_check",
+          "value": "\"task_runs\".\"status\" IN ('pending', 'starting', 'running', 'stopping', 'completed', 'stopped', 'failed', 'interrupted')"
+        },
+        "task_runs_security_mode_check": {
+          "name": "task_runs_security_mode_check",
+          "value": "\"task_runs\".\"security_mode\" IN ('strict_isolated', 'trusted_local')"
+        },
+        "task_runs_git_integrity_status_check": {
+          "name": "task_runs_git_integrity_status_check",
+          "value": "\"task_runs\".\"git_integrity_status\" IN ('not_run', 'clean', 'violation', 'inconclusive')"
+        },
+        "task_runs_attempt_check": {
+          "name": "task_runs_attempt_check",
+          "value": "\"task_runs\".\"attempt\" >= 1"
+        }
+      }
+    },
+    "tasks": {
+      "name": "tasks",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt": {
+          "name": "prompt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_runtime": {
+          "name": "agent_runtime",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "base_branch": {
+          "name": "base_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'normal'"
+        },
+        "urgent": {
+          "name": "urgent",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'backlog'"
+        },
+        "queued_at": {
+          "name": "queued_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "tasks_status_queued_at_idx": {
+          "name": "tasks_status_queued_at_idx",
+          "columns": ["status", "queued_at"],
+          "isUnique": false
+        },
+        "tasks_project_id_status_idx": {
+          "name": "tasks_project_id_status_idx",
+          "columns": ["project_id", "status"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "tasks_project_id_projects_id_fk": {
+          "name": "tasks_project_id_projects_id_fk",
+          "tableFrom": "tasks",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tasks_agent_runtime_check": {
+          "name": "tasks_agent_runtime_check",
+          "value": "\"tasks\".\"agent_runtime\" IN ('claude', 'codex')"
+        },
+        "tasks_priority_check": {
+          "name": "tasks_priority_check",
+          "value": "\"tasks\".\"priority\" IN ('critical', 'high', 'normal', 'low')"
+        },
+        "tasks_status_check": {
+          "name": "tasks_status_check",
+          "value": "\"tasks\".\"status\" IN ('backlog', 'queued', 'in_progress', 'review', 'done', 'stopped', 'interrupted', 'failed', 'discarded')"
+        },
+        "tasks_urgent_check": {
+          "name": "tasks_urgent_check",
+          "value": "\"tasks\".\"urgent\" IN (0, 1)"
+        },
+        "tasks_queued_at_check": {
+          "name": "tasks_queued_at_check",
+          "value": "\"tasks\".\"status\" <> 'queued' OR \"tasks\".\"queued_at\" IS NOT NULL"
+        }
+      }
+    },
+    "worker_commands": {
+      "name": "worker_commands",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_code": {
+          "name": "result_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "result_message": {
+          "name": "result_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "worker_commands_status_created_idx": {
+          "name": "worker_commands_status_created_idx",
+          "columns": ["status", "created_at"],
+          "isUnique": false
+        },
+        "worker_commands_one_pending_per_task_idx": {
+          "name": "worker_commands_one_pending_per_task_idx",
+          "columns": ["task_id"],
+          "isUnique": true,
+          "where": "status = 'pending'"
+        }
+      },
+      "foreignKeys": {
+        "worker_commands_task_id_tasks_id_fk": {
+          "name": "worker_commands_task_id_tasks_id_fk",
+          "tableFrom": "worker_commands",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "worker_commands_run_id_task_runs_id_fk": {
+          "name": "worker_commands_run_id_task_runs_id_fk",
+          "tableFrom": "worker_commands",
+          "tableTo": "task_runs",
+          "columnsFrom": ["run_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "worker_commands_kind_check": {
+          "name": "worker_commands_kind_check",
+          "value": "\"worker_commands\".\"kind\" IN ('start_task')"
+        },
+        "worker_commands_status_check": {
+          "name": "worker_commands_status_check",
+          "value": "\"worker_commands\".\"status\" IN ('pending', 'accepted', 'rejected')"
+        }
+      }
+    },
+    "worker_leases": {
+      "name": "worker_leases",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pid": {
+          "name": "pid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "acquired_at": {
+          "name": "acquired_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "heartbeat_at": {
+          "name": "heartbeat_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "worker_leases_singleton_check": {
+          "name": "worker_leases_singleton_check",
+          "value": "\"worker_leases\".\"id\" = 1"
+        }
+      }
+    },
+    "workspace_cleanups": {
+      "name": "workspace_cleanups",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "basis": {
+          "name": "basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_status": {
+          "name": "task_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expected_commit": {
+          "name": "expected_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "branch_commit": {
+          "name": "branch_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_code": {
+          "name": "error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "worker_instance_id": {
+          "name": "worker_instance_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workspace_cleanups_request_id_unique": {
+          "name": "workspace_cleanups_request_id_unique",
+          "columns": ["request_id"],
+          "isUnique": true
+        },
+        "workspace_cleanups_task_id_idx": {
+          "name": "workspace_cleanups_task_id_idx",
+          "columns": ["task_id"],
+          "isUnique": false
+        },
+        "workspace_cleanups_status_idx": {
+          "name": "workspace_cleanups_status_idx",
+          "columns": ["status"],
+          "isUnique": false
+        },
+        "workspace_cleanups_one_per_workspace_idx": {
+          "name": "workspace_cleanups_one_per_workspace_idx",
+          "columns": ["workspace_id"],
+          "isUnique": true,
+          "where": "status IN ('requested', 'removing', 'removed')"
+        }
+      },
+      "foreignKeys": {
+        "workspace_cleanups_task_id_tasks_id_fk": {
+          "name": "workspace_cleanups_task_id_tasks_id_fk",
+          "tableFrom": "workspace_cleanups",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        },
+        "workspace_cleanups_workspace_id_workspaces_id_fk": {
+          "name": "workspace_cleanups_workspace_id_workspaces_id_fk",
+          "tableFrom": "workspace_cleanups",
+          "tableTo": "workspaces",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workspace_cleanups_status_check": {
+          "name": "workspace_cleanups_status_check",
+          "value": "\"workspace_cleanups\".\"status\" IN ('requested', 'removing', 'removed', 'failed')"
+        },
+        "workspace_cleanups_basis_check": {
+          "name": "workspace_cleanups_basis_check",
+          "value": "\"workspace_cleanups\".\"basis\" IN ('published', 'discarded_unchanged')"
+        },
+        "workspace_cleanups_task_status_check": {
+          "name": "workspace_cleanups_task_status_check",
+          "value": "\"workspace_cleanups\".\"task_status\" IN ('done', 'discarded')"
+        },
+        "workspace_cleanups_removed_check": {
+          "name": "workspace_cleanups_removed_check",
+          "value": "(\"workspace_cleanups\".\"status\" = 'removed') = (\"workspace_cleanups\".\"removed_at\" IS NOT NULL)"
+        }
+      }
+    },
+    "workspaces": {
+      "name": "workspaces",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "repository_root": {
+          "name": "repository_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "git_common_dir": {
+          "name": "git_common_dir",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "worktree_root": {
+          "name": "worktree_root",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "branch": {
+          "name": "branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_branch": {
+          "name": "base_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_sha": {
+          "name": "base_sha",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'retained'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workspaces_path_unique": {
+          "name": "workspaces_path_unique",
+          "columns": ["path"],
+          "isUnique": true
+        },
+        "workspaces_task_generation_unique": {
+          "name": "workspaces_task_generation_unique",
+          "columns": ["task_id", "generation"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "workspaces_task_id_tasks_id_fk": {
+          "name": "workspaces_task_id_tasks_id_fk",
+          "tableFrom": "workspaces",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workspaces_status_check": {
+          "name": "workspaces_status_check",
+          "value": "\"workspaces\".\"status\" IN ('retained')"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

@@ -186,6 +186,7 @@ test('describes a stored task', () => {
     queuedAt: 2,
     createdAt: 1,
     updatedAt: 3,
+    archivedAt: null,
   };
   assert.deepEqual(taskSchema.parse(task), task);
   assert.equal(taskSchema.safeParse({ ...task, status: 'In Progress' }).success, false);

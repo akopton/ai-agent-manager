@@ -79,10 +79,16 @@ export const groupTasksByStatus = (tasks: readonly Task[]): Record<TaskStatus, T
   return groups;
 };
 
-export type ProjectTaskCounts = { total: number; byStatus: Record<TaskStatus, number> };
+/** Counts of active (not archived) tasks, plus the number of archived tasks (TM-02). */
+export type ProjectTaskCounts = {
+  total: number;
+  byStatus: Record<TaskStatus, number>;
+  archived: number;
+};
 
 export const emptyTaskCounts = (): ProjectTaskCounts => ({
   total: 0,
+  archived: 0,
   byStatus: Object.fromEntries(taskStatuses.map((status) => [status, 0])) as Record<
     TaskStatus,
     number
@@ -95,8 +101,9 @@ const attentionStatuses: readonly TaskStatus[] = ['stopped', 'interrupted', 'fai
 
 /** Short summary for the project library, for example `4 tasks · 1 queued · 1 needs attention`. */
 export const summarizeTaskCounts = (counts: ProjectTaskCounts): string => {
+  const archived = counts.archived > 0 ? `${counts.archived} archived` : undefined;
   if (counts.total === 0) {
-    return 'No tasks';
+    return archived === undefined ? 'No tasks' : `No active tasks · ${archived}`;
   }
   const attention = attentionStatuses.reduce((sum, status) => sum + counts.byStatus[status], 0);
   return [
@@ -105,12 +112,27 @@ export const summarizeTaskCounts = (counts: ProjectTaskCounts): string => {
     counts.byStatus.in_progress > 0 ? `${counts.byStatus.in_progress} in progress` : undefined,
     counts.byStatus.review > 0 ? `${counts.byStatus.review} in review` : undefined,
     attention > 0 ? `${attention} ${attention === 1 ? 'needs' : 'need'} attention` : undefined,
+    archived,
   ]
     .filter((part) => part !== undefined)
     .join(' · ');
 };
 
 export const taskBoardUrl = (projectId: string): string => `/projects/${projectId}/board`;
+
+/** The board's Archived tasks view (TM-02). */
+export const archivedTasksUrl = (projectId: string): string =>
+  `/projects/${projectId}/board?view=archived`;
+
+/** Splits tasks into the default board (active) and the Archived tasks view. */
+export const partitionArchivedTasks = (
+  tasks: readonly Task[],
+): { active: Task[]; archived: Task[] } => ({
+  active: tasks.filter((task) => task.archivedAt === null),
+  archived: tasks
+    .filter((task) => task.archivedAt !== null)
+    .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || byId(a, b)),
+});
 
 export const taskUrl = (projectId: string, taskId: string): string =>
   `/projects/${projectId}/tasks/${taskId}`;

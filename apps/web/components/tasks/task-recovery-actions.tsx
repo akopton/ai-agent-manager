@@ -281,8 +281,9 @@ const DiscardDialog = ({ projectId, task, options, size }: ActionProps) => {
           </div>
           {discard.workspaceRetained ? (
             <p className="text-muted-foreground">
-              Worktree cleanup is not available in AI Agent Manager yet. Remove the worktree and
-              branch yourself with Git when you no longer need them.
+              Discard does not remove the worktree. Remove local worktree (on the task page) is a
+              separate, confirmed action, offered only when the worktree holds no changes; it never
+              deletes the task branch.
             </p>
           ) : null}
         </div>

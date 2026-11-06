@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.4 — SEC-02 execution security modes and staged plan added (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
-**Date:** 2026-11-04 (v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.5 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.4  
+**Status:** Draft v0.5 — TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
+**Date:** 2026-11-06 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.6 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.5  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -90,7 +90,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Keep SQLite user data out of Git; commit migrations and schema source.
 
 **M2-02 — Domain states and transitions**
-*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Execution slice: run states, attempt numbering and the run/task mapping (`resolveRunFinish` in the worker; Git integrity status stored separately). M6-03: publish states (`approved`, `committing`, `committed`, `push_requested`, `pushing`, `pushed`, `failed` with a failure stage) in `packages/core/src/publication.ts`. Open: task deletion.)*
+*(2026-11-05, task slice: task states, Zod input schemas and the named task transitions are in `packages/core/src/task.ts`; `packages/database/src/tasks.ts` applies them transactionally. Execution slice: run states, attempt numbering and the run/task mapping (`resolveRunFinish` in the worker; Git integrity status stored separately). M6-03: publish states (`approved`, `committing`, `committed`, `push_requested`, `pushing`, `pushed`, `failed` with a failure stage) in `packages/core/src/publication.ts`. TM-02 (2026-11-06): archiving is a visibility flag, not a state; an archived task refuses operator transitions and edits (`task_archived`). Open: permanent task deletion (deferred).)*
 - Implement typed task/run/publish states and legal transitions; use Zod schemas at boundaries.
 - Distinguish `Backlog`, `Queued`, `In Progress`, `Review`, `Done`, `Stopped`, `Interrupted`, `Failed`, `Discarded` and separate publish states.
 - Preserve attempts rather than overwriting prior run history.
@@ -112,7 +112,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Disconnect must not delete source repositories or retained worktrees.
 
 **M3-02 — Task creation and board**
-*(2026-11-05, first slice: task creation (always `Backlog`), per-project board with all nine states (five main columns plus a compact row for Stopped/Interrupted/Failed/Discarded), task details and editing as the domain allows, explicit Queue and Return to Backlog through the named transitions, task counts in the project library and details, and the runtime-change model reset. Deferred: drag-and-drop (must request a named transition), a maintained candidate model list, task deletion and the disconnect decision flow, and actions that need run/review records (Retry, Resume, Request Changes, Discard). Model identifiers are checked for shape only; CLI rejection handling arrives with M4.)*
+*(2026-11-05, first slice: task creation (always `Backlog`), per-project board with all nine states (five main columns plus a compact row for Stopped/Interrupted/Failed/Discarded), task details and editing as the domain allows, explicit Queue and Return to Backlog through the named transitions, task counts in the project library and details, and the runtime-change model reset. Deferred: drag-and-drop (must request a named transition), a maintained candidate model list, task deletion and the disconnect decision flow, and actions that need run/review records (Retry, Resume, Request Changes, Discard). Model identifiers are checked for shape only; CLI rejection handling arrives with M4.) (2026-11-06, TM-02: Archive/Restore and an Archived tasks view; archived tasks are excluded from the default board and the active counts. Permanent task deletion stays deferred.)*
 - Create tasks with title, prompt, runtime (`claude`/`codex`), model (`Default`/explicit), priority, optional base branch override.
 - Reset model when changing runtimes; display rejected/unsupported models as actionable errors.
 - Render per-project Kanban with drag/drop transitions; only explicit `Queued` tasks are eligible to run.
@@ -154,7 +154,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Mark `Stopped`, free slot only after reconciliation, retain all changes and logs.
 
 **M5-02 — Retry and conditional Resume**
-*(2026-11-05: delivered as the focused slice **TM-01 — Retry, Resume & Discard**, tracked separately and without renumbering; see `ARCHITECTURE.md` §5.1 "TM-01 implementation notes". Retry (Failed) and Resume (Stopped/Interrupted) record a decision (migration `0006_recoveries`) and return the task to Queued; the next attempt runs only after an explicit Start and continues in the retained worktree. Accepted v1 semantics (`SPEC.md` §11, decided 2026-11-05) narrow the bullets below: one worktree per task is kept, so Retry continues the existing changes (and refuses when the worktree cannot be continued safely); Resume starts a new agent session. Discard (M6-02) is a logical transition. Deferred: Retry from scratch (fresh workspace), native session resume, worktree cleanup.)*
+*(2026-11-05: delivered as the focused slice **TM-01 — Retry, Resume & Discard**, tracked separately and without renumbering; see `ARCHITECTURE.md` §5.1 "TM-01 implementation notes". Retry (Failed) and Resume (Stopped/Interrupted) record a decision (migration `0006_recoveries`) and return the task to Queued; the next attempt runs only after an explicit Start and continues in the retained worktree. Accepted v1 semantics (`SPEC.md` §11, decided 2026-11-05) narrow the bullets below: one worktree per task is kept, so Retry continues the existing changes (and refuses when the worktree cannot be continued safely); Resume starts a new agent session. Discard (M6-02) is a logical transition. Deferred: Retry from scratch (fresh workspace), native session resume, worktree cleanup (delivered in limited form by TM-02, see M7-02).)*
 - Retry creates a new attempt and safe workspace by default; never silently overwrite partial files.
 - Offer Resume only when adapter capability and compatible saved session/workspace state are validated.
 - Retain previous attempts for inspection.
@@ -193,6 +193,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Provide pause/resume queue controls; paused scheduling does not stop existing processes.
 
 **M7-02 — Settings and cleanup**
+*(2026-11-06: the explicit confirmed worktree cleanup part was delivered early as the focused slice **TM-02 — Task Archiving & Managed Worktree Cleanup**, tracked separately and without renumbering; see `ARCHITECTURE.md` §5.1 and §8 "TM-02 implementation notes" and `SPEC.md` §7.1 and §9.1. Accepted v1 scope: reversible task archiving; read-only worktree inventory on the task page; Remove local worktree for a Done task whose latest attempt was pushed (worktree clean at the pushed commit) or a Discarded task whose worktree is unchanged at the base commit, with no uncommitted, untracked or ignored files; recorded in `workspace_cleanups` (migration `0007_task_archive_cleanup`), executed by the worker after re-verification, branches kept. Deferred: permanent task deletion, forced cleanup or ignored-file override, branch deletion, retention policy, the project-disconnect decision flow for retained worktrees, and the rest of M7-02.)*
 - Global instructions; runtime availability and concurrency controls; managed roots; explicit confirmed worktree cleanup.
 - Document backup/restore and troubleshooting, including SQLite WAL-aware procedures.
 

@@ -6,6 +6,7 @@ import {
   reviewActionErrorCodes,
   taskErrorCodes,
   taskRecoveryErrorCodes,
+  workspaceCleanupErrorCodes,
 } from '@ai-agent-manager/core';
 import { z } from 'zod';
 import { reviewErrorCodes } from '@/lib/review/errors';
@@ -32,6 +33,7 @@ export const apiErrorCodes = [
   ...reviewActionErrorCodes,
   ...publicationErrorCodes,
   ...taskRecoveryErrorCodes,
+  ...workspaceCleanupErrorCodes,
   'internal_error',
 ] as const;
 

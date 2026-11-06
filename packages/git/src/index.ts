@@ -47,6 +47,7 @@ export {
   createTaskWorktree,
   defaultTaskBranchName,
   inspectTaskWorktree,
+  relockTaskWorktree,
   removeTaskWorktree,
   taskWorktreeLockReason,
   type CreateTaskWorktreeOptions,
@@ -134,3 +135,8 @@ export {
   type RetainedWorktreeCheck,
   type RetainedWorktreeRecord,
 } from './retained-worktree.js';
+export {
+  inspectWorktreeForCleanup,
+  type WorktreeCleanupInspection,
+  type WorktreeCleanupPresence,
+} from './worktree-cleanup.js';

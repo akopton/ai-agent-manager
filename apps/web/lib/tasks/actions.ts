@@ -64,6 +64,6 @@ export const taskStatusNotes: Readonly<Record<TaskStatus, string>> = {
   failed:
     'Execution failed or its Git integrity check blocked review. The worktree and evidence are kept. Retry queues a new attempt that continues with the existing worktree changes (or creates the worktree if it never existed); it runs only after an explicit Start execution. Discard marks the task as rejected without deleting anything.',
   discarded:
-    'Final state. The result was rejected; the task, its attempts and records stay in history. The worktree and task branch, if any, were not removed; cleanup is not available yet.',
-  done: 'Final state. The approved changes were committed and pushed to the task branch.',
+    'Final state. The result was rejected; the task, its attempts and records stay in history. The worktree and task branch are kept until you remove the worktree explicitly (only possible when it holds no changes). Archive hides the task from the board.',
+  done: 'Final state. The approved changes were committed and pushed to the task branch. Once you no longer need the local files, Remove local worktree deletes the worktree directory; the task branch and all records are kept. Archive hides the task from the board.',
 };

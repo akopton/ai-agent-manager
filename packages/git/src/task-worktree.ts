@@ -104,6 +104,11 @@ export type RemoveTaskWorktreeOptions = TaskWorktreeTarget & {
    * a clean worktree. Removal is refused while any exist unless this is `true`.
    */
   allowIgnoredFiles?: boolean;
+  /**
+   * When given, removal is refused unless HEAD and the task branch both point at this commit, so a
+   * worktree that gained or lost commits since it was verified is never removed.
+   */
+  expectedCommit?: string;
 };
 
 export type RemovedTaskWorktree = {
@@ -644,6 +649,7 @@ export const rollBackBranch = async (
  */
 export const removeTaskWorktree = async ({
   allowIgnoredFiles = false,
+  expectedCommit,
   ...target
 }: RemoveTaskWorktreeOptions): Promise<RemovedTaskWorktree> => {
   const options: GitCommandOptions = {
@@ -657,6 +663,16 @@ export const removeTaskWorktree = async ({
       `The worktree could not be verified as an AI Agent Manager task worktree (${inspection.state}${
         inspection.issues.length > 0 ? `: ${inspection.issues.join(', ')}` : ''
       }).`,
+      { inspection },
+    );
+  }
+  if (
+    expectedCommit !== undefined &&
+    (inspection.head?.commit !== expectedCommit || inspection.branchCommit !== expectedCommit)
+  ) {
+    throw new TaskWorktreeError(
+      'NOT_VERIFIED',
+      'HEAD or the task branch is not at the expected commit; the worktree was preserved.',
       { inspection },
     );
   }
@@ -713,4 +729,39 @@ export const removeTaskWorktree = async ({
     );
   }
   return { path, branch, branchCommit };
+};
+
+/**
+ * Restores the AI Agent Manager lock marker of a task worktree whose removal was interrupted
+ * between `worktree unlock` and `worktree remove`. Acts only when the lock is the **only** problem
+ * Git reports (registered linked worktree of this repository on the task branch); anything else is
+ * left untouched. Returns whether the worktree is locked afterwards.
+ */
+export const relockTaskWorktree = async (target: TaskWorktreeTarget): Promise<boolean> => {
+  const options: GitCommandOptions = {
+    timeoutMs: target.timeoutMs,
+    maxOutputBytes: target.maxOutputBytes,
+  };
+  const inspection = await inspectTaskWorktree(target);
+  if (inspection.state === 'ready') return true;
+  if (
+    inspection.state !== 'inconsistent' ||
+    inspection.issues.length !== 1 ||
+    inspection.issues[0] !== 'lock_missing' ||
+    inspection.head === null
+  ) {
+    return false;
+  }
+  const result = await runGit(
+    [
+      'worktree',
+      'lock',
+      '--reason',
+      taskWorktreeLockReason(inspection.branch),
+      '--',
+      inspection.path,
+    ],
+    await mutationOptions(inspection.repository.root, options),
+  );
+  return result.exitCode === 0;
 };

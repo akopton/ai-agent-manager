@@ -13,7 +13,7 @@ import {
   type TaskStatus,
   type UpdateTaskInput,
 } from '@ai-agent-manager/core';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import { projects, tasks } from './schema.js';
@@ -43,6 +43,22 @@ const parseTaskId = (id: string): string => {
 
 const findTask = (db: Database, id: string): TaskRecord | undefined =>
   db.select().from(tasks).where(eq(tasks.id, id)).get();
+
+/**
+ * Transitions that end a run the worker already owns. They stay possible for an archived task so a
+ * run can never be left without its outcome; archiving requires that no run is active, so in
+ * practice they never meet an archived task.
+ */
+const runOutcomeActions: readonly TaskAction[] = [
+  'complete_execution',
+  'stop',
+  'fail',
+  'interrupt',
+  'mark_done',
+];
+
+const archivedError = (): TaskError =>
+  new TaskError('task_archived', 'The task is archived. Restore it before changing it.');
 
 /**
  * Creates a task in `Backlog` for an existing project. Never queues the task, starts an agent or
@@ -107,14 +123,24 @@ export const listProjectTasks = (db: Database, projectId: string): TaskRecord[] 
 export type ProjectTaskStatusCount = { projectId: string; status: TaskStatus; count: number };
 
 /**
- * Counts tasks per project and status in one grouped query (served by the `(project_id, status)`
- * index). Projects without tasks are absent from the result.
+ * Counts active (not archived) tasks per project and status in one grouped query. Projects
+ * without active tasks are absent from the result.
  */
 export const countTasksByProjectAndStatus = (db: Database): ProjectTaskStatusCount[] =>
   db
     .select({ projectId: tasks.projectId, status: tasks.status, count: count() })
     .from(tasks)
+    .where(isNull(tasks.archivedAt))
     .groupBy(tasks.projectId, tasks.status)
+    .all();
+
+/** Counts archived tasks per project (TM-02). Projects without archived tasks are absent. */
+export const countArchivedTasksByProject = (db: Database): { projectId: string; count: number }[] =>
+  db
+    .select({ projectId: tasks.projectId, count: count() })
+    .from(tasks)
+    .where(isNotNull(tasks.archivedAt))
+    .groupBy(tasks.projectId)
     .all();
 
 /**
@@ -138,6 +164,9 @@ export const updateTask = (
       if (current === undefined) {
         throw taskNotFound();
       }
+      if (current.archivedAt !== null) {
+        throw archivedError();
+      }
       if (!isTaskUpdateAllowed(current.status, parsed.data)) {
         throw new TaskError(
           'task_not_editable',
@@ -158,7 +187,9 @@ export const updateTask = (
           urgent: changes.urgent,
           updatedAt: now,
         })
-        .where(and(eq(tasks.id, taskId), eq(tasks.status, current.status)))
+        .where(
+          and(eq(tasks.id, taskId), eq(tasks.status, current.status), isNull(tasks.archivedAt)),
+        )
         .returning()
         .get();
       if (updated === undefined) {
@@ -191,6 +222,10 @@ export const transitionTask = (
       const current = findTask(tx, taskId);
       if (current === undefined) {
         throw taskNotFound();
+      }
+      // An archived task accepts no lifecycle action until it is restored (TM-02).
+      if (current.archivedAt !== null && !runOutcomeActions.includes(parsedAction.data)) {
+        throw archivedError();
       }
       const to = resolveTaskTransition(parsedAction.data, current.status);
       if (to === undefined) {

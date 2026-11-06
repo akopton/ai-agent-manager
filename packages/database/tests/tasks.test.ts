@@ -97,6 +97,7 @@ test('creates a task in Backlog with defaults and reloads it from SQLite', () =>
       queuedAt: null,
       createdAt: 5,
       updatedAt: 5,
+      archivedAt: null,
     });
     assert.deepEqual(taskSchema.parse(created), created);
 
@@ -545,7 +546,7 @@ test('upgrades a project-only database without touching existing projects', () =
           .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
           .pluck()
           .get(),
-        7,
+        8,
       );
       assert.deepEqual(connection.sqlite.pragma('foreign_key_check'), []);
       assert.deepEqual(

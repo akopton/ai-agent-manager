@@ -1,7 +1,7 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.5 — execution security modes (Trusted Local / Strict Isolated, §12.1) added; v0.4 specified AI Conversations (§18)  
-**Date:** 2026-11-04 (v0.3: 2026-11-03)  
+**Status:** Draft v0.6 — task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
+**Date:** 2026-11-06 (v0.5: 2026-11-04, v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
 
@@ -95,6 +95,7 @@ Core principles:
 - Additional supported states: **Stopped**, **Interrupted**, **Failed**, **Discarded**. These may be surfaced via supplementary columns, filters, or conspicuous status indicators; final UX remains an implementation design decision.
 - Moving a task into `Queued` explicitly makes it eligible for automated execution; this **does not guarantee immediate execution**.
 - Task cards show at least title, agent runtime, selected model (or `Default`), priority, status, and branch information.
+- Archived tasks (§7.1) are hidden from the default board and listed in a separate **Archived tasks** view of the same project, where they can be opened and restored.
 - Task details expose the prompt, run history, logs, results, changed files, and actions appropriate to its state.
 
 ### 4.3 Global dashboard (`Overview`)
@@ -165,8 +166,10 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 | `Stopped` | The user intentionally stopped execution. | Inspect, Resume, Discard. *(Retry from this state: future, §11.)* |
 | `Interrupted` | Execution was unexpectedly interrupted or could not be reconciled on restart. | Inspect, Resume, Discard. *(Retry from this state: future, §11.)* |
 | `Failed` | Execution failed. | Inspect, Retry, Discard. |
-| `Discarded` | The user rejected the result. | Inspect history; explicitly manage retained workspace. |
-| `Done` | Approved changes were committed and successfully pushed to the task branch. | Inspect commit, branch, and history. |
+| `Discarded` | The user rejected the result. | Inspect history; Remove local worktree when eligible (§9.1). |
+| `Done` | Approved changes were committed and successfully pushed to the task branch. | Inspect commit, branch, and history; Remove local worktree when eligible (§9.1). |
+
+Archive and Restore (§7.1) are not lifecycle actions and do not appear in this table: they change only whether a task is shown on the default board.
 
 ### Lifecycle rules
 
@@ -174,7 +177,20 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 - `Request Changes` creates a **new run** incorporating review feedback while preserving the existing task branch/worktree; resume the agent session when feasible.
 - On execution error, preserve files and present diagnostics. Exit code `0` alone does not prove that the implementation is correct.
 - `Done` requires both a successful commit **and** a successful push. If push fails after commit, retain the commit and allow a safe push retry without duplicating it.
-- Completed and discarded tasks remain in history until explicitly deleted by the user.
+- Completed and discarded tasks remain in history until explicitly deleted by the user. *(Permanent task deletion is deferred; Manual Task Management v1 offers only reversible archiving, §7.1.)*
+
+### 7.1 Task archiving
+
+**Accepted v1 behavior (Manual Task Management v1, TM-02, decided 2026-11-06):**
+
+- **Archive** is a reversible, organizational **visibility flag**. It is not a lifecycle state, not an execution outcome, and not deletion. It is separate from `Discarded` (a decision about the result) and from Remove local worktree (§9.1).
+- An archived task keeps its **original status** and its complete history: runs, events, review decisions, Retry/Resume decisions, publications, Git operations, workspace records and timestamps. Archiving or restoring does not change the task's update time.
+- Archiving never starts an agent, performs a Git operation, or removes a worktree or branch.
+- **Eligible to archive:** `Backlog`, `Done`, `Discarded`, `Failed`, `Stopped`, `Interrupted`, and only while no run is active, no start request is pending, no Approve & Push publication is active or waiting for a push retry, and no worktree removal is requested or running.
+- **Not eligible:** `Queued`, `In Progress` and `Review`; they still wait for the worker, an agent or an operator decision.
+- **Visibility:** archived tasks are hidden from the default board and from the project's active task counts; they are listed in the project's Archived tasks view (with a separate count) and remain fully inspectable on their task page, including Review Changes and the worktree panel.
+- **While archived** the task accepts no lifecycle action or edit (Queue, Retry, Resume, Discard, Request Changes, Approve & Push, field edits); the user restores it first. Remove local worktree (§9.1) stays available, because it does not change the task.
+- **Restore** returns the task to the board with the status it had. Archive and Restore are idempotent.
 
 ## 8. Agent execution and instructions
 
@@ -200,6 +216,22 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 7. Managed worktrees are stored **outside both the AI Agent Manager source repository and the connected project's primary checkout**. The PoC used `/Users/akopton/repos/.agent-worktrees/`; the production location is managed and configurable.
 8. Worktree paths must remain unique even when different projects share a display name (e.g., use internal project and task IDs).
 9. Use the repository's existing Git remote and local authentication (GitHub, Gitea, etc.); hosting-provider APIs are not required for MVP.
+
+### 9.1 Managed worktree cleanup
+
+**Accepted v1 behavior (Manual Task Management v1, TM-02, decided 2026-11-06):**
+
+- Each task page shows its managed worktree: local path, task branch and commit, base branch and commit, lock state, working-tree state, Git-ignored files, identity verification, and whether removal is available, with every reason when it is not. The listing is read-only.
+- **Remove local worktree** is an explicit action with its own confirmation. It is never a side effect of a status change, of Archive, of Discard, or of a schedule; there is no automatic cleanup, retention policy or garbage collection in v1.
+- Only an eligible **managed task worktree** may be removed: the worktree recorded for the task's latest attempt, registered with Git as a linked worktree of the registered repository, locked by AI Agent Manager, at its managed location under the configured worktree root, and on the task branch. The main project checkout, other worktrees, and paths supplied by the browser are never targets.
+- **Done tasks** are eligible only with a recorded successful push of the latest attempt from that worktree, and only when HEAD and the local task branch are exactly at the pushed commit.
+- **Discarded tasks** are eligible only when HEAD and the task branch are still at the recorded base commit (the attempt left no commits).
+- In both cases the worktree must contain **no** staged, unstaged, conflicted, untracked or **Git-ignored** files.
+- **Refused** (fail closed, with a reason): any other task status (`Review`, `Failed`, `Stopped` and `Interrupted` can still continue in the worktree, `Queued` and `In Progress` may be executing); a pending follow-up attempt or publication; unpublished work, unexpected commits, a switched or moved branch, a missing lock, a relocated worktree, ignored files, or state that cannot be verified.
+- Removal deletes only the worktree directory and its Git registration with a non-forced `git worktree remove`. **Local and remote branches are kept**, and nothing is committed, pushed, reset or cleaned.
+- The checks run again immediately before removal; if anything changed, nothing is removed. Repeated requests are deduplicated, a request not picked up promptly expires, and an interrupted removal is reconciled from Git state and never resumed automatically.
+- Task, run, review, publication and workspace records are kept; the removal and its outcome are recorded, and the task page and Review Changes explain that the worktree was removed.
+- **Deferred:** permanent task deletion, forced removal or discarding of uncommitted/untracked/ignored files, local or remote branch deletion, and automatic retention.
 
 ## 10. Code review and publishing
 
@@ -323,9 +355,9 @@ One local SQLite database stores **metadata**, while source code remains in Git 
 Required data domains:
 
 - **Projects:** name, local path, remote, default base branch, priority, instructions.
-- **Tasks:** project, title, prompt, agent runtime identifier, selected model identifier or `Default`, priority, base branch, status.
+- **Tasks:** project, title, prompt, agent runtime identifier, selected model identifier or `Default`, priority, base branch, status, archived time (§7.1).
 - **Task runs:** attempts, run status, timestamps, exit information, agent runtime identifier, requested model snapshot, effective model if verifiable, agent session ID, logs/events.
-- **Workspaces:** worktree path, task branch, base SHA, lifecycle/resource state.
+- **Workspaces:** worktree path, task branch, base SHA, lifecycle/resource state, and the history of worktree removal requests and their outcomes (§9.1).
 - **Reviews:** feedback, reviewed change snapshot, decisions, decision history.
 - **Git operations:** commit SHA, remote/branch push target, operation state and errors.
 - **Scheduler settings:** paused state, scheduling mode, availability and concurrency limits **per agent runtime**, not per model.
@@ -379,7 +411,7 @@ These decisions do not change MVP scope but must be resolved before implementati
 - Internal separation and transitions for task, run, and Git-operation states.
 - Reliable worker communication and UI log streaming.
 - Log storage format, retention, and disk usage policy.
-- Worktree cleanup policy after `Done` or `Discarded`.
+- Worktree cleanup policy after `Done` or `Discarded`. *(Decided for Manual Task Management v1: explicit, confirmed, fail-closed removal of eligible worktrees only, §9.1. Retention policy and forced cleanup remain open.)*
 - Safe retry semantics when a previous attempt left partial files.
 - UX for auxiliary states (`Failed`, `Stopped`, `Interrupted`, `Discarded`).
 - How to maintain candidate model lists, validate model identifiers, and capture verifiable effective-model metadata for each CLI.

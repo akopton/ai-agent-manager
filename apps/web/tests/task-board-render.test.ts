@@ -27,6 +27,7 @@ const task = (overrides: Partial<Task>): Task => ({
   queuedAt: null,
   createdAt: 1,
   updatedAt: 1,
+  archivedAt: null,
   ...overrides,
 });
 

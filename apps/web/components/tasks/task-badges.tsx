@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react';
-import { Bot, Flame } from 'lucide-react';
+import { Bot, Flame, FolderArchive } from 'lucide-react';
 import {
   taskPriorityLabels,
   taskStatusLabels,
@@ -53,6 +53,14 @@ export const TaskStatusBadge = ({ status }: { status: TaskStatus }) => (
 
 export const TaskPriorityBadge = ({ priority }: { priority: TaskPriority }) => (
   <Badge variant={priorityVariants[priority]}>{taskPriorityLabels[priority]} priority</Badge>
+);
+
+/** Organizational visibility (TM-02), shown next to the unchanged status. */
+export const ArchivedBadge = () => (
+  <Badge variant="outline">
+    <FolderArchive aria-hidden="true" />
+    Archived
+  </Badge>
 );
 
 export const UrgentBadge = () => (

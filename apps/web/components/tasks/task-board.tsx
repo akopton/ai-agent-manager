@@ -4,6 +4,7 @@ import { taskStatusDotClassName } from '@/components/tasks/task-badges';
 import { TaskCard } from '@/components/tasks/task-card';
 import { cn } from '@/lib/utils';
 import type { TaskRecoveryOptions } from '@/lib/tasks/recovery';
+import type { TaskArchiveOption } from '@/lib/tasks/workspace';
 import {
   groupTasksByStatus,
   primaryBoardStatuses,
@@ -23,12 +24,14 @@ const columnDescriptions: Readonly<Record<TaskStatus, string>> = {
 };
 
 type RecoveryOptionsByTask = Readonly<Record<string, TaskRecoveryOptions>>;
+type ArchiveOptionsByTask = Readonly<Record<string, TaskArchiveOption>>;
 
 type ColumnProps = {
   status: TaskStatus;
   tasks: Task[];
   projectDefaultBranch: string;
   recoveryOptions: RecoveryOptionsByTask;
+  archiveOptions: ArchiveOptionsByTask;
   compact?: boolean;
 };
 
@@ -37,6 +40,7 @@ const BoardColumn = ({
   tasks,
   projectDefaultBranch,
   recoveryOptions,
+  archiveOptions,
   compact = false,
 }: ColumnProps) => (
   <section
@@ -76,6 +80,7 @@ const BoardColumn = ({
               task={task}
               projectDefaultBranch={projectDefaultBranch}
               recoveryOptions={recoveryOptions[task.id] ?? null}
+              archiveOption={archiveOptions[task.id] ?? null}
             />
           </li>
         ))}
@@ -89,6 +94,8 @@ type TaskBoardProps = {
   projectDefaultBranch: string;
   /** Retry/Resume and Discard options by task ID (TM-01); tasks without an entry offer neither. */
   recoveryOptions?: RecoveryOptionsByTask;
+  /** Archive options by task ID (TM-02); tasks without an entry offer no Archive. */
+  archiveOptions?: ArchiveOptionsByTask;
 };
 
 /**
@@ -99,6 +106,7 @@ export const TaskBoard = ({
   tasks,
   projectDefaultBranch,
   recoveryOptions = {},
+  archiveOptions = {},
 }: TaskBoardProps) => {
   const groups = groupTasksByStatus(tasks);
   return (
@@ -116,6 +124,7 @@ export const TaskBoard = ({
             tasks={groups[status]}
             projectDefaultBranch={projectDefaultBranch}
             recoveryOptions={recoveryOptions}
+            archiveOptions={archiveOptions}
           />
         ))}
       </div>
@@ -131,6 +140,7 @@ export const TaskBoard = ({
               tasks={groups[status]}
               projectDefaultBranch={projectDefaultBranch}
               recoveryOptions={recoveryOptions}
+              archiveOptions={archiveOptions}
               compact
             />
           ))}
@@ -139,3 +149,33 @@ export const TaskBoard = ({
     </div>
   );
 };
+
+type ArchivedTaskListProps = {
+  tasks: readonly Task[];
+  projectDefaultBranch: string;
+  archiveOptions?: ArchiveOptionsByTask;
+};
+
+/** The Archived tasks view (TM-02): archived tasks, newest first, each with Restore. */
+export const ArchivedTaskList = ({
+  tasks,
+  projectDefaultBranch,
+  archiveOptions = {},
+}: ArchivedTaskListProps) => (
+  <section aria-labelledby="archived-tasks-title" className="space-y-3">
+    <h2 id="archived-tasks-title" className="sr-only">
+      Archived tasks
+    </h2>
+    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {tasks.map((task) => (
+        <li key={task.id}>
+          <TaskCard
+            task={task}
+            projectDefaultBranch={projectDefaultBranch}
+            archiveOption={archiveOptions[task.id] ?? null}
+          />
+        </li>
+      ))}
+    </ul>
+  </section>
+);

@@ -22,6 +22,10 @@ import {
   createPublicationService,
   type PublicationGit,
 } from '../publication/publication-service.js';
+import {
+  createWorkspaceCleanupService,
+  type WorkspaceCleanupGit,
+} from '../workspace/cleanup-service.js';
 import { createRunExecutor, verifyAfterRun, type RunExecutorOptions } from './run-executor.js';
 
 // The worker side of the first execution slice: it holds the single-worker lease, reconciles runs
@@ -43,6 +47,8 @@ export type ExecutionServiceOptions = Omit<RunExecutorOptions, 'workerInstanceId
   workerInstanceId?: string;
   /** @internal Tests only: replaces the Approve & Push Git operations. */
   publicationGit?: Partial<PublicationGit>;
+  /** @internal Tests only: replaces the worktree cleanup Git operations (TM-02). */
+  cleanupGit?: Partial<WorkspaceCleanupGit>;
   /** @internal Tests only: replaces the process-group probe used before a recovered attempt. */
   probeProcessGroup?: (pid: number) => boolean;
 };
@@ -57,6 +63,8 @@ export type ExecutionService = {
   tick: () => Promise<void>;
   /** Resolves when no Approve & Push publication is running; exposed for tests. */
   publicationsIdle: () => Promise<void>;
+  /** Resolves when no worktree cleanup is running; exposed for tests. */
+  cleanupsIdle: () => Promise<void>;
   readonly activeRunCount: number;
 };
 
@@ -81,6 +89,15 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     workerInstanceId,
     now,
     git: options.publicationGit,
+  });
+  const cleanups = createWorkspaceCleanupService({
+    db,
+    logger,
+    worktreeRoot: options.worktreeRoot,
+    workerInstanceId,
+    requestMaxAgeMs: commandMaxAgeMs,
+    now,
+    git: options.cleanupGit,
   });
   let timer: NodeJS.Timeout | undefined;
   let ticking = false;
@@ -177,6 +194,8 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
       processCommands();
       // Approve & Push: operator-approved publications only, one at a time, never awaited here.
       publications.poll();
+      // Remove local worktree (TM-02): operator-confirmed requests only, one at a time.
+      cleanups.poll();
     } catch (error) {
       logger.error('Execution polling failed.', error);
     } finally {
@@ -199,6 +218,7 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     lastLeaseRenewal = now();
     await reconcile();
     await publications.reconcile();
+    await cleanups.reconcile();
     accepting = true;
     timer = setInterval(() => void tick(), pollIntervalMs);
     timer.unref();
@@ -212,6 +232,7 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     // A running publication finishes its current Git command sequence (bounded by Git timeouts)
     // before the lease is released; it is never abandoned mid-mutation by a graceful stop.
     await publications.idle();
+    await cleanups.idle();
     releaseWorkerLease(db, workerInstanceId);
   };
 
@@ -221,6 +242,7 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     stop,
     tick,
     publicationsIdle: publications.idle,
+    cleanupsIdle: cleanups.idle,
     get activeRunCount() {
       return executor.activeCount;
     },

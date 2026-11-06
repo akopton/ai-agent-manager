@@ -46,9 +46,11 @@ export {
   tasks,
   workerCommands,
   workerLeases,
+  workspaceCleanups,
   workspaces,
 } from './schema.js';
 export {
+  countArchivedTasksByProject,
   countTasksByProjectAndStatus,
   createTask,
   findTaskById,
@@ -140,3 +142,20 @@ export {
   type RequestTaskRecoveryResult,
   type TaskRecoveryRecord,
 } from './recoveries.js';
+export { archiveTask, readTaskArchiveFacts, restoreTask } from './task-archive.js';
+export {
+  assessTaskWorkspaceCleanup,
+  claimWorkspaceCleanup,
+  completeWorkspaceCleanup,
+  expireRequestedWorkspaceCleanups,
+  failWorkspaceCleanup,
+  findWorkspaceCleanup,
+  findWorkspaceCleanupByRequest,
+  listInFlightWorkspaceCleanups,
+  listQueuedWorkspaceCleanups,
+  listTaskWorkspaceCleanups,
+  readWorkspaceCleanupFacts,
+  requestWorkspaceCleanup,
+  type WorkspaceCleanupClaim,
+  type WorkspaceCleanupRecord,
+} from './workspace-cleanups.js';

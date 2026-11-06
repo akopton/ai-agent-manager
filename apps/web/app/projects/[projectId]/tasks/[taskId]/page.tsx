@@ -3,14 +3,17 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { ArrowLeft, CheckCircle2, FileDiff, Info, Pencil } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileDiff, FolderArchive, Info, Pencil } from 'lucide-react';
 import { taskPriorityLabels, taskStatusLabels } from '@ai-agent-manager/core';
 
 import { TaskExecutionPanel } from '@/components/execution/task-execution-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { TaskActions } from '@/components/tasks/task-actions';
+import { TaskArchiveActions } from '@/components/tasks/task-archive-actions';
 import { TaskRecoveryActions } from '@/components/tasks/task-recovery-actions';
+import { TaskWorkspacePanel } from '@/components/tasks/task-workspace-panel';
 import {
+  ArchivedBadge,
   TaskPriorityBadge,
   TaskRuntimeBadge,
   TaskStatusBadge,
@@ -26,9 +29,11 @@ import { getTaskExecution } from '@/lib/server/execution';
 import { getTaskRecoveryOptions } from '@/lib/server/recovery';
 import { loadForPage } from '@/lib/server/load';
 import { findProjectTask } from '@/lib/server/tasks';
+import { getTaskArchiveOption, getTaskWorkspacePanel } from '@/lib/server/workspace';
 import { taskEditability, taskStatusNotes } from '@/lib/tasks/actions';
 import {
   agentRuntimeLabels,
+  archivedTasksUrl,
   describeBaseBranch,
   describeModel,
   taskBoardUrl,
@@ -62,7 +67,7 @@ const TaskPage = async ({
   await connection();
   const { projectId, taskId } = await params;
   const feedback = readTaskFeedback(await searchParams);
-  const result = await loadForPage(() => {
+  const result = await loadForPage(async () => {
     const db = getDatabase();
     const found = findProjectTask(db, projectId, taskId);
     return found === undefined
@@ -71,6 +76,8 @@ const TaskPage = async ({
           ...found,
           execution: getTaskExecution(db, found.project.id, found.task.id),
           recoveryOptions: getTaskRecoveryOptions(db, found.task),
+          archiveOption: getTaskArchiveOption(db, found.task),
+          workspacePanel: await getTaskWorkspacePanel(db, found.project.id, found.task.id),
         };
   });
 
@@ -81,8 +88,10 @@ const TaskPage = async ({
     notFound();
   }
 
-  const { project, task, execution, recoveryOptions } = result.data;
-  const editability = taskEditability(task.status);
+  const { project, task, execution, recoveryOptions, archiveOption, workspacePanel } = result.data;
+  const archived = task.archivedAt !== null;
+  // An archived task accepts no lifecycle action or edit until it is restored.
+  const editability = archived ? { content: false, priority: false } : taskEditability(task.status);
   const [latestRun] = execution.runs;
   // Changes can be inspected once the latest run has ended and created a worktree.
   const changesInspectable =
@@ -92,9 +101,9 @@ const TaskPage = async ({
     <>
       <section aria-labelledby="page-title" className="space-y-3">
         <Button asChild variant="ghost" size="sm" className="-ml-2.5">
-          <Link href={taskBoardUrl(project.id)}>
+          <Link href={archived ? archivedTasksUrl(project.id) : taskBoardUrl(project.id)}>
             <ArrowLeft aria-hidden="true" />
-            {project.name} board
+            {archived ? `${project.name} archived tasks` : `${project.name} board`}
           </Link>
         </Button>
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -104,6 +113,7 @@ const TaskPage = async ({
             </h1>
             <div className="flex flex-wrap gap-2">
               <TaskStatusBadge status={task.status} />
+              {archived ? <ArchivedBadge /> : null}
               {task.urgent ? <UrgentBadge /> : null}
               <TaskPriorityBadge priority={task.priority} />
               <TaskRuntimeBadge agentRuntime={task.agentRuntime} modelId={task.modelId} />
@@ -126,8 +136,18 @@ const TaskPage = async ({
                 </Link>
               </Button>
             ) : null}
-            <TaskActions projectId={project.id} task={task} />
-            <TaskRecoveryActions projectId={project.id} task={task} options={recoveryOptions} />
+            {archived ? null : (
+              <>
+                <TaskActions projectId={project.id} task={task} />
+                <TaskRecoveryActions projectId={project.id} task={task} options={recoveryOptions} />
+              </>
+            )}
+            <TaskArchiveActions
+              projectId={project.id}
+              task={task}
+              option={archiveOption}
+              showUnavailableReason
+            />
           </div>
         </div>
       </section>
@@ -138,6 +158,21 @@ const TaskPage = async ({
           <AlertTitle>{feedbackMessages[feedback].title}</AlertTitle>
           <AlertDescription>
             <p>{feedbackMessages[feedback].body}</p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {archived ? (
+        <Alert variant="info">
+          <FolderArchive aria-hidden="true" />
+          <AlertTitle>Archived</AlertTitle>
+          <AlertDescription>
+            <p>
+              Hidden from the board since {formatTimestamp(task.archivedAt ?? 0)}. Its status (
+              {taskStatusLabels[task.status]}), attempts, reviews, publications and worktree are
+              unchanged and stay inspectable. Restore it to queue, retry, resume, discard or edit it
+              again.
+            </p>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -155,6 +190,8 @@ const TaskPage = async ({
         task={{ id: task.id, status: task.status }}
         execution={execution}
       />
+
+      <TaskWorkspacePanel projectId={project.id} task={task} panel={workspacePanel} />
 
       <Card>
         <CardHeader>
@@ -201,6 +238,9 @@ const TaskPage = async ({
             ) : null}
             {task.queuedAt !== null ? (
               <Field label="Queued">{formatTimestamp(task.queuedAt)}</Field>
+            ) : null}
+            {task.archivedAt !== null ? (
+              <Field label="Archived">{formatTimestamp(task.archivedAt)}</Field>
             ) : null}
             <Field label="Runs">
               {execution.runs.length === 0 ? (

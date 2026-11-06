@@ -62,6 +62,7 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   queuedAt: null,
   createdAt: 1,
   updatedAt: 1,
+  archivedAt: null,
   ...overrides,
 });
 
@@ -249,7 +250,7 @@ test('status notes describe the recovery actions honestly', () => {
   assert.match(taskStatusNotes.failed, /explicit Start execution/);
   assert.match(taskStatusNotes.stopped, /Resume queues a new attempt/);
   assert.match(taskStatusNotes.interrupted, /new agent session/);
-  assert.match(taskStatusNotes.discarded, /were not removed/);
+  assert.match(taskStatusNotes.discarded, /kept until you remove the worktree explicitly/);
   for (const status of ['failed', 'stopped', 'interrupted', 'review'] as const) {
     assert.ok(!taskStatusNotes[status].includes('later version'), status);
   }

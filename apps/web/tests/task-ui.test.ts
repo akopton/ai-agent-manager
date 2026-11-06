@@ -42,6 +42,7 @@ const task = (overrides: Partial<Task> = {}): Task => ({
   queuedAt: null,
   createdAt: 1_000,
   updatedAt: 1_000,
+  archivedAt: null,
   ...overrides,
 });
 
@@ -117,7 +118,11 @@ test('describes models, base branches and task counts', () => {
   counts.byStatus.interrupted = 1;
   assert.equal(summarizeTaskCounts(counts), '5 tasks · 1 queued · 2 need attention');
   assert.equal(
-    summarizeTaskCounts({ total: 1, byStatus: { ...emptyTaskCounts().byStatus, backlog: 1 } }),
+    summarizeTaskCounts({
+      total: 1,
+      archived: 0,
+      byStatus: { ...emptyTaskCounts().byStatus, backlog: 1 },
+    }),
     '1 task',
   );
 });

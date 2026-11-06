@@ -15,6 +15,7 @@ import {
   taskRecoveryKinds,
   taskRunStatuses,
   taskStatuses,
+  workspaceCleanupStatuses,
 } from '@ai-agent-manager/core';
 import { sql } from 'drizzle-orm';
 import {
@@ -81,6 +82,8 @@ export const tasks = sqliteTable(
     queuedAt: integer('queued_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
+    // TM-02 (migration 0007): organizational visibility only, never a status. `NULL` = active.
+    archivedAt: integer('archived_at'),
   },
   (table) => [
     index('tasks_status_queued_at_idx').on(table.status, table.queuedAt),
@@ -525,6 +528,66 @@ export const taskRecoveries = sqliteTable(
   ],
 );
 
+const activeCleanupCondition = sql.raw(`status IN ('requested', 'removing', 'removed')`);
+
+/**
+ * Removal of a task's managed local worktree (TM-02, migration `0007_task_archive_cleanup`). One
+ * row per operator request: the workspace and the commit the worktree had to be at, why the task no
+ * longer needs it (`basis`), and the outcome the worker recorded. The `workspaces` row is kept and
+ * never deleted (its `status` CHECK only allows `retained`, so the removal is recorded here,
+ * additively). At most one requested, running or completed removal per workspace (partial unique
+ * index); `failed` rows stay as history. `request_id` deduplicates repeated submissions.
+ */
+export const workspaceCleanups = sqliteTable(
+  'workspace_cleanups',
+  {
+    id: text('id').primaryKey(),
+    requestId: text('request_id').notNull().unique(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    status: text('status', { enum: workspaceCleanupStatuses }).notNull(),
+    basis: text('basis', { enum: ['published', 'discarded_unchanged'] }).notNull(),
+    /** The task status when the removal was requested. */
+    taskStatus: text('task_status', { enum: taskStatuses }).notNull(),
+    expectedCommit: text('expected_commit').notNull(),
+    /** Where the preserved task branch pointed after the removal. */
+    branchCommit: text('branch_commit'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    workerInstanceId: text('worker_instance_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    removedAt: integer('removed_at'),
+  },
+  (table) => [
+    index('workspace_cleanups_task_id_idx').on(table.taskId),
+    index('workspace_cleanups_status_idx').on(table.status),
+    uniqueIndex('workspace_cleanups_one_per_workspace_idx')
+      .on(table.workspaceId)
+      .where(activeCleanupCondition),
+    check(
+      'workspace_cleanups_status_check',
+      sql`${table.status} IN (${sqlList(workspaceCleanupStatuses)})`,
+    ),
+    check(
+      'workspace_cleanups_basis_check',
+      sql`${table.basis} IN ('published', 'discarded_unchanged')`,
+    ),
+    check(
+      'workspace_cleanups_task_status_check',
+      sql`${table.taskStatus} IN ('done', 'discarded')`,
+    ),
+    check(
+      'workspace_cleanups_removed_check',
+      sql`(${table.status} = 'removed') = (${table.removedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -538,4 +601,5 @@ export const schema = {
   publications,
   gitOperations,
   taskRecoveries,
+  workspaceCleanups,
 };

@@ -7,6 +7,7 @@ import {
   type UpdateTaskData,
 } from '@ai-agent-manager/core';
 import {
+  countArchivedTasksByProject,
   countTasksByProjectAndStatus,
   createTask,
   findProjectById,
@@ -62,7 +63,10 @@ export type ProjectBoard = {
   tasks: Task[];
 };
 
-/** The project's tasks in creation order. Returns `undefined` when the project does not exist. */
+/**
+ * The project's tasks in creation order, archived ones included (the board page splits them).
+ * Returns `undefined` when the project does not exist.
+ */
 export const getProjectBoard = (db: Database, projectId: string): ProjectBoard | undefined => {
   const parsed = projectIdSchema.safeParse(projectId);
   const record = parsed.success ? findProjectById(db, parsed.data) : undefined;
@@ -101,13 +105,21 @@ export const findProjectTask = (
   };
 };
 
-/** Task counts per project and status for the project library, in one grouped query. */
+/**
+ * Active task counts per project and status for the project library, plus archived task counts
+ * (TM-02). Archived tasks are not part of `total` or `byStatus`.
+ */
 export const countProjectTasks = (db: Database): Map<string, ProjectTaskCounts> => {
   const counts = new Map<string, ProjectTaskCounts>();
   for (const { projectId, status, count } of countTasksByProjectAndStatus(db)) {
     const entry = counts.get(projectId) ?? emptyTaskCounts();
     entry.byStatus[status] = count;
     entry.total += count;
+    counts.set(projectId, entry);
+  }
+  for (const { projectId, count } of countArchivedTasksByProject(db)) {
+    const entry = counts.get(projectId) ?? emptyTaskCounts();
+    entry.archived = count;
     counts.set(projectId, entry);
   }
   return counts;

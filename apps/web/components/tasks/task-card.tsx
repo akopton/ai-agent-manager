@@ -3,8 +3,10 @@ import { FileDiff, GitBranch } from 'lucide-react';
 import type { Task } from '@ai-agent-manager/core';
 
 import { TaskActions } from '@/components/tasks/task-actions';
+import { TaskArchiveActions } from '@/components/tasks/task-archive-actions';
 import { TaskRecoveryActions } from '@/components/tasks/task-recovery-actions';
 import {
+  ArchivedBadge,
   TaskPriorityBadge,
   TaskRuntimeBadge,
   TaskStatusBadge,
@@ -14,15 +16,23 @@ import { Button } from '@/components/ui/button';
 import { taskReviewUrl } from '@/lib/review/format';
 import { taskUrl } from '@/lib/tasks/board';
 import type { TaskRecoveryOptions } from '@/lib/tasks/recovery';
+import type { TaskArchiveOption } from '@/lib/tasks/workspace';
 
 type TaskCardProps = {
   task: Task;
   projectDefaultBranch: string;
   /** Retry/Resume and Discard options derived by the server, if the task offers any. */
   recoveryOptions?: TaskRecoveryOptions | null;
+  /** Archive/Restore availability derived by the server (TM-02). */
+  archiveOption?: TaskArchiveOption | null;
 };
 
-export const TaskCard = ({ task, projectDefaultBranch, recoveryOptions }: TaskCardProps) => (
+export const TaskCard = ({
+  task,
+  projectDefaultBranch,
+  recoveryOptions,
+  archiveOption,
+}: TaskCardProps) => (
   <article
     aria-labelledby={`task-${task.id}-title`}
     className="space-y-3 rounded-lg border bg-elevated p-3 text-sm transition-colors hover:border-border-strong"
@@ -40,6 +50,7 @@ export const TaskCard = ({ task, projectDefaultBranch, recoveryOptions }: TaskCa
     </h4>
     <div className="flex flex-wrap gap-1.5">
       <TaskStatusBadge status={task.status} />
+      {task.archivedAt !== null ? <ArchivedBadge /> : null}
       {task.urgent ? <UrgentBadge /> : null}
       <TaskPriorityBadge priority={task.priority} />
       <TaskRuntimeBadge agentRuntime={task.agentRuntime} modelId={task.modelId} />
@@ -51,7 +62,7 @@ export const TaskCard = ({ task, projectDefaultBranch, recoveryOptions }: TaskCa
         {task.baseBranch === null ? ' (default)' : null}
       </span>
     </p>
-    {task.status === 'review' ? (
+    {task.status === 'review' && task.archivedAt === null ? (
       <Button asChild size="sm" variant="outline">
         <Link href={taskReviewUrl(task.projectId, task.id)}>
           <FileDiff aria-hidden="true" />
@@ -59,12 +70,17 @@ export const TaskCard = ({ task, projectDefaultBranch, recoveryOptions }: TaskCa
         </Link>
       </Button>
     ) : null}
-    <TaskActions projectId={task.projectId} task={task} size="sm" />
-    <TaskRecoveryActions
-      projectId={task.projectId}
-      task={task}
-      options={recoveryOptions}
-      size="sm"
-    />
+    {task.archivedAt === null ? (
+      <>
+        <TaskActions projectId={task.projectId} task={task} size="sm" />
+        <TaskRecoveryActions
+          projectId={task.projectId}
+          task={task}
+          options={recoveryOptions}
+          size="sm"
+        />
+      </>
+    ) : null}
+    <TaskArchiveActions projectId={task.projectId} task={task} option={archiveOption} size="sm" />
   </article>
 );

@@ -14,6 +14,7 @@ import {
   findTaskById,
   findWorkspace,
   listTaskRuns,
+  listTaskWorkspaceCleanups,
   requestTaskChanges,
   type DatabaseConnection,
   type ProjectRecordWithTrust,
@@ -63,6 +64,8 @@ type ReviewContext = {
   workspace: WorkspaceRecord | null;
   /** Every run of the task, newest attempt first. */
   runs: TaskRunRecord[];
+  /** When Remove local worktree removed the workspace (TM-02), else `null`. */
+  workspaceRemovedAt: number | null;
 };
 
 /** Resolves the task within its project, then its latest run and that run's workspace. */
@@ -82,7 +85,20 @@ const loadContext = (db: Database, projectId: string, taskId: string): ReviewCon
     run?.workspaceId === undefined || run.workspaceId === null
       ? undefined
       : findWorkspace(db, run.workspaceId);
-  return { project, task, run: run ?? null, workspace: workspace ?? null, runs };
+  const removal =
+    workspace === undefined
+      ? undefined
+      : listTaskWorkspaceCleanups(db, task.id).find(
+          (row) => row.workspaceId === workspace.id && row.status === 'removed',
+        );
+  return {
+    project,
+    task,
+    run: run ?? null,
+    workspace: workspace ?? null,
+    runs,
+    workspaceRemovedAt: removal?.removedAt ?? null,
+  };
 };
 
 type ReviewTarget = ReviewContext & { run: TaskRunRecord; workspace: WorkspaceRecord };
@@ -107,6 +123,13 @@ const requireTarget = (context: ReviewContext): ReviewTarget => {
       'review_unavailable',
       'The latest run ended before a task worktree was created, so there are no changes to review.',
       { reason: 'no_workspace' },
+    );
+  }
+  if (context.workspaceRemovedAt !== null) {
+    throw new ReviewError(
+      'review_unavailable',
+      'The local worktree was removed with Remove local worktree, so its files can no longer be shown. The attempts, review decisions and publication records below are kept, and the task branch was not deleted.',
+      { reason: 'workspace_removed' },
     );
   }
   return { ...context, run, workspace };

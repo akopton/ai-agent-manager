@@ -135,6 +135,11 @@ export const taskSchema = z.object({
   queuedAt: z.number().int().nullable(),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
+  /**
+   * When the operator archived the task (TM-02); `null` while it is active. Archiving only hides
+   * the task from the default board: it is not a status and changes no other field or record.
+   */
+  archivedAt: z.number().int().nullable(),
 });
 
 export type Task = z.infer<typeof taskSchema>;
@@ -251,6 +256,10 @@ export const taskErrorCodes = [
   'task_not_found',
   'task_not_editable',
   'illegal_transition',
+  /** The task is archived (TM-02); restore it before changing it. */
+  'task_archived',
+  /** The task cannot be archived in its current state (TM-02). */
+  'task_not_archivable',
 ] as const;
 
 export const taskErrorCodeSchema = z.enum(taskErrorCodes);

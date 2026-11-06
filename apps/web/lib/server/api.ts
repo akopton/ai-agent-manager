@@ -4,11 +4,13 @@ import {
   ReviewActionError,
   TaskError,
   TaskRecoveryError,
+  WorkspaceCleanupError,
   type ExecutionErrorCode,
   type PublicationErrorCode,
   type ReviewActionErrorCode,
   type TaskErrorCode,
   type TaskRecoveryErrorCode,
+  type WorkspaceCleanupErrorCode,
 } from '@ai-agent-manager/core';
 import type { z } from 'zod';
 import type { ApiErrorCode, ApiErrorResponse } from '@/lib/projects/contracts';
@@ -58,6 +60,19 @@ const taskErrorStatus = (code: TaskErrorCode): number => {
       return 404;
     case 'task_not_editable':
     case 'illegal_transition':
+    case 'task_archived':
+    case 'task_not_archivable':
+      return 409;
+  }
+};
+
+const workspaceCleanupErrorStatus = (code: WorkspaceCleanupErrorCode): number => {
+  switch (code) {
+    case 'invalid_cleanup_input':
+      return 400;
+    case 'workspace_not_found':
+      return 404;
+    default:
       return 409;
   }
 };
@@ -130,6 +145,14 @@ export const handleRouteError = (error: unknown): Response => {
       error.code,
       error.message,
       publicationErrorStatus(error.code),
+      error.details,
+    );
+  }
+  if (error instanceof WorkspaceCleanupError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      workspaceCleanupErrorStatus(error.code),
       error.details,
     );
   }

@@ -241,3 +241,31 @@ export {
   type TaskRecoveryErrorCode,
   type TaskRecoveryKind,
 } from './recovery.js';
+export {
+  assessTaskArchive,
+  isTaskArchivableStatus,
+  taskArchivableStatuses,
+  type TaskArchiveAssessment,
+  type TaskArchiveFacts,
+} from './task-archive.js';
+export {
+  activeWorkspaceCleanupStatuses,
+  assessWorkspaceCleanup,
+  isActiveWorkspaceCleanupStatus,
+  requestWorkspaceCleanupInputSchema,
+  WorkspaceCleanupError,
+  workspaceCleanupBlockCodes,
+  workspaceCleanupErrorCodes,
+  workspaceCleanupErrorCodeSchema,
+  workspaceCleanupStatuses,
+  workspaceCleanupStatusLabels,
+  workspaceCleanupStatusSchema,
+  workspaceCleanupTaskStatuses,
+  type RequestWorkspaceCleanupInput,
+  type WorkspaceCleanupAssessment,
+  type WorkspaceCleanupBasis,
+  type WorkspaceCleanupBlockCode,
+  type WorkspaceCleanupErrorCode,
+  type WorkspaceCleanupFacts,
+  type WorkspaceCleanupStatus,
+} from './workspace-cleanup.js';
