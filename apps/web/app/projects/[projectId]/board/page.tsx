@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
+import { getBoardRecoveryOptions } from '@/lib/server/recovery';
 import { getProjectBoard } from '@/lib/server/tasks';
 
 export const metadata: Metadata = { title: 'Board · AI Agent Manager' };
@@ -26,7 +27,13 @@ const NewTaskButton = ({ projectId }: { projectId: string }) => (
 const BoardPage = async ({ params }: { params: Promise<{ projectId: string }> }) => {
   await connection();
   const { projectId } = await params;
-  const result = await loadForPage(() => getProjectBoard(getDatabase(), projectId));
+  const result = await loadForPage(() => {
+    const db = getDatabase();
+    const board = getProjectBoard(db, projectId);
+    return board === undefined
+      ? undefined
+      : { ...board, recoveryOptions: getBoardRecoveryOptions(db, board.tasks) };
+  });
 
   if (!result.ok) {
     return (
@@ -45,7 +52,7 @@ const BoardPage = async ({ params }: { params: Promise<{ projectId: string }> })
     notFound();
   }
 
-  const { project, tasks } = result.data;
+  const { project, tasks, recoveryOptions } = result.data;
   return (
     <>
       <section aria-labelledby="page-title" className="space-y-3">
@@ -89,7 +96,11 @@ const BoardPage = async ({ params }: { params: Promise<{ projectId: string }> })
           </CardContent>
         </Card>
       ) : (
-        <TaskBoard tasks={tasks} projectDefaultBranch={project.defaultBaseBranch} />
+        <TaskBoard
+          tasks={tasks}
+          projectDefaultBranch={project.defaultBaseBranch}
+          recoveryOptions={recoveryOptions}
+        />
       )}
     </>
   );

@@ -5,8 +5,11 @@ import {
   gitIntegrityResultStatusSchema,
   projectExecutionTrustInputSchema,
   projectExecutionTrustSchema,
+  recoveryProcessCheckSchema,
   reviewStatusSchema,
+  taskRecoveryKindSchema,
   taskRunStatusSchema,
+  taskStatusSchema,
 } from '@ai-agent-manager/core';
 import { z } from 'zod';
 
@@ -116,6 +119,29 @@ export const reviewDecisionViewSchema = z.object({
 
 export type ReviewDecisionView = z.infer<typeof reviewDecisionViewSchema>;
 
+/**
+ * A stored Retry or Resume decision (TM-01). `followUpRunId` is set once the worker has claimed the
+ * attempt that continues from it; until then it is pending and waits for an explicit Start.
+ */
+export const recoveryDecisionViewSchema = z.object({
+  id: z.string(),
+  kind: taskRecoveryKindSchema,
+  sourceRunId: z.string(),
+  /** Attempt number of the failed, stopped or interrupted run. */
+  sourceAttempt: z.number(),
+  sourceStatus: taskStatusSchema,
+  /** The next attempt continues in the retained worktree. */
+  workspaceRetained: z.boolean(),
+  /** Attempt whose review feedback is sent again, or `null`. */
+  feedbackAttempt: z.number().nullable(),
+  processCheck: recoveryProcessCheckSchema,
+  createdAt: z.number(),
+  followUpRunId: z.string().nullable(),
+  followUpAttempt: z.number().nullable(),
+});
+
+export type RecoveryDecisionView = z.infer<typeof recoveryDecisionViewSchema>;
+
 export const taskExecutionViewSchema = z.object({
   runs: z.array(taskRunViewSchema),
   workspace: z
@@ -138,6 +164,8 @@ export const taskExecutionViewSchema = z.object({
     .nullable(),
   /** Review decisions of the task's attempts, newest first. */
   reviews: z.array(reviewDecisionViewSchema),
+  /** Retry/Resume decisions of the task's attempts, newest first (TM-01). */
+  recoveries: z.array(recoveryDecisionViewSchema),
   /** Recent events of the latest run; `payload` is the stored, redacted JSON text. */
   events: z.array(
     z.object({

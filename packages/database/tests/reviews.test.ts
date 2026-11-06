@@ -354,8 +354,8 @@ test('a task with a retained workspace but no change request is not started agai
     requestTaskExecution(db, { id: uuid(950), taskId, now: 41 });
     assert.ok(claim(db, uuid(950), uuid(951), 42).claimed);
     finishTaskRun(db, uuid(951), { status: 'failed', taskAction: 'fail', endedAt: 43 });
-    // Simulates a future re-queue path (Retry/Resume are not implemented) without a change
-    // request: a fresh worktree would collide with the retained one, so the claim refuses.
+    // Re-queued without a change request or a recorded Retry/Resume (TM-01): a fresh worktree
+    // would collide with the retained one, so the claim refuses.
     sqlite.prepare("UPDATE tasks SET status = 'queued', queued_at = 44 WHERE id = ?").run(taskId);
     requestTaskExecution(db, { id: uuid(960), taskId, now: 45 });
     const result = claim(db, uuid(960), uuid(961), 46);

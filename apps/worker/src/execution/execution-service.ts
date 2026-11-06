@@ -13,7 +13,11 @@ import {
   renewWorkerLease,
   type DatabaseConnection,
 } from '@ai-agent-manager/database';
-import { gitIntegritySnapshotSchema, verifyGitIntegrity } from '@ai-agent-manager/git';
+import {
+  gitIntegritySnapshotSchema,
+  isProcessGroupAlive,
+  verifyGitIntegrity,
+} from '@ai-agent-manager/git';
 import {
   createPublicationService,
   type PublicationGit,
@@ -39,6 +43,8 @@ export type ExecutionServiceOptions = Omit<RunExecutorOptions, 'workerInstanceId
   workerInstanceId?: string;
   /** @internal Tests only: replaces the Approve & Push Git operations. */
   publicationGit?: Partial<PublicationGit>;
+  /** @internal Tests only: replaces the process-group probe used before a recovered attempt. */
+  probeProcessGroup?: (pid: number) => boolean;
 };
 
 export type ExecutionService = {
@@ -141,6 +147,8 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
         workerInstanceId,
         timeoutMs: runTimeoutMs,
         now: now(),
+        // A recovered attempt never starts while the previous attempt's process group exists.
+        probeProcessGroup: options.probeProcessGroup ?? isProcessGroupAlive,
       });
       if (!result.claimed) {
         logger.info(`Start request ${command.id} rejected: ${result.code}.`);

@@ -9,8 +9,10 @@ import {
   projectExecutionTrusts,
   publicationFailureStages,
   publicationStatuses,
+  recoveryProcessChecks,
   reviewStatuses,
   taskPriorities,
+  taskRecoveryKinds,
   taskRunStatuses,
   taskStatuses,
 } from '@ai-agent-manager/core';
@@ -465,6 +467,64 @@ export const gitOperations = sqliteTable(
   ],
 );
 
+/**
+ * Retry and Resume decisions (TM-01). Each row records the operator's request to continue after
+ * one specific finished attempt (`source_run_id`, at most one recovery per attempt), the retained
+ * workspace it continues in (`NULL` when the attempt ended before a worktree existed), the review
+ * whose feedback is still unaddressed (`NULL` when none), and how a still-running prior process was
+ * ruled out. `follow_up_run_id` is set when the worker claims the attempt that continues from it;
+ * at most one recovery per task waits for its attempt. Rows are never deleted or overwritten.
+ */
+export const taskRecoveries = sqliteTable(
+  'task_recoveries',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    kind: text('kind', { enum: taskRecoveryKinds }).notNull(),
+    sourceRunId: text('source_run_id')
+      .notNull()
+      .references(() => taskRuns.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    /** The task status the recovery left (Failed, Stopped or Interrupted). */
+    sourceStatus: text('source_status', { enum: taskStatuses }).notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, {
+      onDelete: 'restrict',
+      onUpdate: 'restrict',
+    }),
+    reviewId: text('review_id').references(() => reviews.id, {
+      onDelete: 'restrict',
+      onUpdate: 'restrict',
+    }),
+    processCheck: text('process_check', { enum: recoveryProcessChecks }).notNull(),
+    followUpRunId: text('follow_up_run_id').references(() => taskRuns.id, {
+      onDelete: 'restrict',
+      onUpdate: 'restrict',
+    }),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    unique('task_recoveries_source_run_unique').on(table.sourceRunId),
+    index('task_recoveries_task_id_idx').on(table.taskId),
+    uniqueIndex('task_recoveries_follow_up_run_unique')
+      .on(table.followUpRunId)
+      .where(sql`follow_up_run_id IS NOT NULL`),
+    uniqueIndex('task_recoveries_one_pending_per_task_idx')
+      .on(table.taskId)
+      .where(sql`follow_up_run_id IS NULL`),
+    check('task_recoveries_kind_check', sql`${table.kind} IN (${sqlList(taskRecoveryKinds)})`),
+    check(
+      'task_recoveries_source_status_check',
+      sql`${table.sourceStatus} IN ('failed', 'stopped', 'interrupted')`,
+    ),
+    check(
+      'task_recoveries_process_check_check',
+      sql`${table.processCheck} IN (${sqlList(recoveryProcessChecks)})`,
+    ),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -477,4 +537,5 @@ export const schema = {
   reviews,
   publications,
   gitOperations,
+  taskRecoveries,
 };

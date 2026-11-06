@@ -3,6 +3,7 @@ import { taskStatusLabels, type Task, type TaskStatus } from '@ai-agent-manager/
 import { taskStatusDotClassName } from '@/components/tasks/task-badges';
 import { TaskCard } from '@/components/tasks/task-card';
 import { cn } from '@/lib/utils';
+import type { TaskRecoveryOptions } from '@/lib/tasks/recovery';
 import {
   groupTasksByStatus,
   primaryBoardStatuses,
@@ -21,14 +22,23 @@ const columnDescriptions: Readonly<Record<TaskStatus, string>> = {
   discarded: 'Result rejected',
 };
 
+type RecoveryOptionsByTask = Readonly<Record<string, TaskRecoveryOptions>>;
+
 type ColumnProps = {
   status: TaskStatus;
   tasks: Task[];
   projectDefaultBranch: string;
+  recoveryOptions: RecoveryOptionsByTask;
   compact?: boolean;
 };
 
-const BoardColumn = ({ status, tasks, projectDefaultBranch, compact = false }: ColumnProps) => (
+const BoardColumn = ({
+  status,
+  tasks,
+  projectDefaultBranch,
+  recoveryOptions,
+  compact = false,
+}: ColumnProps) => (
   <section
     aria-labelledby={`column-${status}`}
     className={cn(
@@ -62,7 +72,11 @@ const BoardColumn = ({ status, tasks, projectDefaultBranch, compact = false }: C
       <ul className="space-y-2">
         {tasks.map((task) => (
           <li key={task.id}>
-            <TaskCard task={task} projectDefaultBranch={projectDefaultBranch} />
+            <TaskCard
+              task={task}
+              projectDefaultBranch={projectDefaultBranch}
+              recoveryOptions={recoveryOptions[task.id] ?? null}
+            />
           </li>
         ))}
       </ul>
@@ -70,13 +84,22 @@ const BoardColumn = ({ status, tasks, projectDefaultBranch, compact = false }: C
   </section>
 );
 
-type TaskBoardProps = { tasks: readonly Task[]; projectDefaultBranch: string };
+type TaskBoardProps = {
+  tasks: readonly Task[];
+  projectDefaultBranch: string;
+  /** Retry/Resume and Discard options by task ID (TM-01); tasks without an entry offer neither. */
+  recoveryOptions?: RecoveryOptionsByTask;
+};
 
 /**
  * The main flow as five columns (scrolling sideways on narrow screens) and the four other states
  * as a compact second row, so every documented state is always visible.
  */
-export const TaskBoard = ({ tasks, projectDefaultBranch }: TaskBoardProps) => {
+export const TaskBoard = ({
+  tasks,
+  projectDefaultBranch,
+  recoveryOptions = {},
+}: TaskBoardProps) => {
   const groups = groupTasksByStatus(tasks);
   return (
     <div className="space-y-6">
@@ -92,6 +115,7 @@ export const TaskBoard = ({ tasks, projectDefaultBranch }: TaskBoardProps) => {
             status={status}
             tasks={groups[status]}
             projectDefaultBranch={projectDefaultBranch}
+            recoveryOptions={recoveryOptions}
           />
         ))}
       </div>
@@ -106,6 +130,7 @@ export const TaskBoard = ({ tasks, projectDefaultBranch }: TaskBoardProps) => {
               status={status}
               tasks={groups[status]}
               projectDefaultBranch={projectDefaultBranch}
+              recoveryOptions={recoveryOptions}
               compact
             />
           ))}

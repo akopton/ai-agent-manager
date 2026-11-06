@@ -3,6 +3,7 @@ import { FileDiff, GitBranch } from 'lucide-react';
 import type { Task } from '@ai-agent-manager/core';
 
 import { TaskActions } from '@/components/tasks/task-actions';
+import { TaskRecoveryActions } from '@/components/tasks/task-recovery-actions';
 import {
   TaskPriorityBadge,
   TaskRuntimeBadge,
@@ -12,10 +13,16 @@ import {
 import { Button } from '@/components/ui/button';
 import { taskReviewUrl } from '@/lib/review/format';
 import { taskUrl } from '@/lib/tasks/board';
+import type { TaskRecoveryOptions } from '@/lib/tasks/recovery';
 
-type TaskCardProps = { task: Task; projectDefaultBranch: string };
+type TaskCardProps = {
+  task: Task;
+  projectDefaultBranch: string;
+  /** Retry/Resume and Discard options derived by the server, if the task offers any. */
+  recoveryOptions?: TaskRecoveryOptions | null;
+};
 
-export const TaskCard = ({ task, projectDefaultBranch }: TaskCardProps) => (
+export const TaskCard = ({ task, projectDefaultBranch, recoveryOptions }: TaskCardProps) => (
   <article
     aria-labelledby={`task-${task.id}-title`}
     className="space-y-3 rounded-lg border bg-elevated p-3 text-sm transition-colors hover:border-border-strong"
@@ -53,5 +60,11 @@ export const TaskCard = ({ task, projectDefaultBranch }: TaskCardProps) => (
       </Button>
     ) : null}
     <TaskActions projectId={task.projectId} task={task} size="sm" />
+    <TaskRecoveryActions
+      projectId={task.projectId}
+      task={task}
+      options={recoveryOptions}
+      size="sm"
+    />
   </article>
 );

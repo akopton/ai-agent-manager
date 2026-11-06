@@ -4,7 +4,12 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { AlertCircle, AlertTriangle, ListRestart, Loader2, Play, Square } from 'lucide-react';
-import { reviewStatusLabels, taskRunStatusLabels, type TaskStatus } from '@ai-agent-manager/core';
+import {
+  reviewStatusLabels,
+  taskRecoveryKindLabels,
+  taskRunStatusLabels,
+  type TaskStatus,
+} from '@ai-agent-manager/core';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +25,13 @@ import {
 import { describeIntegrity, describeRunOutcome, shouldPollExecution } from '@/lib/execution/format';
 
 const refreshIntervalMs = 2_000;
+
+/** How the source attempt of a Retry/Resume ended, as a sentence fragment. */
+const sourceOutcomes: Partial<Record<TaskStatus, string>> = {
+  failed: 'failed',
+  stopped: 'was stopped',
+  interrupted: 'was interrupted',
+};
 
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   <>
@@ -106,6 +118,18 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
   const canStop = latest?.active === true && latest.stopRequestedAt === null;
   const pendingChangeRequest = execution.reviews.find((review) => review.followUpRunId === null);
   const decisionByRun = new Map(execution.reviews.map((review) => [review.runId, review]));
+  const pendingRecovery = execution.recoveries.find((recovery) => recovery.followUpRunId === null);
+  const recoveryBySource = new Map(
+    execution.recoveries.map((recovery) => [recovery.sourceRunId, recovery]),
+  );
+  const describeRecovery = (runId: string): string => {
+    const recovery = recoveryBySource.get(runId);
+    if (recovery === undefined) return '';
+    const verb = recovery.kind === 'retry' ? 'Retried' : 'Resumed';
+    return recovery.followUpAttempt === null
+      ? ` · ${verb}, waiting for Start`
+      : ` · ${verb} as attempt ${recovery.followUpAttempt}`;
+  };
 
   return (
     <Card>
@@ -177,6 +201,45 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
             </AlertDescription>
           </Alert>
         ) : null}
+        {pendingRecovery !== undefined && task.status === 'queued' ? (
+          <Alert>
+            <ListRestart aria-hidden="true" />
+            <AlertTitle>
+              {taskRecoveryKindLabels[pendingRecovery.kind]} queued: Start runs attempt{' '}
+              {pendingRecovery.sourceAttempt + 1}
+            </AlertTitle>
+            <AlertDescription>
+              <p>
+                Attempt {pendingRecovery.sourceAttempt}{' '}
+                {sourceOutcomes[pendingRecovery.sourceStatus] ?? 'ended'}. Nothing runs until you
+                click Start execution.{' '}
+                {pendingRecovery.workspaceRetained ? (
+                  <>
+                    The next attempt continues in the existing task worktree and branch
+                    {execution.workspace !== null ? (
+                      <>
+                        {' '}
+                        (<span className="font-mono text-xs">{execution.workspace.branch}</span>)
+                      </>
+                    ) : null}{' '}
+                    with its current tracked and untracked changes. The worktree is re-verified
+                    before launch; if it was moved, switched or committed to, the run is refused and
+                    nothing is reset.
+                  </>
+                ) : (
+                  <>
+                    Attempt {pendingRecovery.sourceAttempt} ended before a worktree was created, so
+                    the next attempt creates one from the base branch.
+                  </>
+                )}{' '}
+                It starts a new agent session; the previous session is not restored.
+                {pendingRecovery.feedbackAttempt !== null
+                  ? ` The review feedback on attempt ${pendingRecovery.feedbackAttempt} is sent again.`
+                  : ''}
+              </p>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {canStop || latest?.stopRequestedAt != null ? (
           <p className="text-xs text-muted-foreground">
             Stop terminates the agent’s process group. Processes that left the group are not
@@ -223,7 +286,10 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
             <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[11rem_1fr]">
               <Field label="Attempt">{latest.attempt}</Field>
               <Field label="Run status">{taskRunStatusLabels[latest.status]}</Field>
-              <Field label="Outcome">{describeRunOutcome(latest)}</Field>
+              <Field label="Outcome">
+                {describeRunOutcome(latest)}
+                {describeRecovery(latest.id)}
+              </Field>
               <Field label="Git integrity">{describeIntegrity(latest)}</Field>
               <Field label="Review eligible">
                 {latest.reviewEligible
@@ -298,6 +364,7 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
                         Attempt {run.attempt}: {taskRunStatusLabels[run.status]} —{' '}
                         {describeRunOutcome(run)}
                         {decision !== undefined ? ` · ${reviewStatusLabels[decision.status]}` : ''}
+                        {describeRecovery(run.id)}
                       </li>
                     );
                   })}

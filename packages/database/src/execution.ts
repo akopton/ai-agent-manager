@@ -20,12 +20,19 @@ import {
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, max, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
+import {
+  decidePriorProcess,
+  findPendingRecovery,
+  type ProcessGroupProbe,
+  type TaskRecoveryRecord,
+} from './recoveries.js';
 import { findPendingChangeRequest, type ReviewRecord } from './reviews.js';
 import {
   projects,
   reviews,
   runEvents,
   securitySettings,
+  taskRecoveries,
   taskRuns,
   tasks,
   workerCommands,
@@ -339,13 +346,31 @@ export type RunContinuation = {
   workspace: WorkspaceRecord;
 };
 
+/**
+ * A recovered attempt after `Retry` or `Resume` (TM-01): it continues after the source attempt, in
+ * the task's retained workspace when one exists (re-verified before launch, never recreated), and
+ * with the latest review feedback when no later attempt reached review. A new agent CLI session is
+ * started; the previous session is not restored.
+ */
+export type RunRecovery = {
+  recovery: TaskRecoveryRecord;
+  /** Attempt number of the failed, stopped or interrupted run. */
+  sourceAttempt: number;
+  /** `null` when the source attempt ended before a worktree was created. */
+  workspace: WorkspaceRecord | null;
+  /** The still-unaddressed change request and the attempt it reviewed, if any. */
+  feedback: { review: ReviewRecord; reviewedAttempt: number } | null;
+};
+
 export type ClaimedRun = {
   run: TaskRunRecord;
   task: TaskRecord;
   project: ProjectRecordWithTrust;
   consent: TrustedLocalConsent;
-  /** `null` for a first attempt, which creates a new task worktree. */
+  /** A follow-up attempt after Request Changes; `null` otherwise. */
   continuation: RunContinuation | null;
+  /** A recovered attempt after Retry or Resume; `null` otherwise. */
+  recovery: RunRecovery | null;
 };
 
 export type ClaimResult =
@@ -361,9 +386,16 @@ export type ClaimResult =
  *
  * Continuation (M6-02): when a change request waits for its follow-up, the new attempt is bound to
  * it and to the reviewed run's workspace in the same transaction. The change request must belong
- * to the task's latest run and that run's workspace. A task that already has a retained workspace
- * but no pending change request is refused (`continuation_unavailable`): Retry and Resume are not
- * implemented, and a fresh worktree would collide with the retained one.
+ * to the task's latest run and that run's workspace.
+ *
+ * Recovery (TM-01): when a Retry or Resume waits for its attempt, the new attempt is bound to it in
+ * the same transaction. The recovery must name the task's latest run, and the task's workspaces
+ * must still be exactly the recorded one (or none). The previous attempt's process is ruled out
+ * again with `probeProcessGroup` (fail-closed when absent) and the recorded operator confirmation;
+ * otherwise the start is refused and the task stays Queued, so two agents never share a worktree.
+ *
+ * A task that already has a retained workspace but neither a pending change request nor a pending
+ * recovery is refused (`continuation_unavailable`): a fresh worktree would collide with it.
  */
 export const claimStartCommand = (
   db: Database,
@@ -373,7 +405,16 @@ export const claimStartCommand = (
     workerInstanceId,
     timeoutMs,
     now,
-  }: { commandId: string; runId: string; workerInstanceId: string; timeoutMs: number; now: number },
+    probeProcessGroup,
+  }: {
+    commandId: string;
+    runId: string;
+    workerInstanceId: string;
+    timeoutMs: number;
+    now: number;
+    /** Probes a previous attempt's process group before a recovered attempt (TM-01). */
+    probeProcessGroup?: ProcessGroupProbe;
+  },
 ): ClaimResult =>
   db.transaction((tx) => {
     const command = tx.select().from(workerCommands).where(eq(workerCommands.id, commandId)).get();
@@ -429,8 +470,73 @@ export const claimStartCommand = (
       .limit(1)
       .get();
     const changeRequest = findPendingChangeRequest(tx, task.id);
+    const pendingRecovery = findPendingRecovery(tx, task.id);
     let continuation: RunContinuation | null = null;
-    if (changeRequest !== undefined) {
+    let recovery: RunRecovery | null = null;
+    if (changeRequest !== undefined && pendingRecovery !== undefined) {
+      return refuse(
+        'continuation_unavailable',
+        'Both a change request and a Retry/Resume wait for this task. Nothing was started.',
+      );
+    }
+    if (pendingRecovery !== undefined) {
+      const taskWorkspaces = tx
+        .select()
+        .from(workspaces)
+        .where(eq(workspaces.taskId, task.id))
+        .all();
+      const workspace =
+        pendingRecovery.workspaceId === null
+          ? null
+          : taskWorkspaces.find((candidate) => candidate.id === pendingRecovery.workspaceId);
+      if (
+        previous === undefined ||
+        previous.id !== pendingRecovery.sourceRunId ||
+        workspace === undefined ||
+        taskWorkspaces.length !== (workspace === null ? 0 : 1)
+      ) {
+        return refuse(
+          'continuation_unavailable',
+          'The Retry/Resume no longer matches the latest attempt and its worktree. Nothing was started.',
+        );
+      }
+      try {
+        decidePriorProcess(previous, {
+          probe: probeProcessGroup,
+          operatorConfirmed: pendingRecovery.processCheck === 'operator_confirmed',
+        });
+      } catch (error) {
+        return refuse(
+          'continuation_unavailable',
+          `${error instanceof Error ? error.message : 'The previous process could not be ruled out.'} Nothing was started.`,
+        );
+      }
+      let feedback: RunRecovery['feedback'] = null;
+      if (pendingRecovery.reviewId !== null) {
+        const review = tx
+          .select()
+          .from(reviews)
+          .where(eq(reviews.id, pendingRecovery.reviewId))
+          .get();
+        const reviewed =
+          review === undefined
+            ? undefined
+            : tx.select().from(taskRuns).where(eq(taskRuns.id, review.runId)).get();
+        if (review === undefined || reviewed === undefined || review.taskId !== task.id) {
+          return refuse(
+            'continuation_unavailable',
+            'The review feedback of this Retry/Resume no longer exists. Nothing was started.',
+          );
+        }
+        feedback = { review, reviewedAttempt: reviewed.attempt };
+      }
+      recovery = {
+        recovery: pendingRecovery,
+        sourceAttempt: previous.attempt,
+        workspace,
+        feedback,
+      };
+    } else if (changeRequest !== undefined) {
       const workspace = tx
         .select()
         .from(workspaces)
@@ -458,7 +564,7 @@ export const claimStartCommand = (
       if (retained !== undefined) {
         return refuse(
           'continuation_unavailable',
-          'This task already has a retained worktree but no pending change request. Starting it again (Retry/Resume) is not available yet.',
+          'This task already has a retained worktree but no pending change request, Retry or Resume. Nothing was started.',
         );
       }
     }
@@ -478,7 +584,7 @@ export const claimStartCommand = (
         workerInstanceId,
         // A follow-up attempt runs in the reviewed workspace; a first attempt records its own
         // workspace once the worker has created it.
-        workspaceId: continuation?.workspace.id ?? null,
+        workspaceId: continuation?.workspace.id ?? recovery?.workspace?.id ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -496,12 +602,29 @@ export const claimStartCommand = (
       }
       continuation = { ...continuation, review: bound };
     }
+    if (recovery !== null) {
+      const bound = tx
+        .update(taskRecoveries)
+        .set({ followUpRunId: run.id, updatedAt: now })
+        .where(
+          and(eq(taskRecoveries.id, recovery.recovery.id), isNull(taskRecoveries.followUpRunId)),
+        )
+        .returning()
+        .get();
+      if (bound === undefined) {
+        throw new ExecutionError('continuation_unavailable', 'The Retry/Resume changed.');
+      }
+      recovery = { ...recovery, recovery: bound };
+    }
     const started = transitionTask(tx, { id: task.id, action: 'start', now });
     tx.update(workerCommands)
       .set({ status: 'accepted', runId: run.id, processedAt: now })
       .where(eq(workerCommands.id, commandId))
       .run();
-    return { claimed: true, claim: { run, task: started, project, consent, continuation } };
+    return {
+      claimed: true,
+      claim: { run, task: started, project, consent, continuation, recovery },
+    };
   }, immediate);
 
 // ---------------------------------------------------------------------------------------------

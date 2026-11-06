@@ -16,6 +16,7 @@ import {
   findTaskById,
   getTrustedLocalConsent,
   listRunEvents,
+  listTaskRecoveries,
   listTaskReviews,
   listTaskRuns,
   listTaskWorkspaces,
@@ -30,6 +31,7 @@ import { validateRepository } from '@ai-agent-manager/git';
 import type {
   ExecutionSettingsView,
   ProjectTrustView,
+  RecoveryDecisionView,
   ReviewDecisionView,
   TaskExecutionView,
   TaskRunView,
@@ -277,9 +279,36 @@ export const listReviewDecisionViews = (
   }));
 };
 
+/** The task's Retry/Resume decisions (newest first), with the attempt numbers they refer to. */
+export const listRecoveryDecisionViews = (
+  db: Database,
+  taskId: string,
+  runs: readonly TaskRunRecord[],
+): RecoveryDecisionView[] => {
+  const attempts = new Map(runs.map((run) => [run.id, run.attempt]));
+  const reviews = new Map(listTaskReviews(db, taskId).map((review) => [review.id, review]));
+  return listTaskRecoveries(db, taskId).map((recovery) => {
+    const review = recovery.reviewId === null ? undefined : reviews.get(recovery.reviewId);
+    return {
+      id: recovery.id,
+      kind: recovery.kind,
+      sourceRunId: recovery.sourceRunId,
+      sourceAttempt: attempts.get(recovery.sourceRunId) ?? 0,
+      sourceStatus: recovery.sourceStatus,
+      workspaceRetained: recovery.workspaceId !== null,
+      feedbackAttempt: review === undefined ? null : (attempts.get(review.runId) ?? null),
+      processCheck: recovery.processCheck,
+      createdAt: recovery.createdAt,
+      followUpRunId: recovery.followUpRunId,
+      followUpAttempt:
+        recovery.followUpRunId === null ? null : (attempts.get(recovery.followUpRunId) ?? null),
+    };
+  });
+};
+
 /**
- * Runs (newest first), the latest workspace, review decisions, the latest start request and
- * recent events.
+ * Runs (newest first), the latest workspace, review and recovery decisions, the latest start
+ * request and recent events.
  */
 export const getTaskExecution = (
   db: Database,
@@ -305,6 +334,7 @@ export const getTaskExecution = (
             createdAt: workspace.createdAt,
           },
     reviews: listReviewDecisionViews(db, id, runs),
+    recoveries: listRecoveryDecisionViews(db, id, runs),
     lastCommand:
       command === undefined
         ? null

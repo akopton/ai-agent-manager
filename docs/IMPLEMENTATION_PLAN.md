@@ -154,6 +154,7 @@ The planned AI Conversations workstream (C1–C5) is defined separately in §8. 
 - Mark `Stopped`, free slot only after reconciliation, retain all changes and logs.
 
 **M5-02 — Retry and conditional Resume**
+*(2026-11-05: delivered as the focused slice **TM-01 — Retry, Resume & Discard**, tracked separately and without renumbering; see `ARCHITECTURE.md` §5.1 "TM-01 implementation notes". Retry (Failed) and Resume (Stopped/Interrupted) record a decision (migration `0006_recoveries`) and return the task to Queued; the next attempt runs only after an explicit Start and continues in the retained worktree. Accepted v1 semantics (`SPEC.md` §11, decided 2026-11-05) narrow the bullets below: one worktree per task is kept, so Retry continues the existing changes (and refuses when the worktree cannot be continued safely); Resume starts a new agent session. Discard (M6-02) is a logical transition. Deferred: Retry from scratch (fresh workspace), native session resume, worktree cleanup.)*
 - Retry creates a new attempt and safe workspace by default; never silently overwrite partial files.
 - Offer Resume only when adapter capability and compatible saved session/workspace state are validated.
 - Retain previous attempts for inspection.

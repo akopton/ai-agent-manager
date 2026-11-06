@@ -128,3 +128,9 @@ export {
   type ReviewSnapshotFile,
   type ReviewSnapshotLimits,
 } from './publish.js';
+export {
+  isProcessGroupAlive,
+  verifyRetainedTaskWorktree,
+  type RetainedWorktreeCheck,
+  type RetainedWorktreeRecord,
+} from './retained-worktree.js';

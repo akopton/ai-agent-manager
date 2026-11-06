@@ -120,6 +120,7 @@ test('the execution panel explains that Start continues the reviewed attempt', (
           createdAt: 1,
         },
         reviews: [decision()],
+        recoveries: [],
         lastCommand: null,
         events: [],
       },

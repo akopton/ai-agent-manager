@@ -545,7 +545,7 @@ test('upgrades a project-only database without touching existing projects', () =
           .prepare('SELECT count(*) AS count FROM __drizzle_migrations')
           .pluck()
           .get(),
-        6,
+        7,
       );
       assert.deepEqual(connection.sqlite.pragma('foreign_key_check'), []);
       assert.deepEqual(

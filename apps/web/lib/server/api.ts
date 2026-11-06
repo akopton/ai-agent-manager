@@ -3,10 +3,12 @@ import {
   PublicationError,
   ReviewActionError,
   TaskError,
+  TaskRecoveryError,
   type ExecutionErrorCode,
   type PublicationErrorCode,
   type ReviewActionErrorCode,
   type TaskErrorCode,
+  type TaskRecoveryErrorCode,
 } from '@ai-agent-manager/core';
 import type { z } from 'zod';
 import type { ApiErrorCode, ApiErrorResponse } from '@/lib/projects/contracts';
@@ -77,6 +79,9 @@ const executionErrorStatus = (code: ExecutionErrorCode): number => {
 const reviewActionErrorStatus = (code: ReviewActionErrorCode): number =>
   code === 'invalid_review_input' ? 400 : 409;
 
+const taskRecoveryErrorStatus = (code: TaskRecoveryErrorCode): number =>
+  code === 'invalid_recovery_input' ? 400 : 409;
+
 const publicationErrorStatus = (code: PublicationErrorCode): number => {
   switch (code) {
     case 'invalid_publication_input':
@@ -109,6 +114,14 @@ export const handleRouteError = (error: unknown): Response => {
       error.code,
       error.message,
       reviewActionErrorStatus(error.code),
+      error.details,
+    );
+  }
+  if (error instanceof TaskRecoveryError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      taskRecoveryErrorStatus(error.code),
       error.details,
     );
   }

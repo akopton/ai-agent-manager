@@ -9,7 +9,8 @@ import {
 // The body-less task actions the web app exposes as generic buttons. They are a subset of the
 // domain's named transitions; worker-only transitions (start, complete, stop, fail, interrupt,
 // mark done) are never offered. Request Changes needs feedback and a reviewed attempt, so it has
-// its own route on the Review Changes page; retry, resume and discard are not offered yet.
+// its own route on the Review Changes page. Retry, Resume and Discard (TM-01) need the attempt the
+// operator saw and a confirmation dialog, so they have their own component and routes.
 
 export const userTaskActions = [
   'queue',
@@ -51,17 +52,18 @@ export const taskEditability = (status: TaskStatus): TaskEditability => ({
 export const taskStatusNotes: Readonly<Record<TaskStatus, string>> = {
   backlog: 'Saved but not authorized to run. Edit it freely, then queue it when it is ready.',
   queued:
-    'Eligible to run. There is no automatic scheduler yet: start it explicitly with Start execution (requires Trusted Local Mode and a trusted project), or return it to Backlog. After Request Changes, the next run continues in the existing worktree with your feedback. Priority and the Urgent flag can still be changed.',
+    'Eligible to run. There is no automatic scheduler yet: start it explicitly with Start execution (requires Trusted Local Mode and a trusted project), or return it to Backlog. After Request Changes, Retry or Resume, the next run continues in the existing worktree. Priority and the Urgent flag can still be changed.',
   in_progress:
     'An agent is working on this task in its own worktree. Stop terminates the agent’s process group; files are kept.',
   review:
-    'The agent process completed and no observable Git mutation was found. Open Review Changes to inspect what the agent changed and, if needed, request changes (the task returns to Queued and waits for an explicit Start). Approve & Push and Discard will be available in a later version.',
+    'The agent process completed and no observable Git mutation was found. Open Review Changes to inspect what the agent changed, then request changes (the task returns to Queued and waits for an explicit Start) or Approve & Push. Discard rejects the result without deleting the worktree or branch.',
   stopped:
-    'Execution was stopped. The worktree and partial files are kept. Retry, Resume and Discard will be available in a later version.',
+    'Execution was stopped. The worktree and partial files are kept. Resume queues a new attempt that continues in the same worktree with a new agent session; it runs only after an explicit Start execution. Discard marks the task as rejected without deleting anything.',
   interrupted:
-    'Execution was interrupted (worker shutdown or restart) and is never resumed automatically. The worktree is kept. Retry, Resume and Discard will be available in a later version.',
+    'Execution was interrupted (worker shutdown or restart) and is never resumed automatically. The worktree is kept. Resume queues a new attempt that continues in the same worktree with a new agent session; it runs only after an explicit Start execution. Discard marks the task as rejected without deleting anything.',
   failed:
-    'Execution failed or its Git integrity check blocked review. The worktree and evidence are kept. Retry and Discard will be available in a later version.',
-  discarded: 'Final state. The result was rejected; the task stays in history.',
+    'Execution failed or its Git integrity check blocked review. The worktree and evidence are kept. Retry queues a new attempt that continues with the existing worktree changes (or creates the worktree if it never existed); it runs only after an explicit Start execution. Discard marks the task as rejected without deleting anything.',
+  discarded:
+    'Final state. The result was rejected; the task, its attempts and records stay in history. The worktree and task branch, if any, were not removed; cleanup is not available yet.',
   done: 'Final state. The approved changes were committed and pushed to the task branch.',
 };

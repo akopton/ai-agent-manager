@@ -162,8 +162,8 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 | `Queued` | Waiting for scheduler and agent availability. | Reprioritize, return to `Backlog`. |
 | `In Progress` | An agent process is working. | Inspect logs, **Stop**. |
 | `Review` | Execution ended and changes await a decision. | **Approve & Push**, **Request Changes**, **Discard**. |
-| `Stopped` | The user intentionally stopped execution. | Inspect, Resume if supported, Retry, Discard. |
-| `Interrupted` | Execution was unexpectedly interrupted or could not be reconciled on restart. | Inspect, Resume if supported, Retry, Discard. |
+| `Stopped` | The user intentionally stopped execution. | Inspect, Resume, Discard. *(Retry from this state: future, §11.)* |
+| `Interrupted` | Execution was unexpectedly interrupted or could not be reconciled on restart. | Inspect, Resume, Discard. *(Retry from this state: future, §11.)* |
 | `Failed` | Execution failed. | Inspect, Retry, Discard. |
 | `Discarded` | The user rejected the result. | Inspect history; explicitly manage retained workspace. |
 | `Done` | Approved changes were committed and successfully pushed to the task branch. | Inspect commit, branch, and history. |
@@ -236,8 +236,19 @@ New tasks start in `Backlog`. Saving a task **must not** launch an agent or crea
 
 ### Retry and Resume
 
-- **Retry:** start a new attempt. By default use a fresh, safe workspace or explicitly ask how to handle existing partial changes, rather than overwriting them silently.
-- **Resume:** expose this action only when the particular agent adapter supports session continuation and the workspace remains compatible. Resume is **not guaranteed**.
+**Accepted v1 behavior (Manual Task Management v1, TM-01, decided 2026-11-05):**
+
+- **Retry** (from `Failed`) and **Resume** (from `Stopped` or `Interrupted`) only return the task to `Queued`. No agent starts until the user explicitly clicks Start execution, which applies the normal consent, trust and capacity checks.
+- **Retry** continues in the task's existing worktree and keeps its partial changes (tracked and untracked). If the worktree cannot be continued safely (moved, unlocked, branch switched, commits made), Retry is refused and nothing is reset, cleaned or recreated. If the failed attempt ended before a worktree existed, the next Start creates one.
+- **Resume** starts a **new** agent CLI session in the retained worktree, with the original prompt and a note that earlier changes are present. The previous Claude Code/Codex conversation is not restored.
+- When a previous agent process may still be running, the app **fails closed**: it refuses while the recorded process group still exists, and when that cannot be determined it requires the user to confirm that the old agent is no longer running. The app cannot detect processes that left the agent's process group (§11 Stop, SEC-01).
+- Pending review feedback of a failed follow-up attempt is sent again with the retried attempt.
+
+**Future capabilities (not in v1):**
+
+- **Retry from scratch:** a fresh, safe workspace from the base branch, or an explicit choice of how to handle existing partial changes; never overwriting them silently.
+- **Native session resume:** continue the previous agent conversation, only when the particular adapter supports session continuation and the workspace remains compatible. Not guaranteed.
+- Retry from `Stopped`/`Interrupted` as an action distinct from Resume.
 - Retain the history and inspectable results of previous attempts.
 
 ### Application shutdown and restart

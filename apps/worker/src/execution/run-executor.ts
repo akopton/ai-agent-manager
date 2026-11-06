@@ -55,7 +55,8 @@ import { normalizeAgentEvent } from './run-events.js';
 // Executes one claimed task run (M4-02) through the production Trusted Local path:
 //
 //   claimed run → verify repository → create task worktree (or, for a follow-up attempt after
-//   Request Changes, re-verify the retained one) → detect CLI → prepare invocation →
+//   Request Changes or a recovered attempt after Retry/Resume, re-verify the retained one) →
+//   detect CLI → prepare invocation →
 //   Git integrity baseline → re-read persisted consent and trust → Trusted Local gate →
 //   launch boundary → supervise → post-run Git integrity comparison → named task transition.
 //
@@ -115,27 +116,54 @@ const fileIdentity = async (path: string): Promise<{ dev: string; ino: string }>
 /** Review feedback for a follow-up attempt (`Request Changes`). */
 export type RunFollowUp = { reviewedAttempt: number; feedback: string };
 
+/** A recovered attempt (`Retry` / `Resume`, TM-01). */
+export type RunRecoveryPrompt = {
+  kind: 'retry' | 'resume';
+  /** Attempt number of the failed, stopped or interrupted run. */
+  sourceAttempt: number;
+  /** Whether the attempt runs in the retained worktree with the earlier changes. */
+  workspaceRetained: boolean;
+};
+
 /**
  * The text sent to the agent on stdin: project instructions, then the task prompt, then — for a
- * follow-up attempt — the latest review feedback. Feedback belongs to this task and run only; it
- * never changes the project instructions. Global instructions do not exist yet (Settings, M7).
- * Repository instruction files are read by the CLI.
+ * follow-up attempt, or a recovered attempt whose feedback is still unaddressed — the latest review
+ * feedback, then how the attempt relates to the earlier ones. Feedback belongs to this task and run
+ * only; it never changes the project instructions. Global instructions do not exist yet (Settings,
+ * M7). Repository instruction files are read by the CLI.
  */
 export const composeRunPrompt = (
   projectInstructions: string,
   taskPrompt: string,
   followUp: RunFollowUp | null = null,
+  recovery: RunRecoveryPrompt | null = null,
 ): string => {
   const task =
     projectInstructions.trim() === ''
       ? taskPrompt
       : `Project instructions:\n${projectInstructions.trim()}\n\nTask:\n${taskPrompt}`;
+  const feedback =
+    followUp === null
+      ? []
+      : [`Review feedback on attempt ${followUp.reviewedAttempt}:\n${followUp.feedback}`];
+  if (recovery !== null) {
+    const ended =
+      recovery.kind === 'retry' ? 'failed' : 'was stopped or interrupted before it finished';
+    const goal = followUp === null ? 'complete the task' : 'address the review feedback';
+    return [
+      task,
+      ...feedback,
+      recovery.workspaceRetained
+        ? `This is a new attempt after attempt ${recovery.sourceAttempt} ${ended}. It runs in a new agent session: the previous session's conversation is not available. The working directory still contains the changes from earlier attempts, including uncommitted and untracked files. Inspect them first and continue from them to ${goal}; do not start over from the base commit and do not discard existing work unless the task requires it. Leave all changes uncommitted.`
+        : `This is a new attempt after attempt ${recovery.sourceAttempt} ${ended} before a working directory was prepared. It starts from the base commit. Leave all changes uncommitted.`,
+    ].join('\n\n');
+  }
   if (followUp === null) {
     return task;
   }
   return [
     task,
-    `Review feedback on attempt ${followUp.reviewedAttempt}:\n${followUp.feedback}`,
+    ...feedback,
     `This is a follow-up attempt. The working directory still contains the changes from attempt ${followUp.reviewedAttempt}, including uncommitted and untracked files. Continue from those changes and revise them to address the review feedback; do not start over from the base commit and do not discard existing work unless the feedback asks for it. Leave all changes uncommitted.`,
   ].join('\n\n');
 };
@@ -304,7 +332,7 @@ export const createRunExecutor = (options: RunExecutorOptions): RunExecutor => {
   };
 
   const runOne = async (claim: ClaimedRun, entry: ActiveRun): Promise<void> => {
-    const { run, task, project, continuation } = claim;
+    const { run, task, project, continuation, recovery } = claim;
     const runtime = task.agentRuntime;
     let sequence = nextRunEventSequence(db, run.id);
     const record = (kind: string, payload: Record<string, unknown>): void => {
@@ -354,7 +382,8 @@ export const createRunExecutor = (options: RunExecutorOptions): RunExecutor => {
         attempt: run.attempt,
         runtime,
         securityMode: run.securityMode,
-        continuesAttempt: continuation?.reviewedAttempt ?? null,
+        continuesAttempt: continuation?.reviewedAttempt ?? recovery?.sourceAttempt ?? null,
+        recovery: recovery?.recovery.kind ?? null,
       });
 
       // 1. The registered repository must still be the same repository.
@@ -373,20 +402,28 @@ export const createRunExecutor = (options: RunExecutorOptions): RunExecutor => {
       if (reason !== null) return { kind: 'cancelled', reason };
 
       // 2. A first attempt gets a dedicated task branch and worktree from the resolved local base
-      //    branch. A follow-up attempt (Request Changes) continues in the reviewed run's retained
-      //    worktree, which is re-verified instead of recreated; it is never reset or cleaned.
+      //    branch. A follow-up attempt (Request Changes) or a recovered attempt (Retry/Resume) with a
+      //    retained worktree continues in it; it is re-verified instead of recreated and is never
+      //    reset or cleaned. A recovered attempt whose source ended before a worktree existed gets
+      //    a new one, like a first attempt.
       let worktree: TaskWorktree;
-      if (continuation !== null) {
+      const retained =
+        continuation !== null
+          ? { workspace: continuation.workspace, attempt: continuation.reviewedAttempt }
+          : recovery?.workspace != null
+            ? { workspace: recovery.workspace, attempt: recovery.sourceAttempt }
+            : null;
+      if (retained !== null) {
         const check = await verifyRetainedWorkspace({
           project,
           task,
-          continuation,
+          continuation: retained,
           worktreeRoot: options.worktreeRoot,
         });
         if (!check.ok) {
           return refused(
             'continuation_unavailable',
-            `The retained worktree of attempt ${continuation.reviewedAttempt} cannot be continued: ${check.reason}. Nothing was started, reset or cleaned.`,
+            `The retained worktree of attempt ${retained.attempt} cannot be continued: ${check.reason}. Nothing was started, reset or cleaned.`,
           );
         }
         worktree = check.worktree;
@@ -394,8 +431,13 @@ export const createRunExecutor = (options: RunExecutorOptions): RunExecutor => {
           branch: worktree.branch,
           baseBranch: worktree.baseBranch,
           baseSha: worktree.baseCommit,
-          reviewedAttempt: continuation.reviewedAttempt,
-          reviewId: continuation.review.id,
+          ...(continuation !== null
+            ? { reviewedAttempt: continuation.reviewedAttempt, reviewId: continuation.review.id }
+            : {
+                recoveredAttempt: retained.attempt,
+                recoveryId: recovery?.recovery.id ?? null,
+                recovery: recovery?.recovery.kind ?? null,
+              }),
         });
       } else {
         const baseBranch = task.baseBranch ?? project.defaultBaseBranch;
@@ -420,14 +462,28 @@ export const createRunExecutor = (options: RunExecutorOptions): RunExecutor => {
         return refused('cli_unavailable', detection.message);
       }
       const { installation } = detection;
+      const followUp =
+        continuation !== null
+          ? {
+              reviewedAttempt: continuation.reviewedAttempt,
+              feedback: continuation.review.feedback,
+            }
+          : recovery?.feedback != null
+            ? {
+                reviewedAttempt: recovery.feedback.reviewedAttempt,
+                feedback: recovery.feedback.review.feedback,
+              }
+            : null;
       const prompt = composeRunPrompt(
         project.instructions,
         task.prompt,
-        continuation === null
+        followUp,
+        recovery === null
           ? null
           : {
-              reviewedAttempt: continuation.reviewedAttempt,
-              feedback: continuation.review.feedback,
+              kind: recovery.recovery.kind,
+              sourceAttempt: recovery.sourceAttempt,
+              workspaceRetained: recovery.workspace !== null,
             },
       );
       const preparation = adapter.prepareExecution(installation, {

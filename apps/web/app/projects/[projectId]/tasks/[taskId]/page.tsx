@@ -9,6 +9,7 @@ import { taskPriorityLabels, taskStatusLabels } from '@ai-agent-manager/core';
 import { TaskExecutionPanel } from '@/components/execution/task-execution-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { TaskActions } from '@/components/tasks/task-actions';
+import { TaskRecoveryActions } from '@/components/tasks/task-recovery-actions';
 import {
   TaskPriorityBadge,
   TaskRuntimeBadge,
@@ -22,6 +23,7 @@ import { formatTimestamp } from '@/lib/projects/format';
 import { taskReviewUrl } from '@/lib/review/format';
 import { getDatabase } from '@/lib/server/database';
 import { getTaskExecution } from '@/lib/server/execution';
+import { getTaskRecoveryOptions } from '@/lib/server/recovery';
 import { loadForPage } from '@/lib/server/load';
 import { findProjectTask } from '@/lib/server/tasks';
 import { taskEditability, taskStatusNotes } from '@/lib/tasks/actions';
@@ -65,7 +67,11 @@ const TaskPage = async ({
     const found = findProjectTask(db, projectId, taskId);
     return found === undefined
       ? undefined
-      : { ...found, execution: getTaskExecution(db, found.project.id, found.task.id) };
+      : {
+          ...found,
+          execution: getTaskExecution(db, found.project.id, found.task.id),
+          recoveryOptions: getTaskRecoveryOptions(db, found.task),
+        };
   });
 
   if (!result.ok) {
@@ -75,7 +81,7 @@ const TaskPage = async ({
     notFound();
   }
 
-  const { project, task, execution } = result.data;
+  const { project, task, execution, recoveryOptions } = result.data;
   const editability = taskEditability(task.status);
   const [latestRun] = execution.runs;
   // Changes can be inspected once the latest run has ended and created a worktree.
@@ -121,6 +127,7 @@ const TaskPage = async ({
               </Button>
             ) : null}
             <TaskActions projectId={project.id} task={task} />
+            <TaskRecoveryActions projectId={project.id} task={task} options={recoveryOptions} />
           </div>
         </div>
       </section>

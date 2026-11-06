@@ -40,6 +40,7 @@ export {
   runEvents,
   schema,
   securitySettings,
+  taskRecoveries,
   taskRuns,
   tasks,
   workerCommands,
@@ -94,6 +95,7 @@ export {
   type RunEventRecord,
   type RunContinuation,
   type RunFinish,
+  type RunRecovery,
   type TaskRunProgress,
   type TaskRunRecord,
   type WorkerCommandRecord,
@@ -127,3 +129,13 @@ export {
   type PublicationClaim,
   type PublicationRecord,
 } from './publications.js';
+export {
+  decidePriorProcess,
+  discardTask,
+  findPendingRecovery,
+  listTaskRecoveries,
+  requestTaskRecovery,
+  type ProcessGroupProbe,
+  type RequestTaskRecoveryResult,
+  type TaskRecoveryRecord,
+} from './recoveries.js';
