@@ -1,6 +1,6 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.6 — task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
+**Status:** Draft v0.7 — AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
 **Date:** 2026-11-06 (v0.5: 2026-11-04, v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
@@ -457,6 +457,26 @@ Nothing in this section changes the existing requirements for Kanban, scheduling
 
 The "no live conversational input while a task runs" exclusion (§2) still applies. AI Conversations are not a channel into a running task.
 
+**Delivery status (2026-11-06).** The workstream is planned as C1–C4 (`IMPLEMENTATION_PLAN.md` §8):
+
+| Milestone | Delivers |
+|---|---|
+| **C1** *(delivered)* | Project conversations with runtime, model and language settings, a durable history and a UI. Persistence and UI only. |
+| **C2** | Real CLI-backed conversations (Conversation Mode). |
+| **C3** | Task proposals and their approval into Backlog (§18.8). |
+| **C4** | Deeper project and task awareness (context assembly, §18.6, §18.9). |
+
+Global AI (§18.5) and architecture decisions (§18.7) remain specified but are not yet scheduled.
+
+**C1 behavior.**
+
+- A conversation belongs to exactly one project.
+- The user can create conversations, change their title, runtime, model and language, and save **notes**.
+- A note is stored in AI Agent Manager only. It is never sent to Claude Code or Codex, and no reply is generated or simulated.
+- The UI labels notes as notes and states that AI replies arrive in C2.
+- Nothing in C1 starts an agent, creates a task or worker command, or runs a Git operation.
+- Archive, delete and note editing are deferred. A project with conversations cannot be disconnected, as with tasks (§4.1).
+
 ### 18.2 Execution Mode and Conversation Mode
 
 | | **Execution Mode** (existing) | **Conversation Mode** (new) |
@@ -494,10 +514,22 @@ Both modes may share adapter infrastructure (CLI discovery, process execution, m
 - Direct provider APIs, separate API keys or separate API billing are **not required**. Authentication reuses the CLIs' official local login, as in §12.
 - Each conversation has a current agent runtime and model selection (`Default` or an explicit model identifier), with the same rules as tasks (§5, §8). `Default` passes no model override; unsupported models fail visibly, with no silent fallback.
 - The user may change the runtime or model for **future** messages. Past messages keep the runtime and model that produced them.
+- Each conversation has a **language mode** for discussion and generated text:
+
+  | Mode | Behavior |
+  |---|---|
+  | `pl_technical_en` *(default)* | Discussion in Polish. Technical prompts, task titles, code identifiers and other technical artifacts in English. |
+  | `pl` | Discussion and generated text in Polish. |
+  | `en` | Discussion and generated text in English. |
+
+  The user can change it at any time; it applies to future replies. C1 stores the mode; C2 turns it into CLI instructions. The application UI itself stays in English.
+- Model choices are not a fixed catalog. `Default` defers to the CLI; an explicit identifier is stored as entered and checked by the CLI when a reply is requested (C2). Switching the runtime without choosing a model resets the model to `Default`, as for tasks.
 - Each assistant message records the requested runtime and model, and the effective model only when the CLI reports it trustworthily.
 - Claude Code and Codex are **not assumed** to offer identical streaming, session persistence, model switching, context limits or security controls. These are capabilities to verify per CLI (§18.12).
 
 ### 18.5 Global AI
+
+*(Not scheduled in C1–C4. C1 conversations always belong to a project.)*
 
 - The user can create, list, rename, archive and delete multiple global conversations.
 - A global conversation is **not associated with any project**.
@@ -522,6 +554,8 @@ Both modes may share adapter infrastructure (CLI discovery, process execution, m
 - The user chooses the agent runtime and model.
 
 ### 18.7 Architecture decisions
+
+*(Not scheduled in C1–C4.)*
 
 - From a project conversation, the user (or the AI, on request) can draft an **architecture decision**: title, context, decision, consequences and alternatives considered.
 - A draft becomes project knowledge **only after explicit user approval** (`Proposed` → `Accepted`). The user can edit it before accepting, or reject it.

@@ -141,7 +141,9 @@ which Drizzle Kit's relative schema/output paths require.
 history. `0001_projects.sql` adds the `projects` table. `0002_tasks.sql` adds the
 `tasks` table. `0003_execution.sql` adds `security_settings`, `workspaces`, `task_runs`,
 `run_events`, `worker_commands` and `worker_leases`, and the project execution trust columns
-(see [Execution records](#execution-records)). Applied migrations are never edited; schema changes get a new migration.
+(see [Execution records](#execution-records)). Later migrations add reviews, publications, recoveries,
+task archiving and cleanup, and `0008_conversations` adds the AI Conversations tables (see
+[Conversations](#conversations)). Applied migrations are never edited; schema changes get a new migration.
 `db:generate` resolves `@ai-agent-manager/core` (task enums used by the schema) from
 its TypeScript sources, so it does not require a prior build. The web app and worker never apply
 migrations on startup; the root `pnpm dev` launcher runs `db:migrate:dev` before starting them,
@@ -225,3 +227,30 @@ Partial unique indexes allow at most one active run (`pending`, `starting`, `run
 `claimStartCommand`. `requestTaskExecution`, `claimStartCommand`, `requestRunStop` and
 `finishTaskRun` each run in one `IMMEDIATE` transaction; the claim and finish compose the
 named task transitions (`start`, `complete_execution`, `stop`, `fail`, `interrupt`).
+
+## Conversations
+
+Added by `0008_conversations.sql` for C1, the AI Conversations foundation (`src/conversations.ts`).
+The migration is additive and changes no existing table. Timestamps are Unix milliseconds; both foreign
+keys are `RESTRICT`, so a project with conversations cannot be disconnected.
+
+| Table                   | Purpose                                                                                                                                                                                                   |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversations`         | One project's conversation: title, `agent_runtime`, `model_id` (`NULL` = `Default`), `language_mode` (`pl_technical_en`, `pl`, `en`), settings `revision`, `created_at`, `updated_at`, `last_message_at`. |
+| `conversation_messages` | Ordered history: `sequence` (unique per conversation), `role` (`user`/`assistant`), `kind` (`note`/`chat`), `content`, `request_id` (unique; deduplicates submissions), `created_at`.                     |
+
+`createConversation`, `updateConversation` and `addConversationNote` validate their input with the
+`core` schemas, throw `ConversationError` and run in one `IMMEDIATE` transaction:
+
+- `invalid_conversation_input`, `project_not_found` and `conversation_not_found` reject bad input or
+  missing records.
+- `conversation_changed` rejects a stale settings revision.
+- `conversation_request_conflict` rejects a request ID that was reused for different content.
+
+Reads and commands take the project ID together with the conversation ID, so another project's
+conversation is reported as missing. `addConversationNote` stores only `user` notes; it never
+starts an agent or produces a reply. The `assistant` role and the `chat` kind are reserved for C2,
+which appends through the same internal sequence allocator.
+
+`findProjectConversation`, `listProjectConversations`, `listConversationMessages` and
+`countConversationsByProject` are plain reads.

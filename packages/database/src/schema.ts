@@ -2,6 +2,9 @@ import {
   activePublicationStatuses,
   activeTaskRunStatuses,
   agentRuntimes,
+  conversationLanguageModes,
+  conversationMessageKinds,
+  conversationMessageRoles,
   executionSecurityModes,
   gitIntegrityResultStatuses,
   gitOperationKinds,
@@ -588,6 +591,81 @@ export const workspaceCleanups = sqliteTable(
   ],
 );
 
+/**
+ * AI Conversations (C1, migration `0008_conversations`). A conversation belongs to exactly one
+ * project (`RESTRICT`: a project with conversations cannot be disconnected, and conversations are
+ * never deleted with it). `model_id = NULL` means `Default`. `revision` is the settings revision
+ * used to reject stale updates. `updated_at` is the last change to the settings or the history.
+ */
+export const conversations = sqliteTable(
+  'conversations',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    title: text('title').notNull(),
+    agentRuntime: text('agent_runtime', { enum: agentRuntimes }).notNull(),
+    modelId: text('model_id'),
+    languageMode: text('language_mode', { enum: conversationLanguageModes }).notNull(),
+    revision: integer('revision').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    lastMessageAt: integer('last_message_at'),
+  },
+  (table) => [
+    index('conversations_project_id_updated_at_idx').on(table.projectId, table.updatedAt),
+    check(
+      'conversations_agent_runtime_check',
+      sql`${table.agentRuntime} IN (${sqlList(agentRuntimes)})`,
+    ),
+    check(
+      'conversations_language_mode_check',
+      sql`${table.languageMode} IN (${sqlList(conversationLanguageModes)})`,
+    ),
+    check('conversations_revision_check', sql`${table.revision} >= 1`),
+  ],
+);
+
+/**
+ * The ordered history of a conversation (C1). `sequence` is allocated per conversation (1, 2, 3…)
+ * inside the inserting transaction and is unique, so the order is deterministic. Roles and kinds
+ * already include the values C2 needs (`assistant`, `chat`) so it does not have to rebuild the
+ * table; C1 writes only `user` notes, and a note must be a `user` message with a `request_id`.
+ * `request_id` deduplicates repeated submissions. Messages are never edited or deleted in C1.
+ */
+export const conversationMessages = sqliteTable(
+  'conversation_messages',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    sequence: integer('sequence').notNull(),
+    role: text('role', { enum: conversationMessageRoles }).notNull(),
+    kind: text('kind', { enum: conversationMessageKinds }).notNull(),
+    content: text('content').notNull(),
+    requestId: text('request_id').unique(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    unique('conversation_messages_sequence_unique').on(table.conversationId, table.sequence),
+    check(
+      'conversation_messages_role_check',
+      sql`${table.role} IN (${sqlList(conversationMessageRoles)})`,
+    ),
+    check(
+      'conversation_messages_kind_check',
+      sql`${table.kind} IN (${sqlList(conversationMessageKinds)})`,
+    ),
+    check('conversation_messages_sequence_check', sql`${table.sequence} >= 1`),
+    check(
+      'conversation_messages_note_check',
+      sql`${table.kind} <> 'note' OR (${table.role} = 'user' AND ${table.requestId} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -602,4 +680,6 @@ export const schema = {
   gitOperations,
   taskRecoveries,
   workspaceCleanups,
+  conversations,
+  conversationMessages,
 };

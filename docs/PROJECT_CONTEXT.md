@@ -121,7 +121,7 @@ Specified in `SPEC.md` §18, with the architecture in `ARCHITECTURE.md` §15 and
 | Area | Decision |
 |---|---|
 | Product shape | Three capabilities: **Projects & Kanban** (existing), **Project AI** and **Global AI**. Project AI and Global AI are two scopes of **one** AI Conversations module. |
-| Scope in plan | Planned extension, delivered as workstream C1–C5. It is not part of the MVP acceptance criteria (`SPEC.md` §14) and does not change M0–M7. |
+| Scope in plan | Planned extension, delivered as workstream C1–C4 (C1–C5 until 2026-11-06, see below). It is not part of the MVP acceptance criteria (`SPEC.md` §14) and does not change M0–M7. |
 | Agents | Reuse the locally installed Claude Code and Codex CLIs through the shared adapter layer. Per-conversation runtime and optional model (`Default` = no override). No mandatory provider APIs, API keys or separate billing. |
 | Modes | **Execution Mode** (Kanban task in a worktree) and **Conversation Mode** (discussion and planning) share adapter infrastructure but have separate runtime policies and lifecycles. |
 | Conversation authority | No repository write access by default. Conversations never start agents, queue tasks, create worktrees, commit, push or publish. |
@@ -132,11 +132,28 @@ Specified in `SPEC.md` §18, with the architecture in `ARCHITECTURE.md` §15 and
 | Planning-to-Kanban | AI proposes tasks; the user edits and approves them; created tasks enter **Backlog** (never Queued) and keep an origin reference. Global conversations require an explicitly confirmed target project. |
 | Persistence | SQLite. Permanent history is separate from the per-turn context sent to a CLI. Summaries and selective context. Native CLI sessions are never transferred between Claude Code and Codex. No stored credentials. |
 
-**Implementation priority (recommended, pending confirmation):**
+**Implementation priority** *(superseded 2026-11-06)*: the earlier recommendation was C1 Foundation after M4, then C2 Global AI → C3 Project AI → C4 Decisions → C5 Planning-to-Kanban.
 
-1. Continue the core MVP path: M1-02 adapters and M1-03 CLI verification, then M2–M6.
-2. Start C1 (Foundation) after M4.
-3. Then C2 Global AI → C3 Project AI → C4 Decisions → C5 Planning-to-Kanban.
+**Roadmap decision (2026-11-06, operator).** After Manual Task Management v1, AI Conversations becomes the next major module, with a C1–C4 roadmap that keeps M0–M7 numbering unchanged (`IMPLEMENTATION_PLAN.md` §8):
+
+| Milestone | Scope |
+|---|---|
+| **C1** | Persistence and UI only. Delivered 2026-11-06. |
+| **C2** | Real CLI-backed conversations. |
+| **C3** | Task proposals and approval into Backlog. |
+| **C4** | Deeper project and task awareness. |
+
+Global AI and Architecture Decisions remain specified but unscheduled.
+
+C1 decisions:
+
+- **Scope:** conversations are project-scoped only.
+- **Language modes:** `pl_technical_en` (default), `pl` and `en`.
+- **Messages:** C1 stores operator **notes** only. Notes are never sent to a CLI, and no placeholder AI reply is shown.
+- **Runtime and model:** the default runtime is Claude Code, following the task form. The model follows the task convention (`Default` or a free-text identifier, no catalog).
+- **Deferred:** archive and delete.
+
+Chat stays separate from task execution: a conversation can never queue, start, review or publish a task. The only planned link is C3's explicit approval of a proposal into Backlog.
 
 **Open technical questions** (`SPEC.md` §18.12, `ARCHITECTURE.md` §15.11):
 

@@ -2,29 +2,28 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FolderGit2, LayoutDashboard, Settings } from 'lucide-react';
+import { FolderGit2, LayoutDashboard, MessagesSquare, Settings } from 'lucide-react';
 
+import { activeMainNavKey, type MainNavKey } from '@/lib/navigation';
 import { cn } from '@/lib/utils';
 
-const isActive = (pathname: string, href: string): boolean =>
-  href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
-
-const links = [
-  { href: '/', label: 'Overview', icon: LayoutDashboard },
-  { href: '/projects', label: 'Projects', icon: FolderGit2 },
-  { href: '/settings', label: 'Settings', icon: Settings },
+const links: { key: MainNavKey; href: string; label: string; icon: typeof Settings }[] = [
+  { key: 'overview', href: '/', label: 'Overview', icon: LayoutDashboard },
+  { key: 'projects', href: '/projects', label: 'Projects', icon: FolderGit2 },
+  { key: 'conversations', href: '/conversations', label: 'Conversations', icon: MessagesSquare },
+  { key: 'settings', href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export const MainNav = () => {
-  const pathname = usePathname();
+  const activeKey = activeMainNavKey(usePathname());
 
   return (
     <nav aria-label="Main navigation" className="space-y-1 px-3 pb-5">
       <p className="px-3 pt-2 pb-2 text-[0.6875rem] font-medium tracking-wider text-muted-foreground/80 uppercase">
         Workspace
       </p>
-      {links.map(({ href, label, icon: Icon }) => {
-        const active = isActive(pathname, href);
+      {links.map(({ key, href, label, icon: Icon }) => {
+        const active = key === activeKey;
         return (
           <Link
             key={href}

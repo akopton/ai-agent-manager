@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.5 — TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
+**Status:** Draft v0.6 — AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
 **Date:** 2026-11-06 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.6  
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.7  
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -677,7 +677,7 @@ These are **explicit validation tasks**, not implied guarantees. The architectur
 
 ## 15. AI Conversations (planned extension)
 
-> Conceptual architecture for `SPEC.md` §18. It is not implemented and does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
+> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI) is implemented**; see the implementation notes in §15.3 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
 
 ### 15.1 Module placement
 
@@ -737,6 +737,31 @@ Rules:
 - Project scoping is enforced in queries and commands. Every project-scoped read is filtered by `project_id`, and a global conversation's queries never join project tables.
 - Messages store content the user deliberately sent and model output. CLI credentials, tokens and environment values are never stored. Logged events are redacted and size-bounded, as for `run_events`.
 - Deleting a conversation (explicitly confirmed) deletes its messages, turns, summaries, native session records and pending proposals. Decisions and tasks keep their data with nulled origin references.
+
+#### C1 implementation notes (2026-11-06)
+
+Migration `0008_conversations` adds two tables, **additively**: no existing table is altered. Commands and reads live in `packages/database/src/conversations.ts`; contracts live in `packages/core/src/conversation.ts`.
+
+| Table | Columns | Constraints |
+|---|---|---|
+| `conversations` | `id`, `project_id` (`NOT NULL`, `RESTRICT`), `title`, `agent_runtime`, `model_id` (`NULL` = `Default`), `language_mode`, `revision`, `created_at`, `updated_at`, `last_message_at` | `CHECK`s on runtime (`claude`/`codex`), language mode (`pl_technical_en`/`pl`/`en`) and `revision >= 1`. Index `(project_id, updated_at)`. |
+| `conversation_messages` | `id`, `conversation_id` (`RESTRICT`), `sequence`, `role` (`user`/`assistant`), `kind` (`note`/`chat`), `content`, `request_id` (unique, nullable), `created_at` | `(conversation_id, sequence)` unique; `sequence >= 1`; a `note` must be a `user` message with a `request_id`. |
+
+Deviations from the conceptual model above, all intentional:
+
+- **No `scope` column.** C1 conversations are project-scoped (`IMPLEMENTATION_PLAN.md` §8). Global conversations would need a migration that relaxes `project_id`.
+- **No `status`/archive column.** Archive and delete are deferred to C3. The `RESTRICT` reference makes project disconnect fail closed while conversations exist, as for tasks.
+- **`kind` in addition to `role`.** It separates operator notes (`note`, stored only) from future CLI exchanges (`chat`). The `CHECK` lists already contain `assistant` and `chat`, so C2 can write them without rebuilding the table, but no C1 code path does. C2 adds the per-message runtime, model, status and error columns (nullable, additive) or a `conversation_turns` table.
+- **`revision`** is the settings revision. `PATCH` must name the revision it was based on; a stale one is refused with `conversation_changed`. Notes do not change it.
+- **`request_id`** is a client-generated UUID per note submission. A repeat with the same content returns the stored note (`created: false`); reuse for other content or another conversation is refused (`conversation_request_conflict`).
+
+Rules:
+
+- Every read and command filters by **both** project ID and conversation ID. A conversation of another project is reported as `conversation_not_found`, and its messages are never returned.
+- `sequence` is allocated as `max + 1` inside the same `IMMEDIATE` transaction as the insert. It gives a gap-free, deterministic order independent of clock values.
+- All appends go through one internal function, which C2 reuses for assistant messages.
+- Content is trimmed, uses `\n` line endings, is 1–20,000 characters long and contains no NUL. It is stored as plain text (Markdown kept as written).
+- The conversations module imports no agents, Git, orchestrator, execution, worker-command or task-command code. A static test enforces this (`apps/web/tests/conversations-ui.test.ts`).
 
 ### 15.4 Context assembly and isolation
 
@@ -826,6 +851,31 @@ These must be visible in the UI and are mitigated by fail-closed gating, no-tool
 | `POST` | `/api/proposals/:id/accept` | Create a `Backlog` task (requires a target project for global scope) |
 
 Conversation events use the same durable event log and SSE replay as run events (§10).
+
+**C1 routes (implemented 2026-11-06).** Conversations are nested under their project, like tasks (§10):
+
+| Method | Route | Purpose | Guard |
+|---|---|---|---|
+| `GET` | `/api/projects/:projectId/conversations` | List with message counts, most recently changed first | Loopback Host |
+| `POST` | `/api/projects/:projectId/conversations` | Create (`title`, optional `agentRuntime`, `modelId`, `languageMode`) | Host + same Origin + JSON, 64 KiB |
+| `GET` | `/api/projects/:projectId/conversations/:conversationId` | Conversation and full history | Host, and refuses cross-origin browser requests (as review diffs) |
+| `PATCH` | `/api/projects/:projectId/conversations/:conversationId` | Change settings (`revision` + changed fields) | Host + same Origin + JSON |
+| `POST` | `/api/projects/:projectId/conversations/:conversationId/messages` | Save a note (`requestId`, `content`); `201` new, `200` repeat | Host + same Origin + JSON |
+
+Errors:
+
+- `invalid_request` (400): schema failure, including any `role` or `kind` field.
+- `payload_too_large` (413) and `unsupported_media_type` (415).
+- `project_not_found` and `conversation_not_found` (404).
+- `conversation_changed` and `conversation_request_conflict` (409).
+
+No route starts a worker command, agent, task or Git operation. There is no SSE in C1.
+
+UI pages:
+
+- `/conversations`: projects with conversation counts.
+- `/projects/:projectId/conversations`: the list, plus **New conversation** at `…/new`.
+- `/projects/:projectId/conversations/:conversationId`: history, note composer and settings panel.
 
 ### 15.11 Verification gates and open questions
 

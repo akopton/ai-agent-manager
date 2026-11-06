@@ -16,6 +16,8 @@ const requiredTables = [
   'worker_commands',
   'reviews',
   'workspace_cleanups',
+  'conversations',
+  'conversation_messages',
 ] as const;
 
 export class DatabaseNotReadyError extends Error {

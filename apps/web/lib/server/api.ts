@@ -1,10 +1,12 @@
 import {
+  ConversationError,
   ExecutionError,
   PublicationError,
   ReviewActionError,
   TaskError,
   TaskRecoveryError,
   WorkspaceCleanupError,
+  type ConversationErrorCode,
   type ExecutionErrorCode,
   type PublicationErrorCode,
   type ReviewActionErrorCode,
@@ -108,6 +110,19 @@ const publicationErrorStatus = (code: PublicationErrorCode): number => {
   }
 };
 
+const conversationErrorStatus = (code: ConversationErrorCode): number => {
+  switch (code) {
+    case 'invalid_conversation_input':
+      return 400;
+    case 'project_not_found':
+    case 'conversation_not_found':
+      return 404;
+    case 'conversation_changed':
+    case 'conversation_request_conflict':
+      return 409;
+  }
+};
+
 /** Converts expected failures into structured responses; unexpected ones are logged. */
 export const handleRouteError = (error: unknown): Response => {
   if (error instanceof ProjectServiceError) {
@@ -153,6 +168,14 @@ export const handleRouteError = (error: unknown): Response => {
       error.code,
       error.message,
       workspaceCleanupErrorStatus(error.code),
+      error.details,
+    );
+  }
+  if (error instanceof ConversationError) {
+    return errorResponse(
+      error.code,
+      error.message,
+      conversationErrorStatus(error.code),
       error.details,
     );
   }

@@ -1,4 +1,5 @@
 import {
+  conversationErrorCodes,
   executionErrorCodes,
   projectRegistrationErrorCodes,
   projectSchema,
@@ -34,6 +35,7 @@ export const apiErrorCodes = [
   ...publicationErrorCodes,
   ...taskRecoveryErrorCodes,
   ...workspaceCleanupErrorCodes,
+  ...conversationErrorCodes,
   'internal_error',
 ] as const;
 

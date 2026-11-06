@@ -34,6 +34,8 @@ export {
   type ProjectSettingsUpdate,
 } from './projects.js';
 export {
+  conversationMessages,
+  conversations,
   gitOperations,
   projects,
   publications,
@@ -159,3 +161,16 @@ export {
   type WorkspaceCleanupClaim,
   type WorkspaceCleanupRecord,
 } from './workspace-cleanups.js';
+export {
+  addConversationNote,
+  countConversationsByProject,
+  createConversation,
+  findProjectConversation,
+  listConversationMessages,
+  listProjectConversations,
+  updateConversation,
+  type AddConversationNoteResult,
+  type ConversationMessageRecord,
+  type ConversationRecord,
+  type ConversationSummaryRecord,
+} from './conversations.js';

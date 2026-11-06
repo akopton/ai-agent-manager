@@ -11,6 +11,7 @@ import {
   Eye,
   GitBranch,
   Globe,
+  MessagesSquare,
   Pencil,
 } from 'lucide-react';
 
@@ -21,6 +22,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { conversationsUrl } from '@/lib/conversations/format';
 import type { ProjectDetails, RepositoryState } from '@/lib/projects/contracts';
 import { wasProjectSaved } from '@/lib/projects/feedback';
 import { describeHead, describeWorkingTree, formatTimestamp } from '@/lib/projects/format';
@@ -229,6 +231,12 @@ const ProjectPage = async ({
               <Link href={taskBoardUrl(project.id)}>
                 <Columns3 aria-hidden="true" />
                 Open board
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={conversationsUrl(project.id)}>
+                <MessagesSquare aria-hidden="true" />
+                Conversations
               </Link>
             </Button>
             <Button asChild variant="outline">
