@@ -17,7 +17,7 @@ import { getConversationSettings } from '@/lib/server/conversations';
 import { getExecutionSettings } from '@/lib/server/execution';
 import { loadForPage } from '@/lib/server/load';
 
-export const metadata: Metadata = { title: 'Settings · AI Agent Manager' };
+export const metadata: Metadata = { title: 'App Settings · AI Agent Manager' };
 
 const AppearanceCard = () => (
   <Card>
@@ -162,7 +162,7 @@ const SettingsPage = async () => {
     <>
       <section aria-labelledby="page-title" className="space-y-2">
         <h1 id="page-title" className="text-3xl font-semibold tracking-tight">
-          Settings
+          App Settings
         </h1>
         <p className="text-muted-foreground">
           Agent execution is off until you enable Trusted Local Mode here and trust a project. AI

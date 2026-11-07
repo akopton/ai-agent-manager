@@ -3,31 +3,17 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import {
-  AlertTriangle,
-  ArrowLeft,
-  CheckCircle2,
-  Columns3,
-  Eye,
-  GitBranch,
-  Globe,
-  MessagesSquare,
-  Pencil,
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CheckCircle2, Eye, GitBranch, Globe } from 'lucide-react';
 
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
-import { ProjectTrustCard } from '@/components/execution/project-trust-card';
-import { DisconnectProjectDialog } from '@/components/projects/disconnect-project-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { conversationsUrl } from '@/lib/conversations/format';
 import type { ProjectDetails, RepositoryState } from '@/lib/projects/contracts';
 import { wasProjectSaved } from '@/lib/projects/feedback';
 import { describeHead, describeWorkingTree, formatTimestamp } from '@/lib/projects/format';
 import { getDatabase } from '@/lib/server/database';
-import { getExecutionSettings, getProjectTrust } from '@/lib/server/execution';
 import { loadForPage } from '@/lib/server/load';
 import { getProjectDetails } from '@/lib/server/projects';
 import { countProjectTasks } from '@/lib/server/tasks';
@@ -195,8 +181,6 @@ const ProjectPage = async ({
       : {
           ...details,
           taskCounts: countProjectTasks(db).get(details.project.id) ?? emptyTaskCounts(),
-          trust: getProjectTrust(db, details.project.id),
-          trustedLocalEnabled: getExecutionSettings(db).trustedLocal.current,
         };
   });
 
@@ -212,43 +196,18 @@ const ProjectPage = async ({
     notFound();
   }
 
-  const { project, repository, taskCounts, trust, trustedLocalEnabled } = result.data;
+  const { project, repository, taskCounts } = result.data;
   const available = repository.status === 'available' ? repository : undefined;
 
   return (
     <>
       <section aria-labelledby="page-title" className="space-y-3">
-        <BackLink />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-3">
             <h1 id="page-title" className="text-3xl font-semibold tracking-tight break-words">
-              {project.name}
+              Overview
             </h1>
             <p className="font-mono text-sm break-all text-muted-foreground">{project.localPath}</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button asChild>
-              <Link href={taskBoardUrl(project.id)}>
-                <Columns3 aria-hidden="true" />
-                Open board
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href={conversationsUrl(project.id)}>
-                <MessagesSquare aria-hidden="true" />
-                Conversations
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href={`/projects/${project.id}/edit`}>
-                <Pencil aria-hidden="true" />
-                Edit settings
-              </Link>
-            </Button>
-            <DisconnectProjectDialog
-              project={{ id: project.id, name: project.name, localPath: project.localPath }}
-              taskCount={taskCounts.total}
-            />
           </div>
         </div>
       </section>
@@ -326,17 +285,6 @@ const ProjectPage = async ({
       </Card>
 
       <InstructionsCard instructions={project.instructions} />
-
-      <ProjectTrustCard
-        project={{
-          id: project.id,
-          localPath: project.localPath,
-          gitCommonDir: project.gitCommonDir,
-        }}
-        trust={trust}
-        trustedLocalEnabled={trustedLocalEnabled}
-        repositoryAvailable={available !== undefined}
-      />
 
       {available !== undefined ? (
         <RepositoryCards project={project} repository={available} />

@@ -702,3 +702,43 @@ These are **not** confirmed capabilities:
 
 **Next:** `ARCHITECTURE.md` — data model, module boundaries, orchestration, process control, and security design.  
 **Then:** `IMPLEMENTATION_PLAN.md` — small, verifiable milestones built on the successful PoC.
+
+
+## 19. UI-04A — Project Workspace Navigation (2026-11-07)
+
+UI-04A is the first stage of the broader UX improvement plan, after C4.2. Selecting a
+project opens its Overview and establishes a shared workspace with the project name,
+All projects / Switch project, and Overview, Kanban, Conversations and Settings links.
+Nested task/review pages belong to Kanban; conversation details and creation belong to
+Conversations. Section navigation is available without returning to the project list,
+wraps on narrow screens and exposes keyboard focus and the active page semantically.
+Existing feature pages, task lifecycle, consent systems and publication behavior remain.
+
+Routes: `/projects/:projectId` (Overview), `/board` (Kanban), `/conversations` (list),
+`/conversations/:conversationId` (conversation), `/settings` (Project Settings), with the
+last four paths relative to the project root. Existing `/tasks/:taskId[/edit|/review]`
+paths and proposal/task/origin/source-message links remain valid. `/edit` redirects to
+Project Settings. Direct list links continue to open the list. Browser-session memory
+per project restores the last conversation from the Conversations workspace link and
+the last board query from the Kanban link; new browser sessions start with canonical
+links, and unavailable browser storage falls back to them. Visits never count as activity.
+
+Project Settings owns repository registration preferences, instructions, execution trust,
+source-sharing permission and disconnect. Reuse existing validated controls, with no
+silent opt-in or merged consent. App Settings (`/settings`) retains the application-wide
+execution disclosure, independent AI Conversations acceptance, appearance and themes.
+The existing saved-settings return to Project Overview is preserved.
+
+Global Overview shows up to two Recent Projects, each linking to its workspace with
+its name, a reliable activity category and timestamp. Rank by the latest persisted project
+creation/settings update, task creation/update/lifecycle timestamp, conversation creation/
+update/message/note, or completed task execution. Ties use project ID ascending; completion
+wins category ties within a project. No source text or prompt is queried. Source-sharing
+changes now update the existing project settings timestamp, including revocation. No
+migration, visit tracking, analytics or worker command is added. Historical permission
+revocations without a timestamp cannot be reconstructed; archive/restore also have no
+complete timestamp history and are not used for ordering. Add Project and View All Projects
+remain small actions; the Projects library is preserved.
+
+Deferred UX work is tracked in `IMPLEMENTATION_PLAN.md` §10. Individual feature-page
+redesigns and destination-status action color changes are outside UI-04A.

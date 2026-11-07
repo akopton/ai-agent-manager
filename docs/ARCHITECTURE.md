@@ -1187,3 +1187,32 @@ UI pages:
 ---
 
 **Next:** Write `IMPLEMENTATION_PLAN.md`, then implement the first vertical slice: Git repository registration, durable task state, and one agent run on a disposable repository.
+
+
+## 17. UI-04A — Project workspace navigation
+
+Navigation structure agreed before implementation (2026-11-07): a shared App Router
+`/projects/[projectId]/layout.tsx` owns the project name, All projects link and four section
+links. Overview is `/projects/:projectId`; Kanban remains `/projects/:projectId/board`;
+Conversations remains `/projects/:projectId/conversations[/:conversationId]`; Project Settings
+is `/projects/:projectId/settings`. The old `/edit` entry redirects to Settings. Existing task,
+review, proposal and message anchors remain unchanged. Task descendants activate Kanban;
+conversation descendants activate Conversations. Global navigation keeps Projects active for
+all project descendants; `/conversations` remains the cross-project conversation index.
+
+Project settings reuse the existing edit, trust and source-sharing controls. App Settings
+(`/settings`) retains global execution consent, separate conversation consent and appearance.
+No permission scope or worker lifecycle changes. Navigation never starts or stops work.
+
+Browser-session memory is per project: the last board URL (including query) and last visited
+conversation detail URL. Store only validated same-project routes in sessionStorage; blocked
+storage falls back to canonical links. Direct list URLs always open the list. No visit writes
+to SQLite. Recent Projects uses a read-only database query over persisted project, task,
+conversation and completed-run timestamps, limited to two projects with deterministic ties.
+
+
+Production HTTP QA exposed a Webpack native-addon resolution problem: a transitive
+`better-sqlite3` loader was bundled and looked for its binary under `.next`. The web package
+now declares the same pinned `better-sqlite3` version as the database package and explicitly
+lists it in `serverExternalPackages`. This is a runtime packaging correction, not a new
+persistence layer. Both processes still use the existing database package and SQLite schema.

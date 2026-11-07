@@ -225,3 +225,46 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - Known limits: macOS/Node.js 24 and compiled native helper; per-file rather than atomic repository captures; unfamiliar untracked types excluded; tracked-first entry caps and search budgets may omit files; CLI restrictions remain unverified. Manual acceptance is listed under C4.2 in the implementation plan; UI-04 remains next.
 
 - C4.2 validation: Node.js 24.22.2 / pnpm 12.16.1; lint, typecheck, format:check and 829 full-suite tests passed. Final refinements passed 21 focused worker context/boundary tests and 85 core tests, plus the worker and webpack web builds. Default build remains blocked both inside/outside the sandbox by Turbopack’s CSS worker port binding (`Operation not permitted (os error 1)`); the supported webpack alternative passed. Tests required outside-sandbox execution because tsx’s local IPC socket was denied inside it. Browser/manual acceptance remains pending.
+
+
+**UI-04A decisions (2026-11-07, after C4.2):**
+
+- Project-centered navigation uses a shared `/projects/[projectId]/layout.tsx`: project name,
+  switch-project link and Overview / Kanban / Conversations / Settings. All project descendants
+  select Projects globally. The global Conversations index stays available.
+- Existing project, board, conversation, task, review, proposal and message-anchor URLs remain;
+  `/projects/:projectId/edit` redirects to `/projects/:projectId/settings`. Settings saves still
+  return to Overview with the existing success query. No task or conversation UI redesign.
+- Project Settings reuses registration editing, trust, source-sharing and disconnect controls.
+  Source permission is editable only there, with a link from conversation settings. App Settings
+  retains global execution consent, separate conversation consent and appearance. No permission
+  scope, gate, worker command, CLI, Git or publishing behavior is changed.
+- Per-project sessionStorage remembers a validated board query and conversation detail path.
+  No SQLite writes on visits; blocked storage falls back to canonical links. This is per-browser-
+  session convenience, not a persisted conversation selection across application/browser sessions.
+- Recent Projects uses a read-only query and at most two projects, ordered by persisted project,
+  task, conversation and completed-run activity. Generic categories avoid inferring a specific
+  edit from an aggregate timestamp. Source permission grants/revocations now update the existing
+  project settings timestamp. No migration or analytics tables. Historical revocations and
+  archive/restore lack complete timestamps and cannot be reconstructed.
+- UI-04A begins the staged UX roadmap; UI-04B/C/D and later deletion/working-tree transfer are
+  deferred in `IMPLEMENTATION_PLAN.md` §10, including destination-status action colors.
+- Browser/manual acceptance remains pending; the checklist is in `IMPLEMENTATION_PLAN.md` §10.
+
+- UI-04A validation: Node.js 24.22.2 / pnpm 12.16.1; `pnpm lint`, `pnpm typecheck`,
+  `pnpm format:check` and `pnpm test` passed (836 tests, including seven new workspace
+  regressions). Default `pnpm build` failed both inside and outside the sandbox with the
+  known Turbopack CSS worker port-binding error; it did not pass. The supported alternative,
+  `pnpm --filter @ai-agent-manager/web exec next build --webpack`, and the worker build passed.
+  Tests ran outside the sandbox because tsx's local IPC socket is blocked inside it.
+- A real loopback production HTTP smoke check passed with temporary SQLite data and unavailable
+  disposable repository registrations: global pages, both project workspaces, board/archived
+  board, conversation list/new/detail, task detail/edit/review, Project Settings, App Settings,
+  recent-project empty/single/two ordering, source-permission link, nested active navigation,
+  and the old edit route's streamed redirect. No worker commands or task runs were created.
+  No browser automation was available: hydration, actual sessionStorage behavior, pointer/keyboard
+  interaction, visual responsive layout and browser back/forward remain manual acceptance items.
+- Deliberate supporting fix: production HTTP QA found Webpack bundling the transitive SQLite
+  loader without its native binary. The web app now directly declares the existing pinned
+  `better-sqlite3` version and explicitly externalizes it. The rebuilt production server then
+  loaded the disposable database successfully. No new dependency version or schema migration.

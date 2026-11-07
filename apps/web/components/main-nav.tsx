@@ -11,7 +11,7 @@ const links: { key: MainNavKey; href: string; label: string; icon: typeof Settin
   { key: 'overview', href: '/', label: 'Overview', icon: LayoutDashboard },
   { key: 'projects', href: '/projects', label: 'Projects', icon: FolderGit2 },
   { key: 'conversations', href: '/conversations', label: 'Conversations', icon: MessagesSquare },
-  { key: 'settings', href: '/settings', label: 'Settings', icon: Settings },
+  { key: 'settings', href: '/settings', label: 'App Settings', icon: Settings },
 ];
 
 export const MainNav = () => {

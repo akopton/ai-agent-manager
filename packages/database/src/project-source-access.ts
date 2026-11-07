@@ -121,6 +121,7 @@ export const setProjectSourceAccess = (
         .set(
           data.access === 'allowed'
             ? {
+                updatedAt: now,
                 conversationSourceAccess: 'allowed',
                 conversationSourceIdentity: JSON.stringify(
                   sourceRepositoryIdentitySchema.parse(repositoryIdentity),
@@ -130,6 +131,7 @@ export const setProjectSourceAccess = (
                 conversationSourceAllowedAt: now,
               }
             : {
+                updatedAt: now,
                 conversationSourceAccess: 'none',
                 conversationSourceIdentity: null,
                 conversationSourceCommonDir: null,

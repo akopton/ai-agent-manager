@@ -408,12 +408,12 @@ test('form helpers validate, reset the model on a runtime switch and send only c
   });
 });
 
-test('main navigation highlights Conversations for global and project conversation pages', () => {
+test('main navigation keeps project conversations in the project workspace', () => {
   assert.equal(activeMainNavKey('/'), 'overview');
   assert.equal(activeMainNavKey('/conversations'), 'conversations');
-  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations`), 'conversations');
-  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations/new`), 'conversations');
-  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations/${id(1)}`), 'conversations');
+  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations`), 'projects');
+  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations/new`), 'projects');
+  assert.equal(activeMainNavKey(`/projects/${projectId}/conversations/${id(1)}`), 'projects');
   assert.equal(activeMainNavKey('/projects'), 'projects');
   assert.equal(activeMainNavKey(`/projects/${projectId}/board`), 'projects');
   assert.equal(activeMainNavKey('/projects/conversations-site'), 'projects');

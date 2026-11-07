@@ -55,12 +55,6 @@ const ProjectConversationsPage = async ({ params }: { params: Promise<{ projectI
   return (
     <>
       <section aria-labelledby="page-title" className="space-y-3">
-        <Button asChild variant="ghost" size="sm" className="-ml-2.5">
-          <Link href={`/projects/${project.id}`}>
-            <ArrowLeft aria-hidden="true" />
-            Back to project
-          </Link>
-        </Button>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-3">
             <h1 id="page-title" className="text-3xl font-semibold tracking-tight break-words">

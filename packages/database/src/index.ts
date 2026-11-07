@@ -1,4 +1,5 @@
 export { createDatabase, type DatabaseConnection } from './client.js';
+export { listRecentProjects, type RecentProject } from './recent-projects.js';
 export {
   defaultDataRoot,
   resolveDataRoot,

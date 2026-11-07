@@ -552,3 +552,78 @@ The existing fail-closed gate becomes **Strict Isolated Mode**. It stays unchang
   - OS-level mechanisms for the controls the CLIs cannot cover (credential isolation, subprocess coverage);
   - SEC-01.
 - The G2 real-CLI diagnostic runner and the SEC-01 regression tests T1–T3 stay deferred follow-ups.
+
+
+## 10. UI-04 — Staged UX improvement plan
+
+Historical M0–M7, SEC and C milestone IDs and implementation history remain unchanged.
+This section refines the earlier broad UI-04 polishing notes; it does not schedule SSE,
+source-file viewers or any other new functional capability into UI-04A.
+
+### UI-04A — Project Workspace Navigation (2026-11-07)
+
+Implemented: shared project layout and four workspace links, existing-route compatibility,
+Project Settings consolidation, App Settings naming, per-project browser-session board and
+conversation memory, and two recent projects derived from persisted activity. Route structure
+and architecture decisions: `ARCHITECTURE.md` §17; product acceptance: `SPEC.md` §19.
+No scheduler, execution, Git, publication, consent or task lifecycle redesign.
+
+Focused regressions cover multiple projects and nested routes, preserved canonical/deep-link
+paths, safe browser memory, settings separation, wrapping/focus semantics, recent-project empty/
+single/two states, read-only queries and mutation ordering. Full validation results and limits
+are recorded in `PROJECT_CONTEXT.md`.
+
+**Manual browser acceptance checklist (disposable projects; pending):**
+
+- Open global Overview empty, with one project, and with three; verify at most two recent items,
+  Add Project and View All Projects. Refreshing/viewing must not reorder projects.
+- Open Projects, select A, then switch to B. Verify the correct name and all four destinations
+  throughout. Navigate Overview → Kanban → Conversations → Settings without global backtracking.
+- Direct-load/refresh board, archived board, conversation list, new conversation, conversation
+  detail, task detail/edit, review, Project Settings and App Settings. Use browser back/forward.
+- On A's archived board, switch to a conversation and back: retain the archived query. Visit
+  two A conversations; switch to Kanban and back: reopen the last one. B remembers only B.
+  Direct conversation-list links must still open the list. Repeat with storage blocked.
+- Follow approved-proposal → task → origin conversation/source-message anchors. Confirm
+  existing Sources, notes, message-level Generate tasks, proposal editing and approval remain.
+- Confirm Project Settings contains repository preferences, trust, source-sharing and disconnect;
+  the old edit URL redirects there. Save settings and verify the existing success return.
+  Global execution consent, AI Conversations acceptance and appearance remain in App Settings.
+- With all consent off, navigating must enable nothing. In disposable fixtures, exercise task
+  creation/edit/queue and conversation note saving; verify meaningful mutations reorder Recent
+  Projects while page visits do not. Never launch an authenticated CLI for this QA.
+- At narrow viewport widths, verify wrapped links, long project names and no navigation overflow.
+  Tab through links, verify focus, Enter activation, current-page semantics and skip-to-content.
+- Observe an already running disposable fake-CLI turn/task while switching sections; navigation
+  must neither restart nor stop worker-owned work.
+
+### UI-04B — Conversations Layout (deferred)
+
+- Project conversation list.
+- Chat / Tasks / Notes tabs.
+- Cleaner composer and collapsed conversation settings.
+
+### UI-04C — Message & Task UX (deferred)
+
+- Generate tasks and Focus inside the assistant message footer.
+- Compact Sources and proposal cards.
+- Easier access to Edit on long Task Details pages.
+- Task origin/source-message preview.
+- Status-changing task actions must use the semantic color of the destination status, drawn
+  from the same centralized status tokens as the destination Kanban column indicator.
+  Non-status actions retain their own semantics. Not implemented in UI-04A.
+  Queue uses Queued; Back to Backlog uses Backlog; Retry, Resume and Request Changes use
+  Queued. These destination-status colors remain independent of the global accent theme
+  and are deferred to the later Kanban UX polish.
+
+### UI-04D — References & Final Polish (deferred)
+
+- Explicit references to chat messages and notes.
+- Composer reference chips.
+- Responsive and keyboard polish.
+
+### Later functional work (unscheduled)
+
+- Safe permanent deletion of eligible tasks, proposals and conversations.
+- Audit and optional operator-approved transfer of local working-tree changes into managed
+  task workspaces.

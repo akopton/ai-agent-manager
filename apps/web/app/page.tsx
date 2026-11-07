@@ -1,104 +1,45 @@
 import Link from 'next/link';
-import { Bot, LayoutDashboard, Plus } from 'lucide-react';
-
-import { Badge } from '@/components/ui/badge';
+import { connection } from 'next/server';
+import { listRecentProjects } from '@ai-agent-manager/database';
+import { DatabaseNotReady } from '@/components/projects/database-not-ready';
+import { RecentProjects } from '@/components/projects/recent-projects';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { getDatabase } from '@/lib/server/database';
+import { loadForPage } from '@/lib/server/load';
 
-const plannedAreas = [
-  {
-    title: 'Automatic scheduling',
-    icon: Bot,
-    description: 'Start queued tasks automatically when a runtime is free.',
-    detail:
-      'Today every queued task waits for you: open it and click Start execution. It runs in its own branch and worktree, then waits for your review.',
-  },
-  {
-    title: 'Overview',
-    icon: LayoutDashboard,
-    description: 'See the bigger picture across projects.',
-    detail: 'Follow queued work, active runs, and changes waiting for your review.',
-  },
-];
-
-const HomePage = () => (
-  <>
-    <section
-      aria-labelledby="page-title"
-      className="flex flex-wrap items-start justify-between gap-4"
-    >
-      <div>
-        <p className="mb-2 text-sm text-muted-foreground">Your development workspace</p>
+const HomePage = async () => {
+  await connection();
+  const result = await loadForPage(() => listRecentProjects(getDatabase()));
+  return (
+    <>
+      <section aria-labelledby="page-title" className="space-y-3">
         <h1 id="page-title" className="text-3xl font-semibold tracking-tight">
           Overview
         </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-          A home for your projects, coding tasks, and reviews.
-        </p>
-      </div>
-      <Badge variant="secondary">Preview</Badge>
-    </section>
-
-    <Card className="gap-6 p-2 sm:p-4">
-      <CardHeader>
-        <CardTitle>
-          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">
-            A clear space for your next task
+        <p className="text-sm text-muted-foreground">Continue work in your recent projects.</p>
+      </section>
+      <section aria-labelledby="recent-projects" className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="recent-projects" className="text-lg font-semibold">
+            Recent Projects
           </h2>
-        </CardTitle>
-        <CardDescription className="max-w-2xl leading-6">
-          Coordinate work across local repositories and review agent changes before publishing.
-          Start by adding a local repository, then create and queue tasks on its board and start
-          each one from its task page.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-wrap items-center gap-4">
-        <Button asChild size="lg">
-          <Link href="/projects/new">
-            <Plus aria-hidden="true" />
-            Add project
-          </Link>
-        </Button>
-        <Button asChild size="lg" variant="outline">
-          <Link href="/projects">View projects</Link>
-        </Button>
-      </CardContent>
-    </Card>
-
-    <section aria-labelledby="planned-areas" className="space-y-4">
-      <h2 id="planned-areas" className="text-sm font-semibold">
-        Coming next
-      </h2>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {plannedAreas.map(({ title, icon: Icon, description, detail }) => (
-          <Card key={title} className="h-full">
-            <CardHeader className="gap-3">
-              <div className="mb-1 flex size-10 items-center justify-center rounded-lg bg-muted">
-                <Icon className="size-5 text-muted-foreground" aria-hidden="true" />
-              </div>
-              <CardTitle>
-                <h3>{title}</h3>
-              </CardTitle>
-              <CardDescription className="leading-6">{description}</CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <p className="text-sm leading-6 text-muted-foreground">{detail}</p>
-            </CardContent>
-            <CardFooter>
-              <Badge variant="outline">Coming soon</Badge>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
-    </section>
-  </>
-);
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm">
+              <Link href="/projects/new">Add Project</Link>
+            </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/projects">View All Projects</Link>
+            </Button>
+          </div>
+        </div>
+        {result.ok ? (
+          <RecentProjects projects={result.data} />
+        ) : (
+          <DatabaseNotReady message={result.message} />
+        )}
+      </section>
+    </>
+  );
+};
 
 export default HomePage;

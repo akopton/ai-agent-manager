@@ -10,7 +10,6 @@ import { ConversationHistory } from '@/components/conversations/conversation-his
 import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { ConversationSettingsForm } from '@/components/conversations/conversation-settings-form';
 import { MessageComposer } from '@/components/conversations/message-composer';
-import { ProjectSourceAccessCard } from '@/components/conversations/project-source-access-card';
 import { TaskProposalsPanel } from '@/components/conversations/task-proposals-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -107,8 +106,8 @@ const ConversationPage = async ({
           <AlertDescription>
             <p>
               {sourceAccess.current
-                ? `With each message, the CLI first chooses files from a list of ${project.name}'s eligible tracked files (current working tree of the registered checkout); AI Agent Manager then reads bounded excerpts read-only and sends them to the provider with your message. Sensitive, ignored, dependency and build files are excluded. Current tracked edits are included; untracked and ignored files are excluded.`
-                : 'Allow source sharing for this project in the Settings panel, or switch the conversation to General Chat. Until then, messages are refused and nothing is read.'}
+                ? `With each message, the CLI first chooses files from a list of ${project.name}'s eligible tracked and untracked source files (current working tree of the registered checkout); AI Agent Manager then reads bounded excerpts read-only and sends them to the provider with your message. Sensitive, ignored, dependency and build files are excluded. Current saved edits are included; ignored files are excluded.`
+                : 'Allow source sharing for this project in Project Settings, or switch the conversation to General Chat. Until then, messages are refused and nothing is read.'}
             </p>
           </AlertDescription>
         </Alert>
@@ -165,15 +164,16 @@ const ConversationPage = async ({
               conversation={conversation}
               sourceSharingAllowed={sourceAccess.current}
             />
-            {projectAware || sourceAccess.access === 'allowed' ? (
-              <div className="border-t pt-5">
-                <ProjectSourceAccessCard
-                  projectId={project.id}
-                  projectName={project.name}
-                  sourceAccess={sourceAccess}
-                />
-              </div>
-            ) : null}
+            <p className="border-t pt-5 text-sm text-muted-foreground">
+              Source-sharing permission is managed in{' '}
+              <Link
+                href={`/projects/${project.id}/settings#source-sharing`}
+                className="text-primary underline underline-offset-4"
+              >
+                Project Settings
+              </Link>
+              .
+            </p>
           </CardContent>
         </Card>
       </div>
