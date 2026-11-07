@@ -46,6 +46,10 @@ repository inspection and the task worktree lifecycle (see [`packages/git/README
 
 ## Development commands
 
+Project-Aware working-tree reads require macOS and Xcode Command Line Tools (`/usr/bin/cc`).
+`pnpm build` compiles the trusted descriptor-based source reader; unavailable helpers fail closed.
+The worker development command builds this helper before startup. No repository code is compiled.
+
 Use pnpm 12.16.1, pinned in `package.json`, and **Node.js 24** (declared in the root
 `package.json` `engines` field and in `.nvmrc`). The web tooling alone would accept
 `^20.19.0 || ^22.13.0 || >=24`, but Node.js 20 caused React `ArrayBuffer` compatibility

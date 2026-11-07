@@ -1,4 +1,12 @@
 import { GitCommandError } from './errors.js';
+import { createHash } from 'node:crypto';
+import {
+  directoryIdentity,
+  readWorkingTreeFile,
+  sameIdentity,
+  type DirectoryIdentity,
+  type WorkingTreeRead,
+} from './working-tree-reader.js';
 import { runGit, runGitChecked } from './process.js';
 import { validateRepository } from './repository.js';
 
@@ -13,9 +21,9 @@ import { validateRepository } from './repository.js';
 //   `ls-files` (to apply the checkout's ignore rules). None writes refs, the index, objects,
 //   config or the working tree; `GIT_OPTIONAL_LOCKS=0`, no hooks, no fsmonitor, no lazy fetch and
 //   a sanitized environment come from `runGit`.
-// - Content is read from Git objects of one resolved commit, never from the filesystem: no path
-//   is ever joined to the checkout, so traversal and symlink escapes are impossible, symlinks and
-//   submodules are skipped, and uncommitted or untracked files and task worktrees are never seen.
+// - C4.1: index membership and ignore rules select eligible paths. A trusted native helper
+//   opens each component with openat/O_NOFOLLOW anchored to the expected checkout inode.
+//   All source reads are bounded and regular-file-only. Committed APIs remain for legacy callers.
 // - Every command is bounded by a timeout and an output limit.
 //
 // The read policy (which tracked paths may be read) lives in `@ai-agent-manager/core`.
@@ -49,9 +57,141 @@ export type SourceSnapshot = {
   commit: string;
   /** Short branch name, or `null` for a detached HEAD. */
   branch: string | null;
+  /** C4.1 filesystem identities, retained in memory only. */
+  directories?: { root: DirectoryIdentity; common: DirectoryIdentity };
 };
 
-export type SourceTreeEntry = { path: string; oid: string; size: number };
+export type SourceTreeEntry = {
+  path: string;
+  oid: string;
+  size: number;
+  indexOid?: string;
+};
+
+export const sourceSnapshotIdentity = (
+  snapshot: SourceSnapshot,
+): { root: string; common: string } => {
+  if (snapshot.directories === undefined)
+    throw new SourceContextError('repository_unavailable', 'Missing repository identity.');
+  return {
+    root: `${snapshot.directories.root.dev}:${snapshot.directories.root.ino}`,
+    common: `${snapshot.directories.common.dev}:${snapshot.directories.common.ino}`,
+  };
+};
+
+/** Resolves HEAD and pins checkout/Git directory identities for working-tree reads. */
+export const resolveWorkingSourceSnapshot = async (expected: {
+  localPath: string;
+  gitCommonDir: string;
+}): Promise<SourceSnapshot> => {
+  const snapshot = await resolveSourceSnapshot(expected);
+  return {
+    ...snapshot,
+    directories: {
+      root: await directoryIdentity(snapshot.root),
+      common: await directoryIdentity(snapshot.commonDir),
+    },
+  };
+};
+
+export const verifyWorkingSourceSnapshot = async (snapshot: SourceSnapshot): Promise<void> => {
+  await verifySourceRepository({ localPath: snapshot.root, gitCommonDir: snapshot.commonDir });
+  if (
+    snapshot.directories === undefined ||
+    !sameIdentity(snapshot.directories.root, await directoryIdentity(snapshot.root)) ||
+    !sameIdentity(snapshot.directories.common, await directoryIdentity(snapshot.commonDir))
+  ) {
+    throw new SourceContextError('repository_unavailable', 'The repository identity changed.');
+  }
+};
+
+/** Index membership determines tracked paths, including staged additions. HEAD supplies provenance. */
+export const listWorkingSourceTree = async (
+  snapshot: SourceSnapshot,
+  options: { maxEntries: number },
+): Promise<SourceTree> => {
+  await verifyWorkingSourceSnapshot(snapshot);
+  const head = await listSourceTree(snapshot, options);
+  const committed = new Map(head.files.map((entry) => [entry.path, entry]));
+  const output = await runGitChecked(['ls-files', '--stage', '-z', '--cached'], {
+    cwd: snapshot.root,
+    timeoutMs: readTimeoutMs,
+    maxOutputBytes: 64 * 1024 * 1024,
+  });
+  const files: SourceTreeEntry[] = [];
+  const skipped: string[] = [];
+  const entries = output.split('\0').filter(Boolean);
+  for (const record of entries.slice(0, options.maxEntries)) {
+    const tab = record.indexOf('\t');
+    const [mode, oid, stage] = record.slice(0, tab).split(' ');
+    const path = record.slice(tab + 1);
+    if (
+      tab < 0 ||
+      oid === undefined ||
+      !objectIdPattern.test(oid) ||
+      stage !== '0' ||
+      (mode !== '100644' && mode !== '100755')
+    ) {
+      skipped.push(path);
+      continue;
+    }
+    files.push({ path, oid: committed.get(path)?.oid ?? '', size: 0, indexOid: oid });
+  }
+  return { files, skipped, total: entries.length, truncated: entries.length > options.maxEntries };
+};
+
+export type WorkingSourceRead = WorkingTreeRead & { state: 'matches_head' | 'modified' | 'added' };
+
+/** All bytes are from a bounded no-symlink descriptor read. No filters, scripts or Git writes. */
+export const readWorkingSource = async (
+  snapshot: SourceSnapshot,
+  entry: SourceTreeEntry,
+  maxBytes: number,
+): Promise<WorkingSourceRead> => {
+  await verifyWorkingSourceSnapshot(snapshot);
+  const current = await runGitChecked(
+    ['ls-files', '--stage', '-z', '--cached', '--', `:(literal)${entry.path}`],
+    { cwd: snapshot.root, timeoutMs: readTimeoutMs, maxOutputBytes: 16 * 1024 },
+  );
+  const expected = ` ${entry.indexOid} 0\t${entry.path}\0`;
+  if (
+    !/^100(?:644|755) /.test(current) ||
+    !current.endsWith(expected) ||
+    current.split('\0').length !== 2
+  ) {
+    throw new Error('The tracked entry changed or is no longer eligible.');
+  }
+  if (snapshot.directories === undefined)
+    throw new SourceContextError('repository_unavailable', 'Missing directory identity.');
+  const result = await readWorkingTreeFile(
+    snapshot.root,
+    entry.path,
+    maxBytes,
+    snapshot.directories.root,
+  );
+  await verifyWorkingSourceSnapshot(snapshot);
+  const baseline =
+    entry.oid === ''
+      ? (parseTree(
+          (
+            await runGit(
+              ['ls-tree', '-r', '-z', '-l', snapshot.commit, '--', `:(literal)${entry.path}`],
+              { cwd: snapshot.root, timeoutMs: readTimeoutMs, maxOutputBytes: 16 * 1024 },
+            )
+          ).stdoutBytes,
+          1,
+        ).files[0]?.oid ?? '')
+      : entry.oid;
+  const algorithm = snapshot.commit.length === 64 ? 'sha256' : 'sha1';
+  const oid = createHash(algorithm)
+    .update(`blob ${result.bytes.length}\0`)
+    .update(result.bytes)
+    .digest('hex');
+  return {
+    ...result,
+    state: baseline === '' ? 'added' : oid === baseline ? 'matches_head' : 'modified',
+  };
+};
 
 export type SourceTree = {
   /** Regular files (modes 100644 and 100755), in Git's order. */

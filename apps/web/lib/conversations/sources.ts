@@ -18,7 +18,7 @@ export const describeSourceAccessReason = (reason: ProjectSourceAccessView['reas
     case 'stale':
       return 'The source-sharing disclosure changed. Review and allow it again.';
     case 'not_allowed':
-      return 'Project-Aware messages are refused until you allow sharing this project’s committed source with the selected CLI. General Chat needs no permission.';
+      return 'Project-Aware messages are refused until you allow sharing this project’s tracked working-tree source with the selected CLI. General Chat needs no permission.';
   }
 };
 
@@ -65,6 +65,15 @@ export const buildSourcesView = (record: RepositoryContextRecord): SourcesView =
     reference: formatSourceReference(source),
     detail: [
       originLabels[source.origin],
+      source.state === 'modified'
+        ? 'working-tree modification'
+        : source.state === 'added'
+          ? 'tracked addition'
+          : source.state === 'matches_head'
+            ? 'working tree matches HEAD bytes'
+            : null,
+      source.contentHash === undefined ? null : `SHA-256 ${source.contentHash}`,
+      source.readAt === undefined ? null : `read ${source.readAt}`,
       source.partial
         ? `${source.endLine - source.startLine + 1} of ${source.totalLines} lines`
         : null,
@@ -74,6 +83,15 @@ export const buildSourcesView = (record: RepositoryContextRecord): SourcesView =
       .join(' · '),
   }));
   const notes: string[] = [];
+  if (record.sourceMode === 'working_tree') {
+    notes.push(
+      'Current working-tree excerpts, including tracked edits. Files were captured individually; this is not a complete repository snapshot or a clean-status check. Later edits may differ.',
+    );
+    if (record.retrievedAt !== undefined)
+      notes.push(
+        `Retrieved ${record.retrievedAt}. Relevant files are reread on each turn, even when HEAD is unchanged.`,
+      );
+  }
   if (record.sources.length === 0) {
     notes.push('No repository content was supplied for this reply.');
   }

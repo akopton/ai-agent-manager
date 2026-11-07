@@ -4,6 +4,7 @@ import {
   projectIdSchema,
   projectSourceAccessInputSchema,
   projectSourceDisclosure,
+  sourceRepositoryIdentitySchema,
   type ProjectSourceAccessDecision,
 } from '@ai-agent-manager/core';
 import { eq } from 'drizzle-orm';
@@ -26,10 +27,12 @@ export type ProjectSourceAccessRecord = Pick<
   | 'conversationSourceCommonDir'
   | 'conversationSourceDisclosureVersion'
   | 'conversationSourceAllowedAt'
+  | 'conversationSourceIdentity'
 >;
 
 const columns = {
   id: projects.id,
+  conversationSourceIdentity: projects.conversationSourceIdentity,
   gitCommonDir: projects.gitCommonDir,
   conversationSourceAccess: projects.conversationSourceAccess,
   conversationSourceCommonDir: projects.conversationSourceCommonDir,
@@ -80,7 +83,12 @@ export const requireProjectSourceAccess = (tx: Transaction, projectId: string): 
  */
 export const setProjectSourceAccess = (
   db: Database,
-  { projectId, input, now }: { projectId: string; input: unknown; now: number },
+  {
+    projectId,
+    input,
+    now,
+    repositoryIdentity,
+  }: { projectId: string; input: unknown; now: number; repositoryIdentity?: unknown },
 ): ProjectSourceAccessRecord | undefined => {
   const parsed = projectSourceAccessInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -114,12 +122,16 @@ export const setProjectSourceAccess = (
           data.access === 'allowed'
             ? {
                 conversationSourceAccess: 'allowed',
+                conversationSourceIdentity: JSON.stringify(
+                  sourceRepositoryIdentitySchema.parse(repositoryIdentity),
+                ),
                 conversationSourceCommonDir: current.gitCommonDir,
                 conversationSourceDisclosureVersion: projectSourceDisclosure.version,
                 conversationSourceAllowedAt: now,
               }
             : {
                 conversationSourceAccess: 'none',
+                conversationSourceIdentity: null,
                 conversationSourceCommonDir: null,
                 conversationSourceDisclosureVersion: null,
                 conversationSourceAllowedAt: null,

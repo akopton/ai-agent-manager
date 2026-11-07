@@ -485,7 +485,7 @@ test('settings show the context choice; the source-sharing card states what is s
   assert.match(card, /disabled=""/);
   assert.match(
     card,
-    /Uncommitted edits, untracked files, task worktrees and Git metadata are never read/,
+    /including uncommitted edits. Untracked and ignored files, task worktrees and Git internals are excluded/,
   );
   assert.doesNotMatch(card, /sandbox(ed)?|isolated|read-only mode/i);
   const allowed = render(
@@ -522,4 +522,24 @@ test('web conversation code reaches Git only through the read-only source-contex
       file,
     );
   }
+});
+
+test('working-tree Sources distinguish captured edits from legacy committed replies', () => {
+  const legacy = record();
+  const captured = record({
+    sourceMode: 'working_tree',
+    retrievedAt: '2026-11-07T12:00:00.000Z',
+    sources: legacy.sources.map((source) => ({
+      ...source,
+      state: 'modified',
+      contentHash: 'a'.repeat(64),
+      readAt: '2026-11-07T11:59:59.000Z',
+    })),
+  });
+  const html = render(createElement(ReplySources, { record: captured }));
+  assert.match(html, /Current working tree/);
+  assert.match(html, /working-tree modification/);
+  assert.match(html, /SHA-256/);
+  assert.match(html, /not a complete repository snapshot/);
+  assert.doesNotMatch(html, /uncommitted changes were not included/);
 });

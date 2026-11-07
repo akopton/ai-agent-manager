@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import {
   mkdirSync,
+  statSync,
   readdirSync,
   realpathSync,
   renameSync,
@@ -29,12 +30,16 @@ import {
   setProjectSourceAccess,
   updateConversation,
 } from '@ai-agent-manager/database';
-import { git, snapshotTree } from './execution-fixtures.js';
+import { createRepository, git, snapshotTree } from './execution-fixtures.js';
+import {
+  prepareRepositoryContext,
+  retrieveRepositoryContext,
+} from '../src/conversations/repository-context.js';
 import { reply, scope, withFixture, type Fixture, type Step } from './conversation-fixtures.js';
 
 // C4 — project-aware turns in the worker with fake Claude/Codex CLIs, a disposable repository and
 // a temporary database: access checks, model-directed selection with validation, bounded reads of
-// committed content only, sources, freshness, failures, Stop and C3.1. No real CLI runs.
+// tracked working-tree content, sources, freshness, failures, Stop and C3.1. No real CLI runs.
 
 const secret = 'SUPER-SECRET-TOKEN-123';
 
@@ -70,6 +75,10 @@ const seedRepository = (fixture: Fixture) => {
 const allowSourceSharing = (fixture: Fixture) =>
   setProjectSourceAccess(fixture.db, {
     projectId: fixture.projectId,
+    repositoryIdentity: {
+      root: `${statSync(fixture.repository.root).dev}:${statSync(fixture.repository.root).ino}`,
+      common: `${statSync(fixture.repository.commonDir).dev}:${statSync(fixture.repository.commonDir).ino}`,
+    },
     input: {
       access: 'allowed',
       gitCommonDir: fixture.repository.commonDir,
@@ -87,12 +96,12 @@ const turnRecord = (fixture: Fixture, turnId: string) =>
   );
 
 for (const runtime of ['claude', 'codex'] as const) {
-  test(`${runtime}: a project-aware turn selects, validates and sends bounded committed excerpts`, async () => {
+  test(`${runtime}: a project-aware turn selects, validates and sends bounded working-tree excerpts`, async () => {
     await withFixture(async (fixture) => {
       seedRepository(fixture);
       allowSourceSharing(fixture);
-      // An uncommitted edit and an untracked file are never read.
-      write(fixture.repository.root, 'src/worker.ts', `UNCOMMITTED ${secret}\n`);
+      // Tracked edits are included; untracked files remain excluded.
+      write(fixture.repository.root, 'src/worker.ts', 'export const workingTreeOnly = true;\n');
       write(fixture.repository.root, 'untracked.ts', `${secret}\n`);
       const repositoryBefore = snapshotTree(fixture.repository.root);
       const conversationId = fixture.conversation(runtime, { contextMode: 'project_aware' });
@@ -135,15 +144,12 @@ for (const runtime of ['claude', 'codex'] as const) {
       assert.match(plan.stdin, /<repository_catalog>/);
       assert.match(plan.stdin, /src\/worker\.ts/);
       assert.doesNotMatch(plan.stdin, /claimTask|\.env|credentials\.json|node_modules/);
-      // Answer: only validated excerpts of committed content, with line numbers.
-      assert.match(answer.stdin, /<source path="src\/worker\.ts" lines="1-4" total_lines="4">/);
-      assert.match(answer.stdin, /2\| {3}claimTask\(task\);/);
-      assert.match(answer.stdin, /<source path="src\/approve\.ts"/);
+      // Answer: only validated captured excerpts, with current line numbers.
+      assert.match(answer.stdin, /<source[^>]*path="src\/worker\.ts" lines="1-1" total_lines="1">/);
+      assert.match(answer.stdin, /1\| export const workingTreeOnly = true;/);
+      assert.match(answer.stdin, /<source[^>]*path="src\/approve\.ts"/);
       for (const invocation of invocations) {
-        assert.ok(
-          !invocation.stdin.includes(secret),
-          'no secret, uncommitted or untracked content',
-        );
+        assert.ok(!invocation.stdin.includes(secret), 'no excluded secret or untracked content');
         assert.ok(!invocation.stdin.includes(fixture.repository.root), 'no repository path');
         assert.ok(invocation.cwd.startsWith(realpathSync(fixture.scratchRoot)));
         assert.ok(!invocation.args.includes('acceptEdits'));
@@ -175,7 +181,7 @@ for (const runtime of ['claude', 'codex'] as const) {
           '../outside.txt': 'not a valid repository-relative path',
           '/etc/passwd': 'not a valid repository-relative path',
           'src/link.ts': 'a symlink, submodule or other non-regular entry',
-          'src/missing.ts': 'not a tracked file at this commit',
+          'src/missing.ts': 'not an eligible tracked file',
         },
       );
       assert.equal(record.limited, true);
@@ -341,6 +347,20 @@ test('later turns reread the repository and point out that it changed', async ()
       const record = turnRecord(fixture, second.turnId);
       assert.equal(record?.previousCommit, firstCommit);
       assert.notEqual(record?.commit, firstCommit);
+      const unchangedHead = record?.commit;
+      write(root, 'src/worker.ts', 'export const freshUncommitted = true;\n');
+      fixture.fakes.claude.setSequence([
+        planning('claude', { files: ['src/worker.ts'] }),
+        reply.claude('Fresh tracked edit.'),
+      ]);
+      const third = fixture.send(conversationId, 'Check the current working tree again.');
+      assert.equal(await fixture.waitForTurn(third.turnId, ['completed', 'failed']), 'completed');
+      const fresh = turnRecord(fixture, third.turnId);
+      assert.equal(fresh?.commit, unchangedHead);
+      assert.equal(fresh?.sourceMode, 'working_tree');
+      assert.equal(fresh?.sources[0]?.state, 'modified');
+      assert.notEqual(fresh?.sources[0]?.contentHash, record?.sources[0]?.contentHash);
+      assert.match(fixture.fakes.claude.invocations()[5]?.stdin ?? '', /freshUncommitted/);
     } finally {
       await service.stop();
     }
@@ -566,5 +586,129 @@ test('C3.1: proposals from a project-aware reply name its source files, never th
     );
     // Approval and task creation stay explicit: nothing was created.
     assert.equal(listProjectTasks(fixture.db, fixture.projectId).length, 0);
+  });
+});
+
+test('a repository replaced at the same registered path requires renewed source consent', async () => {
+  await withFixture(async (fixture) => {
+    seedRepository(fixture);
+    allowSourceSharing(fixture);
+    const conversationId = fixture.conversation('claude', { contextMode: 'project_aware' });
+    const root = fixture.repository.root;
+    renameSync(root, `${root}-saved`);
+    createRepository(root);
+    const service = fixture.service();
+    await service.start();
+    try {
+      const turn = fixture.send(conversationId, 'Analyze this project.');
+      assert.equal(await fixture.waitForTurn(turn.turnId, ['completed', 'failed']), 'failed');
+      assert.match(findConversationTurn(fixture.db, turn.turnId)?.errorMessage ?? '', /replaced/);
+      assert.equal(fixture.fakes.claude.invocations().length, 0);
+    } finally {
+      await service.stop();
+    }
+  });
+});
+
+test('retrieval uses fresh working-tree search lines and refuses ignored, untracked, binary and oversized files', async () => {
+  await withFixture(async (fixture) => {
+    seedRepository(fixture);
+    const { root, commonDir } = fixture.repository;
+    write(root, 'ignored.ts', 'never share\n');
+    write(root, '.gitignore', 'ignored.ts\n');
+    write(root, 'binary.ts', 'binary\0content');
+    write(root, 'oversized.ts', 'x'.repeat(repositoryContextLimits.maxFileBytes + 1));
+    git(root, 'add', '-f', 'ignored.ts', '.gitignore', 'binary.ts', 'oversized.ts');
+    const prepared = await prepareRepositoryContext({
+      repository: {
+        localPath: root,
+        gitCommonDir: commonDir,
+        previousCommit: null,
+        sourceIdentity: JSON.stringify({
+          root: `${statSync(root).dev}:${statSync(root).ino}`,
+          common: `${statSync(commonDir).dev}:${statSync(commonDir).ino}`,
+        }),
+      },
+      message: 'Find freshNeedle',
+    });
+    // Changes after catalog preparation must determine search matches and excerpt line numbers.
+    write(root, 'src/worker.ts', 'inserted line\nexport const freshNeedle = true;\n');
+    write(root, 'untracked.ts', 'freshNeedle private\n');
+    const before = snapshotTree(root);
+    const retrieved = await retrieveRepositoryContext(prepared, {
+      selection: 'model',
+      selectionNote: null,
+      ignored: [],
+      files: [
+        { path: 'ignored.ts' },
+        { path: 'untracked.ts' },
+        { path: 'binary.ts' },
+        { path: 'oversized.ts' },
+        { path: '.env' },
+      ],
+      searches: ['freshNeedle'],
+    });
+    assert.equal(retrieved.excerpts.length, 1);
+    const excerpt = retrieved.excerpts[0];
+    assert.ok(excerpt);
+    assert.equal(excerpt.path, 'src/worker.ts');
+    assert.equal(excerpt.totalLines, 2);
+    assert.equal(excerpt.content.split('\n')[1], 'export const freshNeedle = true;');
+    assert.equal(excerpt.state, 'modified');
+    assert.ok(retrieved.record.rejected.length >= 5);
+    assert.ok(!JSON.stringify(retrieved.record).includes('export const'));
+    assert.deepEqual(snapshotTree(root), before);
+    assert.equal(listProjectTasks(fixture.db, fixture.projectId).length, 0);
+  });
+});
+
+test('working-tree search and excerpt budgets stay bounded, including a very long first line', async () => {
+  await withFixture(async (fixture) => {
+    const { root, commonDir } = fixture.repository;
+    for (let index = 0; index < 205; index += 1) {
+      write(
+        root,
+        `src/candidate-${String(index).padStart(3, '0')}.ts`,
+        'export const budgetNeedle = true;\n',
+      );
+    }
+    const files = [];
+    for (let index = 0; index < 6; index += 1) {
+      const path = `large-${index}.ts`;
+      write(root, path, `${'a'.repeat(99)}\n`.repeat(250));
+      files.push({ path });
+    }
+    write(root, 'long-line.ts', `${'a'.repeat(30000)}\n${'short\n'.repeat(200)}`);
+    files.push({ path: 'long-line.ts' });
+    git(root, 'add', '.');
+    const prepared = await prepareRepositoryContext({
+      repository: {
+        localPath: root,
+        gitCommonDir: commonDir,
+        previousCommit: null,
+        sourceIdentity: JSON.stringify({
+          root: `${statSync(root).dev}:${statSync(root).ino}`,
+          common: `${statSync(commonDir).dev}:${statSync(commonDir).ino}`,
+        }),
+      },
+      message: 'Search budgetNeedle',
+    });
+    const result = await retrieveRepositoryContext(prepared, {
+      selection: 'model',
+      selectionNote: null,
+      ignored: [],
+      files,
+      searches: ['budgetNeedle'],
+    });
+    assert.equal(result.record.searches[0]?.truncated, true);
+    assert.equal(result.record.limited, true);
+    assert.ok(result.record.characters <= repositoryContextLimits.maxContextCharacters);
+    assert.ok(
+      result.excerpts.every(
+        (excerpt) => excerpt.characters <= repositoryContextLimits.maxCharactersPerSource,
+      ),
+    );
+    assert.ok(result.record.omitted.some((item) => item.path === 'long-line.ts'));
+    assert.ok(result.excerpts.length <= files.length + repositoryContextLimits.maxSearchFiles);
   });
 });

@@ -545,6 +545,7 @@ test('upgrades a project-only database without touching existing projects', () =
         conversationSourceCommonDir: null,
         conversationSourceDisclosureVersion: null,
         conversationSourceAllowedAt: null,
+        conversationSourceIdentity: null,
       });
       assert.equal(
         connection.sqlite

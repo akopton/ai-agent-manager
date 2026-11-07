@@ -477,7 +477,11 @@ const sourceInstructions = [
  * is included. Deterministic and pure.
  */
 /** C4: repository references of a project-aware source reply (`path` or `path:start-end`). */
-export type TaskProposalSourceReferences = { commit: string; files: string[] };
+export type TaskProposalSourceReferences = {
+  sourceMode?: 'committed' | 'working_tree';
+  commit: string;
+  files: string[];
+};
 
 export const composeSourceTaskProposalPrompt = ({
   runtime,
@@ -507,7 +511,7 @@ export const composeSourceTaskProposalPrompt = ({
       ? []
       : [
           `<source_references>\n${[
-            `The source response was written from these excerpts of commit ${sourceReferences.commit} of the project's repository. When a task concerns them, name the relevant repository-relative paths in its "prompt" so the coding agent knows where to look. These are the only files the source response saw; do not invent other paths.`,
+            `The source response was written from these ${sourceReferences.sourceMode === 'working_tree' ? 'working-tree excerpts (including tracked edits), with HEAD reference' : 'excerpts of commit'} ${sourceReferences.commit} of the project's repository. When a task concerns them, name the relevant repository-relative paths in its "prompt" so the coding agent knows where to look. These are the only files the source response saw; do not invent other paths.`,
             ...sourceReferences.files.map((file) => `- ${neutralize(file)}`),
           ].join('\n')}\n</source_references>`,
         ];

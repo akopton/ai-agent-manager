@@ -202,3 +202,14 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - **C3.1:** proposals from a Project-Aware reply receive its source references (no content). Approval is unchanged.
 - **Accepted limitations:** the CLI still runs as the operator with unverified CLI-level restrictions and talks to its provider; earlier Project-Aware replies remain in General Chat history; no authenticated real-CLI run yet.
 - **Next:** UI-04 polishing pass (`IMPLEMENTATION_PLAN.md` §8, C4 "Remaining work for UI-04").
+
+
+**C4.1 decisions (2026-11-07):**
+
+- The operator reports successful manual C4 Project-Aware conversations with authenticated CLIs. C4.1 itself is tested only with fake CLIs; this does not verify CLI isolation.
+- Supersedes C4's committed-only source policy: current eligible Git-tracked bytes from the registered checkout, including staged/unstaged changes and tracked additions. Untracked/ignored files and managed task worktrees remain excluded. Git determines membership; HEAD remains provenance.
+- A small application-owned C helper supplies descriptor-relative `openat`/no-follow reads missing from Node's public filesystem API. Root inode is checked inside the helper; every path component rejects symlinks, and type/size/change checks run around bounded reads. Requires Xcode Command Line Tools at build time and the compiled helper at runtime; unsupported/unavailable mechanisms fail closed. No target-repository code is executed.
+- Source permission must be renewed for disclosure `2026-11-07.2`. Migration `0013_source_identity` binds grants to checkout/common-directory device and inode; same-path replacement fails closed, including across turns.
+- Catalogs contain names only. Two-stage selection and existing exclusion/excerpt limits remain; literal search adds an overall 200-file / 8 MiB scan budget and uses the same captures as its excerpt lines.
+- Sources and persisted metadata distinguish current working tree from legacy committed-only records, include per-file HEAD-byte comparison, SHA-256, capture time and exact line ranges, and never store full source text. Subsequent turns reread even when HEAD is unchanged. Proposals receive references and source mode only.
+- Accepted limits: captures are individual files rather than a repository-wide atomic snapshot; later edits may differ; matching HEAD bytes does not mean a clean repository; macOS-only validation and the original unverified CLI-level restrictions remain. C4.1 is a narrow refinement before UI-04; its browser acceptance checklist is in the implementation plan.

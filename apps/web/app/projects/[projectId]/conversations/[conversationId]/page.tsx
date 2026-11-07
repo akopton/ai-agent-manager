@@ -107,7 +107,7 @@ const ConversationPage = async ({
           <AlertDescription>
             <p>
               {sourceAccess.current
-                ? `With each message, the CLI first chooses files from a list of ${project.name}'s committed files (HEAD of the registered checkout); AI Agent Manager then reads bounded excerpts read-only and sends them to the provider with your message. Sensitive, ignored, dependency and build files are excluded. Uncommitted changes are not included.`
+                ? `With each message, the CLI first chooses files from a list of ${project.name}'s eligible tracked files (current working tree of the registered checkout); AI Agent Manager then reads bounded excerpts read-only and sends them to the provider with your message. Sensitive, ignored, dependency and build files are excluded. Current tracked edits are included; untracked and ignored files are excluded.`
                 : 'Allow source sharing for this project in the Settings panel, or switch the conversation to General Chat. Until then, messages are refused and nothing is read.'}
             </p>
           </AlertDescription>

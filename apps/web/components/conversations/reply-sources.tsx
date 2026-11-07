@@ -48,7 +48,9 @@ export const ReplySources = ({ record }: { record: RepositoryContextRecord }) =>
         </ul>
       )}
       <p className="mt-2 leading-5 text-muted-foreground">
-        Committed content only; uncommitted changes were not included.
+        {record.sourceMode === 'working_tree'
+          ? 'Current working tree; untracked and ignored files were excluded.'
+          : 'Committed content only; uncommitted changes were not included.'}
       </p>
     </details>
   );

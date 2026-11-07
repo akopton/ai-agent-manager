@@ -45,6 +45,10 @@ test('the default path policy excludes sensitive, dependency, build, binary and 
     ['.npmrc', 'sensitive'],
     ['infra/main.tfstate', 'sensitive'],
     ['.git/config', 'git_metadata'],
+    ['.GiT/config', 'git_metadata'],
+    ['NODE_MODULES/pkg/index.ts', 'dependency_directory'],
+    ['.DOCKER/config.json', 'sensitive'],
+    ['src/hidden\u200d.ts', 'invalid_path'],
     ['sub/.git/HEAD', 'git_metadata'],
     ['node_modules/react/index.js', 'dependency_directory'],
     ['apps/web/node_modules/x/y.js', 'dependency_directory'],
@@ -148,6 +152,7 @@ test('source-sharing permission is bound to the repository identity and the disc
   const allowed = {
     gitCommonDir: '/repo/.git',
     conversationSourceAccess: 'allowed' as const,
+    conversationSourceIdentity: JSON.stringify({ root: '1:2', common: '1:3' }),
     conversationSourceCommonDir: '/repo/.git',
     conversationSourceDisclosureVersion: projectSourceDisclosure.version,
     conversationSourceAllowedAt: 1,
@@ -161,6 +166,7 @@ test('source-sharing permission is bound to the repository identity and the disc
   assert.equal(reason({ ...allowed, conversationSourceAllowedAt: null }), 'not_allowed');
   assert.equal(reason({ ...allowed, gitCommonDir: '/other/.git' }), 'repository_changed');
   assert.equal(reason({ ...allowed, conversationSourceDisclosureVersion: 'old' }), 'stale');
+  assert.equal(reason({ ...allowed, conversationSourceIdentity: null }), 'stale');
   // The AI Conversations disclosure changed with C4, so older acceptances are stale.
   assert.notEqual(conversationDisclosure.version, '2026-11-07.1');
   assert.ok(

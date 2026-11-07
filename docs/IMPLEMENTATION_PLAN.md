@@ -390,6 +390,32 @@ The final functional AI Conversations milestone before the separate **UI-04** po
 
 **Manual verification (operator):** see the C4 browser acceptance checklist in the hand-off report; record its result here when run.
 
+#### C4.1 — Current working tree context (2026-11-07, before UI-04)
+
+A narrow source-context refinement of C4; it does not add task execution or redesign the UI. The operator confirmed C4 with authenticated CLI sessions before this work. C4.1 automated validation uses fake CLIs only.
+
+- Git-tracked current files, including staged/unstaged edits and tracked additions; no automatic untracked/ignored or managed worktree analysis.
+- Trusted native descriptor-relative reader (`packages/git/native/source-reader.c`), built with Xcode Command Line Tools. No-follow component walks, pinned root identity, read-time type/size checks, bounded reads and change detection; no fallback to ordinary path reads.
+- Source-sharing disclosure `2026-11-07.2`, renewed grants bound to root/common-directory filesystem identities (additive migration `0013_source_identity`), identity and consent rechecks before launch.
+- Unchanged two-stage model selection, exclusions and existing excerpt budgets; literal working-tree searches bounded to 200 candidates / 8 MiB. Cache ties search matches to actual supplied lines.
+- Source mode, per-file HEAD comparison, content hashes, timestamps and exact line ranges in persisted metadata and Sources; legacy committed-only records remain readable. Fresh captures on later turns even at the same HEAD. No full source persistence.
+- C2/C3/C3.1 behavior and task lifecycle remain unchanged. Proposals carry references/source mode without arbitrary file content.
+
+**Acceptance gates:** run `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, `pnpm build`, `pnpm test` under Node.js 24; fake CLIs, temporary SQLite and disposable repositories only. No commit/push.
+
+**Validation result (2026-11-07, Node.js 24.22.2 / pnpm 12.16.1):** `pnpm lint`, `pnpm typecheck`, `pnpm format:check`, and `pnpm test` passed (823 tests); 33 focused tests also passed after final path-policy and membership checks. All package/worker builds passed. Default `pnpm build` was attempted twice, including outside the sandbox, but Turbopack could not bind its CSS worker port (`EPERM`). The final web production build passed with `pnpm --filter @ai-agent-manager/web exec next build --webpack`. This environment-specific default-build limitation remains recorded, not hidden by changing project build defaults. An existing Stop-test fixture race was corrected by waiting for its partial file before requesting Stop; execution code was unchanged. No authenticated CLI session, commit or push was run by this work.
+
+**Manual acceptance (pending operator verification):**
+
+1. Renew source permission after reading the working-tree disclosure; verify General Chat still works without it.
+2. In Project-Aware mode, ask about a tracked file changed without committing. Verify the answer and Sources show the current lines, working-tree state, hash and capture time.
+3. Edit the same file again, keep HEAD unchanged, and send a follow-up. Verify fresh content/hash. Verify old committed-only Sources still identify their original mode.
+4. Verify ignored/untracked, sensitive, deleted and symlink-replaced files are refused and limited searches do not claim full analysis.
+5. Withdraw permission; verify sends/retries refuse. Replace a disposable registered checkout at the same path; verify renewed permission is required.
+6. Stop/retry a turn and generate proposals from a reply. Verify only explicit proposal approval creates a Backlog task; chat never starts execution or changes repositories.
+
+**Known limits:** individual captures, not an atomic repository snapshot; later edits may differ; macOS-only runtime validation; compiler and packaged native helper required; unchanged unverified CLI restrictions. Next: UI-04 polishing.
+
 #### Unscheduled (specified, not planned)
 
 - **Global AI** (`SPEC.md` §18.5): conversations without a project. It needs a schema decision, because C1 requires a project.

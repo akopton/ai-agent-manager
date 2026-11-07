@@ -303,7 +303,7 @@ export const ConversationSettingsForm = ({
         <p id={`${fieldId}-context-hint`} className="text-xs leading-5 text-muted-foreground">
           {values.contextMode === 'project_aware'
             ? sourceSharingAllowed
-              ? 'Repository excerpts are sent to the selected CLI with every message. Uncommitted changes are not included.'
+              ? 'Repository excerpts are sent to the selected CLI with every message. Current tracked edits are included; untracked and ignored files are excluded.'
               : 'Before messages can be sent, allow source sharing for this project (shown on the conversation page).'
             : baseline?.contextMode === 'project_aware'
               ? 'No repository files will be read or sent. Earlier Project-Aware replies stay in the history and may still quote code; the excerpts themselves are not sent again.'

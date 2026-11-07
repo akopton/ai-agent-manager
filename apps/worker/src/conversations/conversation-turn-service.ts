@@ -1,3 +1,4 @@
+import { verifyWorkingSourceSnapshot } from '@ai-agent-manager/git/source-context';
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { isAbsolute, join, relative } from 'node:path';
@@ -145,7 +146,7 @@ type CliJob = {
    * C4: re-checked immediately before the gate, after the consent; a failure refuses the launch.
    * Project-aware turns use it to re-read the project's source-sharing permission.
    */
-  beforeLaunch?: () => Failure | null;
+  beforeLaunch?: () => Failure | null | Promise<Failure | null>;
 };
 
 const noReply = 'No reply was stored.';
@@ -345,7 +346,7 @@ export const createConversationTurnService = (
           errorMessage: decision.ok ? 'AI replies are off.' : decision.message,
         });
       }
-      const refused = job.beforeLaunch?.() ?? null;
+      const refused = (await job.beforeLaunch?.()) ?? null;
       if (refused !== null) {
         return failed(refused);
       }
@@ -384,6 +385,8 @@ export const createConversationTurnService = (
         return stopped(entry.stopReason, null, job.nothingStored);
       }
 
+      const finalRefusal = (await job.beforeLaunch?.()) ?? null;
+      if (finalRefusal !== null) return failed(finalRefusal);
       const messages: string[] = [];
       let reportedModelId: string | null = null;
       const emit = (event: AgentEvent): void => {
@@ -532,6 +535,17 @@ export const createConversationTurnService = (
       return;
     }
 
+    const sourceLaunchCheck = async (): Promise<Failure | null> => {
+      const denied = accessFailure();
+      if (denied !== null) return denied;
+      try {
+        await verifyWorkingSourceSnapshot(prepared.snapshot);
+        return accessFailure();
+      } catch (error) {
+        return describeRepositoryFailure(error);
+      }
+    };
+
     // Planning run: the CLI returns a JSON read request; nothing else is accepted from it.
     progress({ contextStage: 'selecting_files' });
     const planning = await runCli(
@@ -548,7 +562,7 @@ export const createConversationTurnService = (
         progress,
         nothingStored: noReply,
         emptyMessage: `${name} returned no file selection.`,
-        beforeLaunch: accessFailure,
+        beforeLaunch: sourceLaunchCheck,
       },
       entry,
     );
@@ -631,7 +645,7 @@ export const createConversationTurnService = (
         progress,
         nothingStored: noReply,
         emptyMessage: `${name} finished without a reply. Nothing was stored; retry or rephrase the message.`,
-        beforeLaunch: accessFailure,
+        beforeLaunch: sourceLaunchCheck,
       },
       entry,
     );

@@ -11,7 +11,7 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "pnpm --recursive --if-present run test"
+    "test": "pnpm --filter @ai-agent-manager/git run build && pnpm --recursive --if-present run test"
   },
   "keywords": [],
   "author": "",

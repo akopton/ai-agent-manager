@@ -430,6 +430,7 @@ export {
   projectSourceAccessInputSchema,
   projectSourceAccessSchema,
   projectSourceAccessValues,
+  sourceRepositoryIdentitySchema,
   projectSourceDisclosure,
   renderRepositoryCatalog,
   repositoryContextLimits,

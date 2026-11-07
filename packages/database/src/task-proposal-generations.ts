@@ -610,7 +610,11 @@ const loadSourceReferences = (
   const record = parseRepositoryContextRecord(turn.json);
   if (record === null || record.sources.length === 0) return null;
   if (!evaluateStoredProjectSourceAccess(tx, conversation.projectId).ok) return null;
-  return { commit: record.commit, files: record.sources.map(formatSourceReference) };
+  return {
+    sourceMode: record.sourceMode,
+    commit: record.commit,
+    files: record.sources.map(formatSourceReference),
+  };
 };
 
 export type TaskProposalGenerationProgress = Partial<

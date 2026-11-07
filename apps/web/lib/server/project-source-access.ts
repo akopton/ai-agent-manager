@@ -9,7 +9,10 @@ import {
   type DatabaseConnection,
 } from '@ai-agent-manager/database';
 // Read-only identity check; the only Git entry point used here.
-import { verifySourceRepository } from '@ai-agent-manager/git/source-context';
+import {
+  resolveWorkingSourceSnapshot,
+  sourceSnapshotIdentity,
+} from '@ai-agent-manager/git/source-context';
 import type { ProjectSourceAccessView } from '@/lib/conversations/contracts';
 import { toProjectSourceAccessView } from '@/lib/server/conversations';
 
@@ -42,12 +45,15 @@ export const updateProjectSourceAccess = async (
   const parsed = projectIdSchema.safeParse(projectId);
   const project = parsed.success ? findProjectById(db, parsed.data) : undefined;
   if (project === undefined) throw projectNotFound();
+  let repositoryIdentity;
   if (input.access === 'allowed') {
     try {
-      await verifySourceRepository({
-        localPath: project.localPath,
-        gitCommonDir: project.gitCommonDir,
-      });
+      repositoryIdentity = sourceSnapshotIdentity(
+        await resolveWorkingSourceSnapshot({
+          localPath: project.localPath,
+          gitCommonDir: project.gitCommonDir,
+        }),
+      );
     } catch (error) {
       throw new ConversationError(
         'conversation_changed',
@@ -55,7 +61,12 @@ export const updateProjectSourceAccess = async (
       );
     }
   }
-  const updated = setProjectSourceAccess(db, { projectId: project.id, input, now: now() });
+  const updated = setProjectSourceAccess(db, {
+    projectId: project.id,
+    input,
+    repositoryIdentity,
+    now: now(),
+  });
   if (updated === undefined) throw projectNotFound();
   return getProjectSourceAccess(db, project.id);
 };

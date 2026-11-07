@@ -7,7 +7,7 @@
     "node": "^20.19.0 || ^22.13.0 || >=24"
   },
   "scripts": {
-    "dev": "tsx watch --conditions=@ai-agent-manager/source src/main.ts",
+    "dev": "node ../../packages/git/scripts/build-source-reader.mjs && tsx watch --conditions=@ai-agent-manager/source src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",

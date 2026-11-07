@@ -72,6 +72,7 @@ export const projects = sqliteTable('projects', {
   conversationSourceCommonDir: text('conversation_source_common_dir'),
   conversationSourceDisclosureVersion: text('conversation_source_disclosure_version'),
   conversationSourceAllowedAt: integer('conversation_source_allowed_at'),
+  conversationSourceIdentity: text('conversation_source_identity'),
 });
 
 // Constant identifiers from `core`, rendered into CHECK constraints (never user data).

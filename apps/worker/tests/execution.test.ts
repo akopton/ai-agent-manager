@@ -155,6 +155,12 @@ test('Stop persists intent, stops the process group, retains partial files and f
       await service.tick();
       await waitFor(() => listTaskRuns(fixture.db, taskId)[0]?.status === 'running');
       await waitFor(() => fixture.clis.codex.invocations().length === 1);
+      // Launch is recorded before the fake CLI executes its steps. Stop only once there
+      // is partial output to preserve, rather than racing its first write under load.
+      await waitFor(() => {
+        const [workspace] = listTaskWorkspaces(fixture.db, taskId);
+        return workspace !== undefined && existsSync(join(workspace.path, 'partial.txt'));
+      });
       requestRunStop(fixture.db, { taskId, now: Date.now() });
       await service.tick();
       assert.equal(await fixture.waitForTaskStatus(taskId, ['stopped', 'failed']), 'stopped');

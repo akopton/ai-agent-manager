@@ -58,6 +58,7 @@ test('stores a project with defaults and persists it across connections', () => 
       conversationSourceCommonDir: null,
       conversationSourceDisclosureVersion: null,
       conversationSourceAllowedAt: null,
+      conversationSourceIdentity: null,
     });
     assert.deepEqual(findProjectById(db, stored.id), stored);
     assert.equal(findProjectById(db, '00000000-0000-4000-8000-00000000ffff'), undefined);

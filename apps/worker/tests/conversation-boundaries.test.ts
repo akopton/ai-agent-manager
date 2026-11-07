@@ -106,7 +106,7 @@ test('C3: approval creates a task through createTask only and never queues, star
   }
 });
 
-test('C4: the source-context module runs only read-only Git subcommands and never the filesystem', () => {
+test('C4: the source-context module runs only read-only Git subcommands and delegates guarded filesystem reads', () => {
   const source = code(join(repositoryRoot, 'packages/git/src/source-context.ts'));
   const subcommands = new Set(
     [...source.matchAll(/runGit(?:Checked)?\(\s*\[\s*'([a-z-]+)'/g)].map((match) => match[1]),
@@ -132,6 +132,7 @@ test('C4: the source-context module runs only read-only Git subcommands and neve
     './errors.js',
     './process.js',
     './repository.js',
+    './working-tree-reader.js',
   ]);
   // Worker retrieval reads the repository only through this module.
   const retrieval = code(

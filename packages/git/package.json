@@ -18,10 +18,10 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build-source-reader.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "node scripts/build-source-reader.mjs && tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "zod": "4.6.7"

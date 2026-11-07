@@ -4,6 +4,7 @@ import {
   extractSearchTerms,
   isDocumentationPath,
   isRepositoryRelativePath,
+  sourceRepositoryIdentitySchema,
   renderRepositoryCatalog,
   repositoryContextLimits,
   repositoryPathExclusionLabels,
@@ -13,24 +14,22 @@ import {
   type RepositoryPathExclusionReason,
   type RequestedRepositoryFile,
 } from '@ai-agent-manager/core';
-// The only Git entry point conversation code may use: read-only object reads of one commit.
+// The only Git entry point conversation code may use: guarded source reads and Git queries.
 import {
   listIgnoredTrackedPaths,
-  listSourceTree,
-  readSourceBlob,
-  resolveSourceSnapshot,
-  searchSource,
+  listWorkingSourceTree,
+  readWorkingSource,
+  resolveWorkingSourceSnapshot,
+  verifyWorkingSourceSnapshot,
+  sourceSnapshotIdentity,
   SourceContextError,
   type SourceSnapshot,
   type SourceTreeEntry,
 } from '@ai-agent-manager/git/source-context';
 
-// C4 — retrieval for project-aware turns, in the worker. The application, never the model, reads
-// the repository: it lists the tracked files of the checkout's HEAD commit, applies the default
-// exclusion policy, lets the model choose from that catalog (planning phase, run by the turn
-// service), validates every requested path against the catalog, and reads bounded excerpts from
-// Git objects. Nothing here writes to the repository or Git metadata, runs repository scripts,
-// creates a worktree, or reads a task worktree or the filesystem of the checkout.
+// C4.1 — Git determines eligible tracked paths; a macOS no-follow descriptor read captures
+// current bytes. Model selection and all application-side exclusions and budgets still apply.
+// Per-retrieval caching keeps literal search matches and excerpt line ranges consistent.
 
 const limits = repositoryContextLimits;
 
@@ -100,21 +99,6 @@ const directoryOverview = (paths: readonly string[]): { path: string; files: num
     .slice(0, 150);
 };
 
-/** Searches one term and keeps only readable files (excluded files never leave this module). */
-const searchEligible = async (
-  prepared: Pick<PreparedRepositoryContext, 'snapshot' | 'eligible'>,
-  term: string,
-): Promise<{ matches: Map<string, number[]>; truncated: boolean }> => {
-  const result = await searchSource(prepared.snapshot, term, {
-    maxMatchesPerFile: limits.maxSearchMatchesPerFile,
-    maxOutputBytes: limits.maxSearchOutputBytes,
-  });
-  const matches = new Map(
-    [...result.matches.entries()].filter(([path]) => prepared.eligible.has(path)),
-  );
-  return { matches, truncated: result.truncated };
-};
-
 /**
  * Re-validates the registered checkout, resolves HEAD, lists and classifies the tracked files and
  * builds the planning catalog (including files that match words of the message). Read-only.
@@ -124,11 +108,37 @@ export const prepareRepositoryContext = async ({
   repository,
   message,
 }: {
-  repository: { localPath: string; gitCommonDir: string; previousCommit: string | null };
+  repository: {
+    localPath: string;
+    gitCommonDir: string;
+    previousCommit: string | null;
+    sourceIdentity: string | null;
+  };
   message: string;
 }): Promise<PreparedRepositoryContext> => {
-  const snapshot = await resolveSourceSnapshot(repository);
-  const tree = await listSourceTree(snapshot, { maxEntries: limits.maxTreeEntries });
+  const snapshot = await resolveWorkingSourceSnapshot(repository);
+  let expectedIdentity;
+  try {
+    expectedIdentity = sourceRepositoryIdentitySchema.parse(
+      JSON.parse(repository.sourceIdentity ?? 'null'),
+    );
+  } catch {
+    throw new SourceContextError(
+      'repository_unavailable',
+      'Source-sharing filesystem identity is missing; allow source sharing again.',
+    );
+  }
+  const actualIdentity = sourceSnapshotIdentity(snapshot);
+  if (
+    actualIdentity.root !== expectedIdentity.root ||
+    actualIdentity.common !== expectedIdentity.common
+  ) {
+    throw new SourceContextError(
+      'repository_unavailable',
+      'The checkout or Git directory was replaced; review and allow source sharing again.',
+    );
+  }
+  const tree = await listWorkingSourceTree(snapshot, { maxEntries: limits.maxTreeEntries });
   const ignored = await listIgnoredTrackedPaths(snapshot);
   const eligible = new Map<string, SourceTreeEntry>();
   const excluded = new Map<string, RepositoryPathExclusionReason>();
@@ -143,7 +153,7 @@ export const prepareRepositoryContext = async ({
   for (const path of tree.skipped) excluded.set(path, 'not_regular_file');
 
   const paths = [...eligible.keys()].sort(byDepthThenPath);
-  // Files that match words of the question by name or content, most matches first.
+  // Paths matching words of the question; content is read only after model selection.
   const scores = new Map<string, number>();
   const terms = extractSearchTerms(message, 3);
   for (const term of terms) {
@@ -151,8 +161,6 @@ export const prepareRepositoryContext = async ({
     for (const path of paths) {
       if (path.toLowerCase().includes(lower)) scores.set(path, (scores.get(path) ?? 0) + 5);
     }
-    const { matches } = await searchEligible({ snapshot, eligible }, term);
-    for (const [path, lines] of matches) scores.set(path, (scores.get(path) ?? 0) + lines.length);
   }
   const keywordMatches = [...scores.entries()]
     .sort((left, right) => right[1] - left[1] || byDepthThenPath(left[0], right[0]))
@@ -208,7 +216,15 @@ export const fallbackRepositoryPlan = (
 };
 
 type ReadFile =
-  { ok: true; lines: string[] } | { ok: false; reason: RepositoryPathExclusionReason };
+  | {
+      ok: true;
+      lines: string[];
+      state: 'matches_head' | 'modified' | 'added';
+      contentHash: string;
+      readAt: string;
+      bytes: number;
+    }
+  | { ok: false; reason: RepositoryPathExclusionReason; bytes: number };
 
 /** Splits text into lines without the final empty line of a trailing newline. */
 const toLines = (text: string): string[] => {
@@ -227,7 +243,7 @@ const boundedRange = (
   let last = start - 1;
   for (let line = start; line <= end; line += 1) {
     const length = (lines[line - 1] ?? '').length + 1;
-    if (characters + length > limits.maxCharactersPerSource && last >= start) break;
+    if (characters + length > limits.maxCharactersPerSource) break;
     characters += length;
     last = line;
   }
@@ -258,6 +274,19 @@ export const retrieveRepositoryContext = async (
   prepared: PreparedRepositoryContext,
   plan: RepositoryContextPlan,
 ): Promise<RetrievedRepositoryContext> => {
+  await verifyWorkingSourceSnapshot(prepared.snapshot);
+  // Recheck index membership and ignores after model selection, before any answer reads.
+  const currentTree = await listWorkingSourceTree(prepared.snapshot, {
+    maxEntries: limits.maxTreeEntries,
+  });
+  const currentIgnored = await listIgnoredTrackedPaths(prepared.snapshot);
+  const currentPaths = new Set(currentTree.files.map((entry) => entry.path));
+  for (const path of prepared.eligible.keys()) {
+    if (!currentPaths.has(path) || currentIgnored.has(path)) {
+      prepared.eligible.delete(path);
+      prepared.excluded.set(path, currentIgnored.has(path) ? 'gitignored' : 'not_found');
+    }
+  }
   const cache = new Map<string, ReadFile>();
   const read = async (path: string): Promise<ReadFile> => {
     const cached = cache.get(path);
@@ -265,9 +294,18 @@ export const retrieveRepositoryContext = async (
     const entry = prepared.eligible.get(path);
     let result: ReadFile;
     if (entry === undefined) {
-      result = { ok: false, reason: prepared.excluded.get(path) ?? 'not_found' };
+      result = { ok: false, reason: prepared.excluded.get(path) ?? 'not_found', bytes: 0 };
     } else {
-      const bytes = await readSourceBlob(prepared.snapshot, entry, limits.maxFileBytes);
+      let captured;
+      try {
+        captured = await readWorkingSource(prepared.snapshot, entry, limits.maxFileBytes);
+      } catch (error) {
+        if (error instanceof SourceContextError) throw error;
+        result = { ok: false, reason: 'unavailable', bytes: 0 };
+        cache.set(path, result);
+        return result;
+      }
+      const { bytes } = captured;
       let text: string | null;
       try {
         text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
@@ -277,8 +315,15 @@ export const retrieveRepositoryContext = async (
       const reason = classifyRepositoryContent(text, bytes);
       result =
         reason === null && text !== null
-          ? { ok: true, lines: toLines(text) }
-          : { ok: false, reason: reason ?? 'not_text' };
+          ? {
+              ok: true,
+              lines: toLines(text),
+              bytes: bytes.length,
+              state: captured.state,
+              contentHash: captured.contentHash,
+              readAt: captured.readAt,
+            }
+          : { ok: false, reason: reason ?? 'not_text', bytes: bytes.length };
     }
     cache.set(path, result);
     return result;
@@ -288,6 +333,8 @@ export const retrieveRepositoryContext = async (
   const rejected: RepositoryContextRecord['rejected'] = [];
   const omitted: RepositoryContextRecord['omitted'] = [];
   let used = 0;
+  let searchBytes = 0;
+  const searchedPaths = new Set<string>();
   let limited = plan.ignored.length > 0;
   const reject = (path: string, reason: string) => {
     limited = true;
@@ -313,7 +360,13 @@ export const retrieveRepositoryContext = async (
     end: number,
     origin: RepositoryExcerpt['origin'],
   ): boolean => {
+    const captured = cache.get(path);
+    if (captured?.ok !== true) return false;
     const bounded = boundedRange(lines, start, end);
+    if (bounded.end < start) {
+      omit(path, 'a source line exceeds the excerpt character limit');
+      return false;
+    }
     if (used + bounded.content.length > limits.maxContextCharacters) {
       omit(path, 'context size limit reached');
       return false;
@@ -323,6 +376,9 @@ export const retrieveRepositoryContext = async (
     if (bounded.end < end) limited = true;
     excerpts.push({
       path,
+      state: captured.state,
+      contentHash: captured.contentHash,
+      readAt: captured.readAt,
       startLine: start,
       endLine: bounded.end,
       totalLines: lines.length,
@@ -375,7 +431,31 @@ export const retrieveRepositoryContext = async (
   const searches: RepositoryContextRecord['searches'] = [];
   const hits = new Map<string, number[]>();
   for (const term of plan.searches) {
-    const result = await searchEligible(prepared, term);
+    // Searches and excerpts use the same per-retrieval bytes; no stale search line numbers.
+    const matches = new Map<string, number[]>();
+    let truncated = false;
+    for (const path of prepared.eligible.keys()) {
+      if (
+        !searchedPaths.has(path) &&
+        (searchedPaths.size >= limits.maxSearchCandidates ||
+          searchBytes + limits.maxFileBytes > limits.maxSearchBytes)
+      ) {
+        truncated = true;
+        break;
+      }
+      const firstVisit = !searchedPaths.has(path);
+      searchedPaths.add(path);
+      const file = await read(path);
+      if (firstVisit) searchBytes += file.bytes;
+      if (!file.ok) continue;
+      const lines = file.lines
+        .flatMap((line, index) =>
+          line.toLowerCase().includes(term.toLowerCase()) ? [index + 1] : [],
+        )
+        .slice(0, limits.maxSearchMatchesPerFile);
+      if (lines.length > 0) matches.set(path, lines);
+    }
+    const result = { matches, truncated };
     searches.push({ term, matchedFiles: result.matches.size, truncated: result.truncated });
     if (result.truncated) limited = true;
     for (const [path, lines] of result.matches) {
@@ -405,6 +485,9 @@ export const retrieveRepositoryContext = async (
 
   const record: RepositoryContextRecord = {
     version: 1,
+    sourceMode: 'working_tree',
+    retrievedAt: new Date().toISOString(),
+    repositoryIdentity: sourceSnapshotIdentity(prepared.snapshot),
     commit: prepared.snapshot.commit,
     branch: prepared.snapshot.branch,
     previousCommit: prepared.previousCommit,
@@ -420,6 +503,9 @@ export const retrieveRepositoryContext = async (
     searches,
     sources: excerpts.map((excerpt) => ({
       path: excerpt.path,
+      state: excerpt.state,
+      contentHash: excerpt.contentHash,
+      readAt: excerpt.readAt,
       startLine: excerpt.startLine,
       endLine: excerpt.endLine,
       totalLines: excerpt.totalLines,
@@ -435,5 +521,21 @@ export const retrieveRepositoryContext = async (
     limited: limited || prepared.catalog.treeTruncated,
     unverifiedReferences: [],
   };
+  await verifyWorkingSourceSnapshot(prepared.snapshot);
+  const finalIgnored = await listIgnoredTrackedPaths(prepared.snapshot);
+  const finalTree = await listWorkingSourceTree(prepared.snapshot, {
+    maxEntries: limits.maxTreeEntries,
+  });
+  const finalEntries = new Map(finalTree.files.map((entry) => [entry.path, entry.indexOid]));
+  if (
+    excerpts.some(
+      (excerpt) => finalEntries.get(excerpt.path) !== prepared.eligible.get(excerpt.path)?.indexOid,
+    )
+  ) {
+    throw new SourceContextError('read_failed', 'Tracked membership changed during retrieval.');
+  }
+  if (excerpts.some((excerpt) => finalIgnored.has(excerpt.path))) {
+    throw new SourceContextError('read_failed', 'Source ignore rules changed during retrieval.');
+  }
   return { record, excerpts };
 };

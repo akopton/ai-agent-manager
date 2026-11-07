@@ -522,6 +522,7 @@ export type ClaimedConversationTurn = {
     localPath: string;
     gitCommonDir: string;
     previousCommit: string | null;
+    sourceIdentity: string | null;
   } | null;
 };
 
@@ -680,7 +681,11 @@ export const claimConversationTurn = (
     let repository: ClaimedConversationTurn['repository'] = null;
     if (turn.contextMode === 'project_aware') {
       const project = tx
-        .select({ localPath: projects.localPath, gitCommonDir: projects.gitCommonDir })
+        .select({
+          localPath: projects.localPath,
+          gitCommonDir: projects.gitCommonDir,
+          sourceIdentity: projects.conversationSourceIdentity,
+        })
         .from(projects)
         .where(eq(projects.id, conversation.projectId))
         .get();
