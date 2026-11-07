@@ -28,7 +28,7 @@ test('reserves user/assistant roles and note/chat kinds for future exchanges', (
   assert.deepEqual(conversationMessageKinds, ['note', 'chat']);
 });
 
-test('applies defaults to a new conversation: runtime default, model Default, language default', () => {
+test('applies defaults to a new conversation: runtime, model Default, language, General Chat', () => {
   const parsed = createConversationInputSchema.parse({ projectId, title: '  Auth redesign  ' });
   assert.deepEqual(parsed, {
     projectId,
@@ -36,6 +36,7 @@ test('applies defaults to a new conversation: runtime default, model Default, la
     agentRuntime: conversationRuntimeDefault,
     modelId: null,
     languageMode: 'pl_technical_en',
+    contextMode: 'general',
   });
 });
 
@@ -47,6 +48,7 @@ test('rejects invalid conversation settings', () => {
     { projectId, title: 'T', modelId: '   ' },
     { projectId, title: 'T', modelId: 'm'.repeat(201) },
     { projectId, title: 'T', languageMode: 'de' },
+    { projectId, title: 'T', contextMode: 'repository' },
     { projectId: 'not-a-uuid', title: 'T' },
     { projectId, title: 'T', status: 'archived' },
   ];

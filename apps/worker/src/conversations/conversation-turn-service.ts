@@ -13,14 +13,18 @@ import {
 } from '@ai-agent-manager/agents';
 import {
   cliLoginHint,
+  composeContextPlanningPrompt,
   composeConversationPrompt,
+  composeProjectAwarePrompt,
   composeSourceTaskProposalPrompt,
   composeTaskProposalPrompt,
   conversationDisclosure,
   conversationQueuedTurnMaxAgeMs,
   conversationTurnTimeoutMs,
   evaluateConversationConsent,
+  findUnverifiedReferences,
   isCliAuthenticationFailure,
+  parseRepositoryContextRequest,
   parseTaskProposalOutput,
   truncateText,
   type AgentRuntime,
@@ -29,6 +33,7 @@ import {
 import {
   claimConversationTurn,
   claimTaskProposalGeneration,
+  evaluateStoredProjectSourceAccess,
   expireQueuedConversationTurns,
   expireQueuedTaskProposalGenerations,
   findConversationTurn,
@@ -52,6 +57,15 @@ import {
 } from '@ai-agent-manager/database';
 import { authorizeConversationTurn } from '@ai-agent-manager/orchestrator';
 import type { Logger } from '../logger.js';
+import {
+  describeRepositoryFailure,
+  fallbackRepositoryPlan,
+  prepareRepositoryContext,
+  retrieveRepositoryContext,
+  type PreparedRepositoryContext,
+  type RepositoryContextPlan,
+  type RetrievedRepositoryContext,
+} from './repository-context.js';
 
 // Worker side of C2 and C3: claims queued conversation turns (chat replies) and task proposal
 // generations, and runs each through the conversation gate and launch boundary, in a fresh,
@@ -127,6 +141,11 @@ type CliJob = {
   nothingStored: string;
   /** Message for a CLI that finished without any text. */
   emptyMessage: string;
+  /**
+   * C4: re-checked immediately before the gate, after the consent; a failure refuses the launch.
+   * Project-aware turns use it to re-read the project's source-sharing permission.
+   */
+  beforeLaunch?: () => Failure | null;
 };
 
 const noReply = 'No reply was stored.';
@@ -326,6 +345,10 @@ export const createConversationTurnService = (
           errorMessage: decision.ok ? 'AI replies are off.' : decision.message,
         });
       }
+      const refused = job.beforeLaunch?.() ?? null;
+      if (refused !== null) {
+        return failed(refused);
+      }
       const acceptance = {
         disclosureVersion: consent.disclosureVersion,
         acceptedAt: new Date(consent.acceptedAt).toISOString(),
@@ -441,7 +464,195 @@ export const createConversationTurnService = (
     return outcome;
   };
 
+  /** Finishes a turn, letting an operator Stop recorded meanwhile win over a late outcome. */
+  const finishTurn = (turnId: string, outcome: CliOutcome): void => {
+    let result = outcome;
+    if (findConversationTurn(db, turnId)?.status === 'stopping' && outcome.status !== 'completed') {
+      result = stopped('operator', outcome.status === 'cancelled' ? outcome.signal : null);
+    }
+    finish(turnId, result);
+    logger.info(`Conversation turn ${turnId}: ${result.status}.`);
+  };
+
+  /**
+   * C4 — a Project-Aware turn: re-check the source-sharing permission and the repository, list
+   * the commit's readable files, let the CLI choose files (planning run, structured JSON request),
+   * validate and read bounded excerpts, then run the CLI again for the answer. Both runs use the
+   * same gate, launch profile, scratch directory policy, timeout and Stop as a chat turn. Model
+   * output can only name files to read; it never triggers any other action.
+   */
+  const runProjectAwareTurn = async (
+    claim: ClaimedConversationTurn,
+    entry: ActiveWork,
+  ): Promise<void> => {
+    const { turn, userMessage, conversation } = claim;
+    const name = runtimeNames[turn.agentRuntime];
+    const progress = (values: ConversationTurnProgress) =>
+      updateConversationTurnProgress(db, turn.id, values, now());
+    const accessFailure = (): Failure | null => {
+      const access = evaluateStoredProjectSourceAccess(db, conversation.projectId);
+      return access.ok
+        ? null
+        : {
+            errorCode: 'source_access_denied',
+            errorMessage: `Nothing was sent to the AI. ${access.message}`,
+          };
+    };
+    const stoppedNow = (): CliOutcome | null =>
+      entry.stopReason === null ? null : stopped(entry.stopReason, null);
+
+    progress({ contextStage: 'checking_repository' });
+    const denied = accessFailure();
+    if (denied !== null || claim.repository === null) {
+      finishTurn(
+        turn.id,
+        failed(
+          denied ?? {
+            errorCode: 'repository_unavailable',
+            errorMessage: 'The project repository is unknown. Nothing was sent to the AI.',
+          },
+        ),
+      );
+      return;
+    }
+    let prepared: PreparedRepositoryContext;
+    try {
+      prepared = await prepareRepositoryContext({
+        repository: claim.repository,
+        message: userMessage.content,
+      });
+    } catch (error) {
+      logger.error(`Conversation turn ${turn.id}: the repository could not be read.`, error);
+      finishTurn(turn.id, failed(describeRepositoryFailure(error)));
+      return;
+    }
+    const early = stoppedNow();
+    if (early !== null) {
+      finishTurn(turn.id, early);
+      return;
+    }
+
+    // Planning run: the CLI returns a JSON read request; nothing else is accepted from it.
+    progress({ contextStage: 'selecting_files' });
+    const planning = await runCli(
+      {
+        id: turn.id,
+        runtime: turn.agentRuntime,
+        modelId: turn.requestedModelId,
+        prompt: composeContextPlanningPrompt({
+          runtime: turn.agentRuntime,
+          catalogText: prepared.catalogText,
+          history: claim.history,
+          message: userMessage.content,
+        }),
+        progress,
+        nothingStored: noReply,
+        emptyMessage: `${name} returned no file selection.`,
+        beforeLaunch: accessFailure,
+      },
+      entry,
+    );
+    entry.handle = null;
+    let plan: RepositoryContextPlan;
+    if (planning.status === 'completed') {
+      const parsed = parseRepositoryContextRequest(planning.reply);
+      plan = parsed.ok
+        ? {
+            selection: 'model',
+            selectionNote: parsed.request.note,
+            files: parsed.request.files,
+            searches: parsed.request.searches,
+            ignored: parsed.request.ignored,
+          }
+        : fallbackRepositoryPlan(
+            prepared,
+            userMessage.content,
+            `${parsed.message} Files were selected by keyword search instead.`,
+          );
+    } else if (planning.status === 'failed' && planning.errorCode === 'empty_reply') {
+      plan = fallbackRepositoryPlan(
+        prepared,
+        userMessage.content,
+        `${name} returned no file selection. Files were selected by keyword search instead.`,
+      );
+    } else {
+      finishTurn(
+        turn.id,
+        planning.status === 'failed'
+          ? {
+              ...planning,
+              errorMessage: `While choosing repository files: ${planning.errorMessage ?? ''}`,
+            }
+          : planning,
+      );
+      return;
+    }
+    const beforeReading = stoppedNow();
+    if (beforeReading !== null) {
+      finishTurn(turn.id, beforeReading);
+      return;
+    }
+
+    // Application-side validation and bounded reads.
+    progress({ contextStage: 'reading_files' });
+    const recheck = accessFailure();
+    if (recheck !== null) {
+      finishTurn(turn.id, failed(recheck));
+      return;
+    }
+    let retrieved: RetrievedRepositoryContext;
+    try {
+      retrieved = await retrieveRepositoryContext(prepared, plan);
+    } catch (error) {
+      logger.error(`Conversation turn ${turn.id}: reading repository files failed.`, error);
+      finishTurn(turn.id, failed(describeRepositoryFailure(error)));
+      return;
+    }
+    const { prompt, manifest } = composeProjectAwarePrompt({
+      runtime: turn.agentRuntime,
+      languageMode: turn.languageMode,
+      history: claim.history,
+      message: userMessage.content,
+      notesExcluded: claim.notesExcluded,
+      record: retrieved.record,
+      excerpts: retrieved.excerpts,
+    });
+    progress({
+      contextStage: 'answering',
+      contextManifestJson: JSON.stringify(manifest),
+      repositoryContextJson: JSON.stringify(retrieved.record),
+    });
+    const outcome = await runCli(
+      {
+        id: turn.id,
+        runtime: turn.agentRuntime,
+        modelId: turn.requestedModelId,
+        prompt,
+        progress,
+        nothingStored: noReply,
+        emptyMessage: `${name} finished without a reply. Nothing was stored; retry or rephrase the message.`,
+        beforeLaunch: accessFailure,
+      },
+      entry,
+    );
+    if (outcome.status === 'completed') {
+      // Paths the reply mentions that were not supplied are recorded, never trusted.
+      const supplied = new Set(retrieved.record.sources.map((source) => source.path));
+      progress({
+        repositoryContextJson: JSON.stringify({
+          ...retrieved.record,
+          unverifiedReferences: findUnverifiedReferences(outcome.reply, supplied),
+        }),
+      });
+    }
+    finishTurn(turn.id, outcome);
+  };
+
   const runTurn = async (claim: ClaimedConversationTurn, entry: ActiveWork): Promise<void> => {
+    if (claim.turn.contextMode === 'project_aware') {
+      await runProjectAwareTurn(claim, entry);
+      return;
+    }
     const { turn, userMessage } = claim;
     const { prompt, manifest } = composeConversationPrompt({
       runtime: turn.agentRuntime,
@@ -525,6 +736,7 @@ export const createConversationTurnService = (
               content: generation.sourceContent,
             },
             instructions: generation.instructions,
+            sourceReferences: claim.sourceReferences,
           })
         : composeTaskProposalPrompt({
             runtime: generation.agentRuntime,

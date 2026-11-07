@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.7 — C3.1 decisions recorded (§10); v0.6: AI Conversations C3 decisions recorded (§10); v0.5: AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
+**Status:** Context snapshot v0.8 — C4 decisions recorded (§10); v0.7: C3.1 decisions recorded (§10); v0.6: AI Conversations C3 decisions recorded (§10); v0.5: AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
 **Date:** 2026-11-07 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.10, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.9, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.9
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.11, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.10, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.10
 
 ## 1. Why this project exists
 
@@ -141,7 +141,7 @@ Specified in `SPEC.md` §18, with the architecture in `ARCHITECTURE.md` §15 and
 | **C1** | Persistence and UI only. Delivered 2026-11-06. |
 | **C2** | Real CLI-backed conversations. Delivered 2026-11-07. |
 | **C3** | Task proposals and approval into Backlog. Delivered 2026-11-07. |
-| **C4** | Deeper project and task awareness. |
+| **C4** | Project-Aware conversations with controlled source-code context. Delivered 2026-11-07. |
 
 Global AI and Architecture Decisions remain specified but unscheduled.
 
@@ -190,3 +190,15 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - **Provenance:** `task_proposal_generations.source_message_id` and `source_content` (additive migration `0011`); proposals reach their source through their generation. The UI links batches and cards back to the reply.
 - **Existing C3 data:** preserved and labelled as whole-conversation; not retryable.
 - **Next:** C4 project and task awareness.
+
+**C4 decisions (2026-11-07):**
+
+- **Context modes:** each conversation is **General Chat** (C2 behavior, no repository access) or **Project-Aware**. Existing conversations migrate to General Chat; new conversations choose explicitly. The mode is snapshotted per turn.
+- **Permission:** a separate, per-project **source-sharing permission**, bound to the repository identity and a versioned disclosure, independent of the AI Conversations acceptance and of Trusted Local execution trust. Re-checked at send, claim, before reading and before each CLI launch; fail closed. The AI Conversations disclosure was versioned (`2026-11-07.2`) because it previously promised that no project file is sent.
+- **Source of truth:** committed content at HEAD of the registered main checkout, read through Git object reads only (`ls-tree`, `cat-file`, `grep`, plus `ls-files` for ignore rules). Uncommitted and untracked files, task worktrees and Git metadata are never read; nothing is written.
+- **Selection:** model-directed in a separate planning run that returns a validated JSON read request (≤ 8 files, ≤ 5 literal searches); the application checks every path against the commit's eligible files and reads bounded excerpts. Unusable selections fall back to deterministic keyword search. The C2 launch profiles, gate and launch boundary are reused unchanged; no tool or shell access is enabled.
+- **Exclusions and limits:** sensitive, dependency, build, database, binary, generated, ignored, symlinked and oversized files are excluded by default; 60,000 characters of excerpts per turn.
+- **Provenance and freshness:** each reply stores a retrieval record (commit, paths, line ranges, refusals, limits; never content) shown as **Sources**; each turn rereads HEAD and states when the repository changed.
+- **C3.1:** proposals from a Project-Aware reply receive its source references (no content). Approval is unchanged.
+- **Accepted limitations:** the CLI still runs as the operator with unverified CLI-level restrictions and talks to its provider; earlier Project-Aware replies remain in General Chat history; no authenticated real-CLI run yet.
+- **Next:** UI-04 polishing pass (`IMPLEMENTATION_PLAN.md` §8, C4 "Remaining work for UI-04").

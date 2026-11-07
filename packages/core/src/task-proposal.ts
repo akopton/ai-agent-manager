@@ -233,7 +233,9 @@ const fencePattern = /```[A-Za-z]*[ \t]*\n([\s\S]*?)\n?```/g;
  * Finds the single JSON document of a reply: the whole reply, or the content of the only fenced
  * code block. Prose around a single block is tolerated; two or more blocks are ambiguous.
  */
-const extractDocument = (reply: string): { ok: true; json: string } | { ok: false } => {
+export const extractSingleJsonDocument = (
+  reply: string,
+): { ok: true; json: string } | { ok: false } => {
   const trimmed = reply.trim();
   // A reply that starts as a document is parsed whole, so a truncated one reports invalid JSON.
   if (trimmed.startsWith('{')) {
@@ -262,7 +264,7 @@ const describeIssue = (error: z.ZodError): string => {
  * and reported, valid ones are kept in order. Never executes or interprets the content.
  */
 export const parseTaskProposalOutput = (reply: string): TaskProposalOutput => {
-  const document = extractDocument(reply);
+  const document = extractSingleJsonDocument(reply);
   if (!document.ok) {
     return {
       ok: false,
@@ -367,6 +369,7 @@ const proposalSectionTags = [
   'conversation_history',
   'message',
   'developer_request',
+  'source_references',
 ];
 const proposalSectionClosing = new RegExp(`</(${proposalSectionTags.join('|')})>`, 'gi');
 
@@ -383,6 +386,8 @@ export type TaskProposalContextManifest = {
   scope?: 'source_message';
   sourceMessageId?: string;
   sourceCharacters?: number;
+  /** C4: repository references of a project-aware source reply that were named (no content). */
+  sourceReferenceCount?: number;
   languageMode: ConversationLanguageMode;
   /** Highest message sequence the generation was based on. */
   basedOnSequence: number;
@@ -471,26 +476,47 @@ const sourceInstructions = [
  * taken at request time), then the developer's optional focus. No other message, note or history
  * is included. Deterministic and pure.
  */
+/** C4: repository references of a project-aware source reply (`path` or `path:start-end`). */
+export type TaskProposalSourceReferences = { commit: string; files: string[] };
+
 export const composeSourceTaskProposalPrompt = ({
   runtime,
   languageMode,
   source,
   instructions,
+  sourceReferences,
 }: {
   runtime: AgentRuntime;
   languageMode: ConversationLanguageMode;
   source: { messageId: string; sequence: number; content: string };
   instructions: string;
+  /**
+   * C4: the repository files (paths and line ranges, never content) that were supplied to the
+   * model when the source reply was written, if it was a project-aware reply.
+   */
+  sourceReferences?: TaskProposalSourceReferences | null;
 }): { prompt: string; manifest: TaskProposalContextManifest } => {
   const request =
     instructions === ''
       ? 'Propose tasks for the work described in the source response.'
       : neutralize(instructions);
+  const references =
+    sourceReferences === null ||
+    sourceReferences === undefined ||
+    sourceReferences.files.length === 0
+      ? []
+      : [
+          `<source_references>\n${[
+            `The source response was written from these excerpts of commit ${sourceReferences.commit} of the project's repository. When a task concerns them, name the relevant repository-relative paths in its "prompt" so the coding agent knows where to look. These are the only files the source response saw; do not invent other paths.`,
+            ...sourceReferences.files.map((file) => `- ${neutralize(file)}`),
+          ].join('\n')}\n</source_references>`,
+        ];
   const prompt = [
     `<instructions>\n${[`You are running as ${runtimeNames[runtime]}.`, ...sourceInstructions].join('\n')}\n</instructions>`,
     `<language>\n${taskProposalLanguageInstructions[languageMode]}\n</language>`,
     `<output_contract>\n${outputContract()}\n</output_contract>`,
     `<source_response>\n${neutralize(source.content)}\n</source_response>`,
+    ...references,
     `<developer_request>\n${request}\n</developer_request>`,
   ].join('\n\n');
   return {
@@ -508,6 +534,9 @@ export const composeSourceTaskProposalPrompt = ({
       historyCharacters: 0,
       instructionsCharacters: instructions.length,
       notesExcluded: 0,
+      ...(references.length === 0 || sourceReferences === null || sourceReferences === undefined
+        ? {}
+        : { sourceReferenceCount: sourceReferences.files.length }),
     },
   };
 };

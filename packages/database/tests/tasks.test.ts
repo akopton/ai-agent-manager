@@ -540,6 +540,11 @@ test('upgrades a project-only database without touching existing projects', () =
         executionTrust: 'none',
         executionTrustedCommonDir: null,
         executionTrustedAt: null,
+        // Added by 0012_project_context: no project shares source by an upgrade.
+        conversationSourceAccess: 'none',
+        conversationSourceCommonDir: null,
+        conversationSourceDisclosureVersion: null,
+        conversationSourceAllowedAt: null,
       });
       assert.equal(
         connection.sqlite

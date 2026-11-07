@@ -134,6 +134,7 @@ const conversationErrorStatus = (code: ConversationErrorCode): number => {
     case 'task_proposal_changed':
     case 'task_proposal_not_editable':
     case 'task_proposal_source_invalid':
+    case 'conversation_source_access_required':
       return 409;
   }
 };

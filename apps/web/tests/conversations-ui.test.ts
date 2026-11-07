@@ -56,6 +56,7 @@ const conversation = (overrides: Partial<Conversation> = {}): Conversation => ({
   agentRuntime: 'claude',
   modelId: null,
   languageMode: 'pl_technical_en',
+  contextMode: 'general',
   revision: 1,
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_000_000,
@@ -92,6 +93,9 @@ const turn = (overrides: Partial<ConversationTurnView> = {}): ConversationTurnVi
   errorCode: null,
   errorMessage: null,
   replyTruncated: false,
+  contextMode: 'general',
+  contextStage: null,
+  repository: null,
   context: { includedMessages: 0, omittedMessages: 0, notesExcluded: 0 },
   createdAt: 1_700_000_000_000,
   startedAt: 1_700_000_000_100,
@@ -367,6 +371,7 @@ test('form helpers validate, reset the model on a runtime switch and send only c
     agentRuntime: 'claude',
     modelId: '',
     languageMode: 'pl_technical_en',
+    contextMode: 'general',
   });
   const invalid = validateConversationForm(newConversationFormValues());
   assert.equal(invalid.ok, false);
@@ -378,6 +383,7 @@ test('form helpers validate, reset the model on a runtime switch and send only c
     agentRuntime: 'claude',
     modelId: null,
     languageMode: 'pl_technical_en',
+    contextMode: 'general',
   });
 
   const stored = conversation({ modelId: 'claude-example', revision: 4 });
@@ -395,6 +401,11 @@ test('form helpers validate, reset the model on a runtime switch and send only c
     }),
     { ok: true, update: { revision: 4, agentRuntime: 'codex', modelId: null, languageMode: 'en' } },
   );
+  // C4: the context mode is sent only when it changes.
+  assert.deepEqual(buildConversationUpdate(stored, { ...values, contextMode: 'project_aware' }), {
+    ok: true,
+    update: { revision: 4, contextMode: 'project_aware' },
+  });
 });
 
 test('main navigation highlights Conversations for global and project conversation pages', () => {

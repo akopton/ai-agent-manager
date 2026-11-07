@@ -3,6 +3,8 @@ import {
   ConversationError,
   conversationDisclosure,
   evaluateConversationConsent,
+  formatSourceReference,
+  parseRepositoryContextRecord,
   requestTaskProposalsInputSchema,
   retryableConversationTurnStatuses,
   retryTaskProposalGenerationInputSchema,
@@ -13,11 +15,13 @@ import {
   type ParsedTaskProposal,
   type RequestTaskProposalsInput,
   type RetryTaskProposalGenerationInput,
+  type TaskProposalSourceReferences,
 } from '@ai-agent-manager/core';
 import { and, asc, desc, eq, inArray, lt } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import { getConversationConsent, loadHistory, requireConsent } from './conversation-turns.js';
+import { evaluateStoredProjectSourceAccess } from './project-source-access.js';
 import {
   activeTurnError,
   findScoped,
@@ -481,6 +485,12 @@ export type ClaimedTaskProposalGeneration = {
    */
   history: ConversationHistoryEntry[];
   notesExcluded: number;
+  /**
+   * C4: when the source reply was a project-aware reply, the repository excerpts it was written
+   * from (paths and line ranges, never content), so task prompts can name the files. Only while
+   * the project still allows source sharing; otherwise `null`.
+   */
+  sourceReferences: TaskProposalSourceReferences | null;
 };
 
 export type ClaimTaskProposalGenerationResult =
@@ -566,8 +576,42 @@ export const claimTaskProposalGeneration = (
       generation.sourceContent === null
         ? loadHistory(tx, conversation.id, generation.basedOnSequence + 1)
         : { history: [], notesExcluded: 0 };
-    return { claimed: true, claim: { generation, conversation, history, notesExcluded } };
+    const sourceReferences =
+      generation.sourceMessageId === null
+        ? null
+        : loadSourceReferences(tx, conversation, generation.sourceMessageId);
+    return {
+      claimed: true,
+      claim: { generation, conversation, history, notesExcluded, sourceReferences },
+    };
   }, immediate);
+
+/** Repository references of a project-aware source reply (C4); `null` when there are none. */
+const loadSourceReferences = (
+  tx: Transaction,
+  conversation: ConversationRecord,
+  sourceMessageId: string,
+): TaskProposalSourceReferences | null => {
+  const turn = tx
+    .select({
+      contextMode: conversationTurns.contextMode,
+      json: conversationTurns.repositoryContextJson,
+    })
+    .from(conversationTurns)
+    .where(
+      and(
+        eq(conversationTurns.conversationId, conversation.id),
+        eq(conversationTurns.assistantMessageId, sourceMessageId),
+        eq(conversationTurns.status, 'completed'),
+      ),
+    )
+    .get();
+  if (turn === undefined || turn.contextMode !== 'project_aware') return null;
+  const record = parseRepositoryContextRecord(turn.json);
+  if (record === null || record.sources.length === 0) return null;
+  if (!evaluateStoredProjectSourceAccess(tx, conversation.projectId).ok) return null;
+  return { commit: record.commit, files: record.sources.map(formatSourceReference) };
+};
 
 export type TaskProposalGenerationProgress = Partial<
   Pick<

@@ -232,3 +232,9 @@ export {
   updateTaskProposal,
   type ApproveTaskProposalResult,
 } from './task-proposals.js';
+export {
+  evaluateStoredProjectSourceAccess,
+  findProjectSourceAccess,
+  setProjectSourceAccess,
+  type ProjectSourceAccessRecord,
+} from './project-source-access.js';

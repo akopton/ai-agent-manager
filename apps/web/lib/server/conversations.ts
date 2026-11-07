@@ -3,8 +3,11 @@ import {
   ConversationError,
   conversationDisclosure,
   evaluateConversationConsent,
+  evaluateProjectSourceAccess,
   isActiveConversationTurnStatus,
+  parseRepositoryContextRecord,
   projectIdSchema,
+  projectSourceDisclosure,
   type Conversation,
   type ConversationMessage,
   type UpdateConversationData,
@@ -39,6 +42,7 @@ import type {
   ConversationSummary,
   ConversationTurnView,
   CreateProjectConversationRequest,
+  ProjectSourceAccessView,
   SendConversationMessageRequest,
   TaskProposalGenerationView,
   TaskProposalView,
@@ -66,6 +70,7 @@ const toConversation = ({
   agentRuntime,
   modelId,
   languageMode,
+  contextMode,
   revision,
   createdAt,
   updatedAt,
@@ -77,6 +82,7 @@ const toConversation = ({
   agentRuntime,
   modelId,
   languageMode,
+  contextMode,
   revision,
   createdAt,
   updatedAt,
@@ -152,6 +158,26 @@ export type ConversationDetail = {
   /** C3: explicit task proposal requests and the proposals they stored. */
   generations: TaskProposalGenerationView[];
   proposals: TaskProposalView[];
+  /** C4: whether this project allows sharing source with Project-Aware conversations. */
+  sourceAccess: ProjectSourceAccessView;
+};
+
+/** The project's source-sharing permission, from persisted state only (no repository access). */
+export const toProjectSourceAccessView = (project: ProjectRecord): ProjectSourceAccessView => {
+  const decision = evaluateProjectSourceAccess(project);
+  return {
+    current: decision.ok,
+    access: project.conversationSourceAccess,
+    reason: decision.ok ? 'allowed' : decision.reason,
+    allowedAt: project.conversationSourceAllowedAt,
+    localPath: project.localPath,
+    gitCommonDir: project.gitCommonDir,
+    disclosure: {
+      version: projectSourceDisclosure.version,
+      title: projectSourceDisclosure.title,
+      statements: [...projectSourceDisclosure.statements],
+    },
+  };
 };
 
 const manifestSchema = z.object({
@@ -192,6 +218,12 @@ export const toTurnView = (turn: ConversationTurnRecord): ConversationTurnView =
     errorCode: turn.errorCode,
     errorMessage: turn.errorMessage,
     replyTruncated: turn.replyTruncated,
+    contextMode: turn.contextMode,
+    contextStage:
+      turn.contextMode === 'project_aware' && isActiveConversationTurnStatus(turn.status)
+        ? turn.contextStage
+        : null,
+    repository: parseRepositoryContextRecord(turn.repositoryContextJson),
     context,
     createdAt: turn.createdAt,
     startedAt: turn.startedAt,
@@ -246,6 +278,7 @@ export const findConversationDetail = (
     ai: getConversationAiStatus(db),
     generations: proposals.generations,
     proposals: proposals.proposals,
+    sourceAccess: toProjectSourceAccessView(project),
   };
 };
 

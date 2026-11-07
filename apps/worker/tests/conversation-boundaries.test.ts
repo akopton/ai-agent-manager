@@ -22,10 +22,14 @@ const conversationFiles = [
   // C3: proposal generation runs in the worker and may only store drafts.
   join(repositoryRoot, 'packages/database/src/task-proposal-generations.ts'),
   join(repositoryRoot, 'packages/core/src/task-proposal.ts'),
+  // C4: project-aware retrieval and its persistence.
+  join(repositoryRoot, 'packages/core/src/project-context.ts'),
+  join(repositoryRoot, 'packages/database/src/project-source-access.ts'),
 ];
 
 const forbidden: readonly RegExp[] = [
-  /@ai-agent-manager\/git/,
+  // C4: only the read-only source-context subpath of the Git package is allowed.
+  /@ai-agent-manager\/git(?!\/source-context')/,
   /@ai-agent-manager\/agents\/(?:diagnostics|trusted-local-issuer)/,
   /node:child_process/,
   /\b(?:startAgentExecution|authorizeTrustedLocalExecution|authorizeAgentExecution)\b/,
@@ -100,4 +104,39 @@ test('C3: approval creates a task through createTask only and never queues, star
   ]) {
     assert.doesNotMatch(web, pattern);
   }
+});
+
+test('C4: the source-context module runs only read-only Git subcommands and never the filesystem', () => {
+  const source = code(join(repositoryRoot, 'packages/git/src/source-context.ts'));
+  const subcommands = new Set(
+    [...source.matchAll(/runGit(?:Checked)?\(\s*\[\s*'([a-z-]+)'/g)].map((match) => match[1]),
+  );
+  assert.deepEqual([...subcommands].sort(), [
+    'cat-file',
+    'grep',
+    'ls-files',
+    'ls-tree',
+    'rev-parse',
+    'symbolic-ref',
+  ]);
+  for (const pattern of [
+    /node:fs|node:child_process|from 'fs'/,
+    /\b(?:writeFile|appendFile|mkdir|rmSync|unlink|rename|copyFile|symlink)\b/,
+    /indexFile|GIT_INDEX_FILE/,
+    /'(?:add|commit|push|fetch|pull|checkout|switch|reset|restore|worktree|update-ref|update-index|config|gc|stash|branch|tag|merge|rebase|clean|apply)'/,
+  ]) {
+    assert.doesNotMatch(source, pattern);
+  }
+  // Its only local imports are the hardened process runner, errors and repository validation.
+  assert.deepEqual([...source.matchAll(/from '(\.[^']+)'/g)].map((match) => match[1]).sort(), [
+    './errors.js',
+    './process.js',
+    './repository.js',
+  ]);
+  // Worker retrieval reads the repository only through this module.
+  const retrieval = code(
+    join(repositoryRoot, 'apps/worker/src/conversations/repository-context.ts'),
+  );
+  assert.match(retrieval, /from '@ai-agent-manager\/git\/source-context'/);
+  assert.doesNotMatch(retrieval, /node:fs|node:child_process|@ai-agent-manager\/git'/);
 });

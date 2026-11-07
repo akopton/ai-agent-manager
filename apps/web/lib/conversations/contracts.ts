@@ -1,6 +1,10 @@
 import {
   addConversationNoteInputSchema,
   agentRuntimeSchema,
+  conversationContextModeSchema,
+  conversationTurnStageSchema,
+  projectSourceAccessInputSchema,
+  repositoryContextRecordSchema,
   conversationLanguageModeSchema,
   conversationMessageSchema,
   conversationSchema,
@@ -82,6 +86,15 @@ export const conversationTurnViewSchema = z.object({
   errorCode: z.string().nullable(),
   errorMessage: z.string().nullable(),
   replyTruncated: z.boolean(),
+  /** C4: the context mode snapshotted when the turn was queued. */
+  contextMode: conversationContextModeSchema,
+  /** C4: progress of a running project-aware turn; `null` otherwise. */
+  contextStage: conversationTurnStageSchema.nullable(),
+  /**
+   * C4: what was retrieved from the repository and sent (paths, line ranges, commit, limits);
+   * never file content. `null` for General Chat turns and before retrieval finished.
+   */
+  repository: repositoryContextRecordSchema.nullable(),
   /** From the context manifest: earlier chat messages sent along, and those left out. */
   context: z
     .object({
@@ -225,6 +238,36 @@ export const approveTaskProposalResponseSchema = z.object({
   created: z.boolean(),
 });
 
+// ---------------------------------------------------------------------------------------------
+// C4 — project source sharing
+// ---------------------------------------------------------------------------------------------
+
+/** `PUT /api/projects/:projectId/conversation-source-access`: allow (bound) or withdraw. */
+export const projectSourceAccessRequestSchema = projectSourceAccessInputSchema;
+
+/** The project's source-sharing permission as the conversation UI shows it. */
+export const projectSourceAccessViewSchema = z.object({
+  /** Allowed for the registered repository identity and the current disclosure. */
+  current: z.boolean(),
+  access: z.enum(['none', 'allowed']),
+  /** Why sharing is not possible now: `not_allowed`, `repository_changed` or `stale`. */
+  reason: z.enum(['allowed', 'not_allowed', 'repository_changed', 'stale']),
+  allowedAt: z.number().nullable(),
+  localPath: z.string(),
+  gitCommonDir: z.string(),
+  disclosure: z.object({
+    version: z.string(),
+    title: z.string(),
+    statements: z.array(z.string()),
+  }),
+});
+
+export type ProjectSourceAccessView = z.infer<typeof projectSourceAccessViewSchema>;
+
+export const projectSourceAccessResponseSchema = z.object({
+  sourceAccess: projectSourceAccessViewSchema,
+});
+
 export const conversationDetailResponseSchema = z.object({
   conversation: conversationSchema,
   messages: z.array(conversationMessageSchema),
@@ -232,6 +275,7 @@ export const conversationDetailResponseSchema = z.object({
   ai: conversationAiStatusSchema,
   generations: z.array(taskProposalGenerationViewSchema),
   proposals: z.array(taskProposalViewSchema),
+  sourceAccess: projectSourceAccessViewSchema,
 });
 
 export const conversationMessageResponseSchema = z.object({

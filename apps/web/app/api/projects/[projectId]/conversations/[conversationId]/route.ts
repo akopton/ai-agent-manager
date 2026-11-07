@@ -21,18 +21,26 @@ export const GET = async (request: Request, { params }: RouteContext): Promise<R
   }
   try {
     const { projectId, conversationId } = await params;
-    const { conversation, messages, turns, ai, generations, proposals } = getConversationDetail(
-      getDatabase(),
-      projectId,
-      conversationId,
-    );
-    return jsonResponse({ conversation, messages, turns, ai, generations, proposals });
+    const { conversation, messages, turns, ai, generations, proposals, sourceAccess } =
+      getConversationDetail(getDatabase(), projectId, conversationId);
+    return jsonResponse({
+      conversation,
+      messages,
+      turns,
+      ai,
+      generations,
+      proposals,
+      sourceAccess,
+    });
   } catch (error) {
     return handleRouteError(error);
   }
 };
 
-/** Changes the title, runtime, model or language. A stale settings revision is rejected. */
+/**
+ * Changes the title, runtime, model, language or context mode. A stale settings revision is
+ * rejected.
+ */
 export const PATCH = async (request: Request, { params }: RouteContext): Promise<Response> => {
   const { data, response } = await parseMutationRequest(
     request,

@@ -103,6 +103,7 @@ test('creates a conversation with defaults and an empty history', () => {
       agentRuntime: 'claude',
       modelId: null,
       languageMode: 'pl_technical_en',
+      contextMode: 'general',
       revision: 1,
       createdAt: 2_000,
       updatedAt: 2_000,
@@ -474,7 +475,22 @@ test('adds the conversation tables additively to a database migrated before C1',
     const connection = createDatabase({ path: join(directory, 'database.sqlite') });
     try {
       migrate(connection.db, { migrationsFolder: migrations });
-      insertProject(connection.db, project(projectA, 'website'));
+      // Raw SQL with the pre-C1 columns: the current schema has columns added later (C4).
+      const website = project(projectA, 'website');
+      connection.sqlite
+        .prepare(
+          'INSERT INTO projects (id, name, local_path, git_common_dir, remote_name, default_base_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          website.id,
+          website.name,
+          website.localPath,
+          website.gitCommonDir,
+          website.remoteName,
+          website.defaultBaseBranch,
+          website.createdAt,
+          website.updatedAt,
+        );
       const tasksBefore = connection.db.all(
         sql`SELECT sql FROM sqlite_master WHERE name = 'tasks'`,
       );

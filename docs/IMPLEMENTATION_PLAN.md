@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.9 — C3.1 (task proposals from individual AI replies) delivered (§8); v0.8: AI Conversations C3 (task proposals to Backlog) delivered (§8); v0.7: AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
-**Date:** 2026-11-07 (v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.10 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.9  
+**Status:** Draft v0.10 — C4 (Project-Aware conversations with controlled source-code context) delivered (§8); v0.9: C3.1 (task proposals from individual AI replies) delivered (§8); v0.8: AI Conversations C3 (task proposals to Backlog) delivered (§8); v0.7: AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
+**Date:** 2026-11-07 (v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.11 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.10  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -254,7 +254,7 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 | **C1 — AI Conversations Foundation** *(delivered 2026-11-06)* | Project-scoped conversations with runtime, model and language settings; durable, ordered history of operator notes; REST API and UI. No model runs. | M2, M3-01 |
 | **C2 — CLI-backed conversations** *(delivered 2026-11-07)* | Real replies from Claude Code or Codex in Conversation Mode: conversation gate and launch profiles, worker-owned turns, streaming, cancellation, restart handling, language-mode instructions. | C1, M1-02, M1-03 verification method, M4-03 (event log + SSE) |
 | **C3 — Task proposals to Backlog** *(delivered 2026-11-07)* | Structured task proposals from a conversation; edit, reject or accept each; accepted proposals create `Backlog` tasks with an origin reference. | C2, M3-02 |
-| **C4 — Project and task awareness** | Controlled, read-only context assembly: project instructions, task history and explicitly selected files, with a visible per-turn context manifest. | C2 |
+| **C4 — Project-aware conversations** *(delivered 2026-11-07)* | Project-Aware context mode: model-directed, application-validated, read-only retrieval of committed source files with a separate per-project permission and a visible Sources list per reply. (Project instructions, task history and operator-selected files deferred.) | C2 |
 
 ### 8.2 Work packages
 
@@ -369,18 +369,26 @@ A focused refinement of C3 before C4; it keeps C3's numbering and does not add a
 - **Tests:** source eligibility and validation (user message, note, other conversation and project), source-only prompts (earlier and later messages and notes excluded), snapshot reuse on retry, per-source retry, idempotent repeats and deliberate regeneration, legacy rows, worker Stop/restart/shutdown, UI eligibility and source ↔ proposals navigation; the C2 and C3 suites still pass.
 - **Not done:** no authenticated real-CLI run; no scroll-into-view animation beyond anchor links.
 
-#### C4 — Project and task awareness
+#### C4 — Project-aware conversations (delivered 2026-11-07)
 
-**Next step after C3.1.** Proposals in C3.1 only see the selected AI reply. C4 adds controlled, read-only project context (instructions, task history, explicitly selected files from a resolved commit) with a visible manifest, which both chat turns and proposal generation will use.
+The final functional AI Conversations milestone before the separate **UI-04** polishing pass. Details: `ARCHITECTURE.md` §15.4 "C4", `SPEC.md` §18.1 "C4 behavior".
 
-- Context sources:
-  - project instructions;
-  - task history;
-  - explicitly selected files, read through `packages/git` from a resolved commit (hardened, read-only, size-limited, binary-aware).
-- Visible per-turn context manifest; cross-project isolation in queries and context assembly.
-- Summaries and context budgeting for long histories.
+**Delivered scope:**
 
-**Done when:** `SPEC.md` §18.11 criteria 3 (separate histories, no cross-project context) and 4 pass.
+- `packages/core/src/project-context.ts`: context modes (labels, descriptions), the per-project source-sharing disclosure and `evaluateProjectSourceAccess`, the default path policy (`classifyRepositoryPath`, content checks), limits, the planning request parser, deterministic fallback terms, catalog rendering, planning and answering prompts, the retrieval record schema and the unverified-reference check. `contextMode` in conversation inputs; new turn stages and error codes; AI Conversations disclosure `2026-11-07.2`; `<source_references>` in C3.1 prompts.
+- `packages/git/src/source-context.ts` (subpath `@ai-agent-manager/git/source-context`): repository identity check, HEAD resolution, `ls-tree`, ignored-tracked list, `cat-file blob`, literal `git grep` on the commit. Read-only by construction.
+- Migration `0012_project_context` (additive): `conversations.context_mode`, `conversation_turns.context_mode/context_stage/repository_context_json`, `projects.conversation_source_*`. `packages/database/src/project-source-access.ts`; send/retry refusal and claim-time re-check in `conversation-turns.ts`; source references for generations.
+- Worker: `apps/worker/src/conversations/repository-context.ts` (catalog, validation, bounded reads, fallback) and the two-phase Project-Aware turn in the conversation turn service (permission re-checked before reading and before each launch; stages; Stop between phases; failures visible).
+- Web: `PUT /api/projects/:projectId/conversation-source-access`, `contextMode` in create/update, `sourceAccess` and turn retrieval data in the detail view; UI: Context choice (General Chat / Project-Aware) in the new-conversation and settings forms, header and composer labels, a Project-Aware notice, the source-sharing card with its disclosure, stage-specific progress, a collapsible **Sources** list under Project-Aware replies.
+- Tests (fake CLIs, disposable Git repositories, temporary SQLite only): path policy, request parsing and caps, prompts and neutralization, records, permission evaluation (core); identity, HEAD, tree, ignored files, symlinks and submodules, committed-only reads, size limits, literal grep with hostile `grep.*` config, and byte-identical repository/index/`.git` after reads (git); migration and upgrade (database); both CLIs end to end: selection and validation with sensitive/dependency/traversal/absolute/symlink/missing requests, secrets and uncommitted/untracked content never sent, no repository path sent, scratch directories, General Chat without retrieval, permission refusal and withdrawal, missing repository, freshness after a new commit, fallback, line and size limits, prompt injection without effects, planning failure and retry, Stop between phases, C3.1 references without content (worker); API guards, explicit modes, cross-project refusal, independence from execution trust, grant validation, Sources/stage/settings rendering, static entry-point checks (web).
+
+**Scope decisions:** see `ARCHITECTURE.md` §15.4 "C4 — Deliberate decisions" (HEAD of the registered checkout, model-directed selection, committed content only, a restricted Git subpath, a separate per-project permission and a new disclosure version, unchanged launch profiles with two runs per turn).
+
+**Not done in C4 (recorded limitations):** no authenticated real-CLI run (fake CLIs only); the conversation profiles are still not adversarially verified, so the CLI's own file access is restricted only by CLI settings; operator-selected files, uncommitted files, project instructions, accepted decisions, task history and summaries are not part of the context; budgets are character-based, not token-based; earlier Project-Aware replies stay in General Chat history; the unverified-reference check is heuristic; no token streaming.
+
+**Remaining work for UI-04 (polishing, no new capability):** a consolidated conversation layout (settings, source sharing and proposals); richer Sources presentation (grouping, copy-to-clipboard, links to a read-only file view); a clearer first-run flow for the renewed AI Conversations disclosure; source-sharing status on the project page; narrow-window refinements of the settings radio cards; live progress (SSE) instead of polling.
+
+**Manual verification (operator):** see the C4 browser acceptance checklist in the hand-off report; record its result here when run.
 
 #### Unscheduled (specified, not planned)
 
@@ -394,7 +402,7 @@ Listed in `SPEC.md` §18.12 and `ARCHITECTURE.md` §15.11. Resolve each with a d
 - per-CLI conversation capabilities and enforceable no-tool profiles (C2: profiles defined and parse-checked; adversarial verification still open);
 - structured output for proposals (C3: prompt-level JSON contract validated by the application; native CLI schema options known but unused);
 - capacity sharing with the execution slots (C2: decided, separate conversation slot per CLI);
-- summary and context budgeting (C4);
+- summary and context budgeting (C4: fixed character/line/file budgets decided; summaries and token budgets still open);
 - project disconnect behavior for conversations (C1 refuses disconnect while conversations exist; a decision flow is still open);
 - web search, only if Global AI is scheduled.
 

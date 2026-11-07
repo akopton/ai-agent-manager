@@ -2,6 +2,7 @@ import { AlertCircle, Bot, Loader2, MessagesSquare, NotebookPen, OctagonX } from
 import type { ConversationMessage } from '@ai-agent-manager/core';
 
 import { MarkdownContent } from '@/components/conversations/markdown-content';
+import { ReplySources } from '@/components/conversations/reply-sources';
 import { ReplyTaskActions } from '@/components/conversations/reply-task-actions';
 import { TurnActions } from '@/components/conversations/turn-actions';
 import type {
@@ -170,6 +171,9 @@ export const ConversationHistory = ({
                   </p>
                 ) : null}
               </article>
+              {entry.turn?.contextMode === 'project_aware' && entry.turn.repository !== null ? (
+                <ReplySources record={entry.turn.repository} />
+              ) : null}
               {eligible ? (
                 <ReplyTaskActions
                   projectId={projectId}

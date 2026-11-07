@@ -8,6 +8,9 @@ import { z } from 'zod';
 import {
   agentRuntimeSchema,
   agentRuntimes,
+  conversationContextModeDescriptions,
+  conversationContextModeLabels,
+  conversationContextModes,
   conversationLanguageModeDescriptions,
   conversationLanguageModeLabels,
   conversationLanguageModes,
@@ -61,6 +64,8 @@ type ConversationSettingsFormProps = {
   projectId: string;
   /** The conversation being edited; omitted when creating one. */
   conversation?: Conversation;
+  /** C4: whether the project currently allows source sharing (for the Project-Aware hint). */
+  sourceSharingAllowed?: boolean;
 };
 
 /**
@@ -70,6 +75,7 @@ type ConversationSettingsFormProps = {
 export const ConversationSettingsForm = ({
   projectId,
   conversation,
+  sourceSharingAllowed = false,
 }: ConversationSettingsFormProps) => {
   const router = useRouter();
   const fieldId = useId();
@@ -268,6 +274,43 @@ export const ConversationSettingsForm = ({
         </p>
         <FieldError id={`${fieldId}-languageMode-error`} message={fieldErrors.languageMode} />
       </div>
+
+      <fieldset className="space-y-2" aria-describedby={`${fieldId}-context-hint`}>
+        <legend className="mb-2 text-sm leading-none font-medium">Context</legend>
+        <div className={creating ? 'grid gap-2 sm:grid-cols-2' : 'grid gap-2'}>
+          {conversationContextModes.map((mode) => (
+            <label
+              key={mode}
+              className="flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring"
+            >
+              <input
+                type="radio"
+                name="contextMode"
+                value={mode}
+                className="mt-1 size-4 accent-[var(--primary)]"
+                checked={values.contextMode === mode}
+                onChange={() => update('contextMode', { ...values, contextMode: mode })}
+              />
+              <span className="space-y-1">
+                <span className="block font-medium">{conversationContextModeLabels[mode]}</span>
+                <span className="block text-xs leading-5 text-muted-foreground">
+                  {conversationContextModeDescriptions[mode]}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <p id={`${fieldId}-context-hint`} className="text-xs leading-5 text-muted-foreground">
+          {values.contextMode === 'project_aware'
+            ? sourceSharingAllowed
+              ? 'Repository excerpts are sent to the selected CLI with every message. Uncommitted changes are not included.'
+              : 'Before messages can be sent, allow source sharing for this project (shown on the conversation page).'
+            : baseline?.contextMode === 'project_aware'
+              ? 'No repository files will be read or sent. Earlier Project-Aware replies stay in the history and may still quote code; the excerpts themselves are not sent again.'
+              : 'Changing the context later affects only future messages.'}
+        </p>
+        <FieldError id={`${fieldId}-contextMode-error`} message={fieldErrors.contextMode} />
+      </fieldset>
 
       {error !== null ? (
         <Alert variant="destructive">

@@ -1,7 +1,7 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.10 — C3.1: task proposals are generated from one selected AI reply (§18.1, §18.8); v0.9: AI Conversations C3 delivered: explicitly requested task proposals, operator editing and individual Approve to Backlog (§18.1, §18.8); v0.8: AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
-**Date:** 2026-11-07 (v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
+**Status:** Draft v0.11 — C4: Project-Aware conversations with controlled source-code context (§18.1, §18.6, §18.9, §18.10); v0.10: C3.1: task proposals are generated from one selected AI reply (§18.1, §18.8); v0.9: AI Conversations C3 delivered: explicitly requested task proposals, operator editing and individual Approve to Backlog (§18.1, §18.8); v0.8: AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
+**Date:** 2026-11-07 (v0.10: 2026-11-07, v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
 
@@ -464,7 +464,7 @@ The "no live conversational input while a task runs" exclusion (§2) still appli
 | **C1** *(delivered)* | Project conversations with runtime, model and language settings, a durable history and a UI. Persistence and UI only. |
 | **C2** *(delivered)* | Real CLI-backed planning conversations (Conversation Mode) in Trusted Local Mode with a separate consent. |
 | **C3** *(delivered)* | Explicitly requested task proposals and their individual approval into Backlog (§18.8). **C3.1** *(delivered)*: proposals are generated from one selected AI reply. |
-| **C4** | Deeper project and task awareness (context assembly, §18.6, §18.9). |
+| **C4** *(delivered)* | Project-Aware conversations: relevant committed source files of the project's repository are selected, read read-only by the application and sent as bounded excerpts, with sources shown under each reply. |
 
 Global AI (§18.5) and architecture decisions (§18.7) remain specified but are not yet scheduled.
 
@@ -504,6 +504,24 @@ Global AI (§18.5) and architecture decisions (§18.7) remain specified but are 
 - The state of the latest request from a reply (waiting, generating, failed, stopped, interrupted, generated) appears under that reply, with Stop, Retry and **View proposals**. Clicking Generate tasks again after it finished is a deliberate new batch.
 - The Task proposals panel stays below the transcript with the same editing, rejection, reopening and approval. Proposals are grouped in batches; each batch and card names its source reply and links back to it.
 - Proposals made by C3 before this refinement are kept and labelled as generated from the whole conversation; they cannot be retried.
+
+**C4 behavior (2026-11-07).** Conversations can use the project's source code. Conversation Mode stays planning and analysis only.
+
+- *Context modes.* Every conversation has a context mode, shown in the header and editable in its settings:
+  - **General Chat**: the C2 behavior. Only the answered conversation history is sent; no repository file is read or sent.
+  - **Project-Aware**: for each new message, relevant files of the conversation's project are selected, read by AI Agent Manager and sent as bounded excerpts together with the history.
+
+  Conversations created before C4 are General Chat. A new conversation chooses the mode explicitly (General Chat is preselected). A turn keeps the mode it was sent with; changing the mode affects later messages only.
+- *Separate permission.* Project-Aware messages require the project's own **source-sharing permission**, granted on the conversation page after a short disclosure, bound to the repository identity (common Git directory) and the disclosure version, and withdrawable at any time. The AI Conversations acceptance, Trusted Local execution consent and project execution trust neither imply it nor are implied by it. Without it, Project-Aware messages and retries are refused (`conversation_source_access_required`); the permission is re-checked when the worker claims the turn, before files are read and immediately before each CLI launch, and a withdrawn permission fails the turn with nothing sent. The AI Conversations disclosure changed with C4 (version `2026-11-07.2`), so the operator accepts it again once.
+- *What is read.* Committed content at the current HEAD of the project's registered checkout, through Git object reads. Uncommitted edits, untracked files, task worktrees and Git metadata are never read; nothing is written to the repository; no branch is required; no repository command or script runs. Sensitive files (environment files, keys, credentials), dependency and build directories, local databases, binary, generated, minified and lock files, files the checkout's ignore rules match, symlinks, submodules and files over 512 KiB are excluded.
+- *How files are chosen.* The CLI first receives a catalog of readable paths (and files matching words of the message) and answers with a structured request for at most 8 files (optionally line ranges) and 5 literal searches. AI Agent Manager validates every request against that commit's file list and its exclusions, and reads the excerpts itself. If the selection reply is unusable, a keyword search selects the files instead and the reply says so. The model never reads files itself and its request can only name files to read.
+- *Limits.* At most 400 lines and 20,000 characters per excerpt, 60,000 characters of excerpts per message, 30,000 characters of earlier history (General Chat keeps 60,000). Refused, omitted and truncated content is listed for the operator and stated to the model.
+- *Sources.* Each Project-Aware reply has a compact **Sources** list: the commit, the excerpts actually supplied (path and line range), searches, refused or left-out paths, whether the selection fell back to keyword search, and any file paths the reply mentions that were not supplied. Only what the application retrieved is listed.
+- *Freshness.* Every message rereads the repository at its current HEAD; excerpts of earlier turns are never resent. When HEAD changed since the previous Project-Aware reply, the model and the Sources list say so.
+- *Switching back to General Chat.* No file is read or sent any more. Earlier Project-Aware replies remain in the conversation history (as in C2) and may quote code; the settings say so.
+- *Proposals (C3.1).* Generate tasks under a Project-Aware reply additionally sends the reply's source references (paths and line ranges at the commit; never file content) so task prompts can name the files, while the source-sharing permission is still allowed. Approval to Backlog is unchanged.
+- *Failures.* A missing, moved or replaced repository, a checkout without a commit, a Git read failure, a refused permission or a failed file-selection run fails the turn with a visible reason; nothing is stored as a reply and nothing is retried automatically.
+- *Honest limits.* The CLI still runs as the operator, with the C2 conversation launch profiles; these are CLI settings, not OS-enforced isolation, and the CLI can communicate with its provider. Repository content is untrusted data: it can only become text in a prompt and never triggers an application action.
 
 ### 18.2 Execution Mode and Conversation Mode
 
@@ -581,6 +599,8 @@ Both modes may share adapter infrastructure (CLI discovery, process execution, m
 - Context from one project is never included in another project's conversations or in a global conversation without explicit user authorization.
 - The user chooses the agent runtime and model.
 
+*C4 status (2026-11-07):* repository source context is delivered as **Project-Aware** mode (§18.1 "C4 behavior"): files are chosen per message by the model from an application-built catalog and validated and read by the application, rather than selected by the operator, and the user sees what was sent in the Sources list of each reply. Explicit operator file selection, project instructions, accepted decisions and task history as context are not delivered yet.
+
 ### 18.7 Architecture decisions
 
 *(Not scheduled in C1–C4.)*
@@ -627,6 +647,7 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 - Responses stream to the UI. The user can cancel a response; a cancelled or failed response is stored with that status and never silently lost or presented as complete. *(C2: the turn status is stored and shown, and the page refreshes while a turn runs, but the reply text appears only when it is complete; token streaming and keeping partial text of a cancelled reply are deferred. A cancelled or failed turn stores no reply text at all.)*
 - Credentials, tokens and secrets are not stored. Content the user deliberately sends to a conversation is stored as conversation history.
 - Project data stays scoped to its project unless the user explicitly authorizes otherwise.
+- *C4:* repository excerpts are part of the per-turn prompt only; they are never stored in the conversation history or the database. A turn stores a retrieval record (commit, paths, line ranges, limits; never file content). Summaries are still not implemented; histories are bounded by character budgets.
 
 ### 18.10 Safety and privacy
 
@@ -643,7 +664,7 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 1. **Global conversations:** create two global conversations, exchange messages with Claude Code in one and Codex in the other, and see both histories after an application restart.
 2. **No project leakage:** a global conversation's context never contains project data unless explicitly added.
 3. **Project conversations:** two conversations in one project share accepted decisions but have separate histories. A conversation in another project sees none of the first project's context.
-4. **Read-only files:** a selected source file is included as context. The conversation cannot change the repository or any worktree, and no claim of isolation is shown unless it is enforced.
+4. **Read-only files:** a selected source file is included as context. The conversation cannot change the repository or any worktree, and no claim of isolation is shown unless it is enforced. *(C4: met for model-selected files of Project-Aware conversations with fake CLIs and disposable repositories; operator-selected files are not offered.)*
 5. **Model selection:** `Default` and explicit models work as for tasks; an unsupported model fails visibly without fallback; switching the runtime keeps history and starts a fresh native session.
 6. **Streaming and cancellation:** a response streams. Cancelling stops the CLI and stores the partial response as cancelled.
 7. **Decisions:** a drafted decision becomes project knowledge only after acceptance, and survives deletion of its conversation.
@@ -658,7 +679,7 @@ These are **not** confirmed capabilities:
 - Per CLI: whether Conversation Mode can run with **no tools** or read-only tools, whether that can be verified as enforced, and whether repository instruction files or settings are loaded from the working directory.
 - Whether web search or browsing (useful for Global AI research) can be enabled safely, and how it is controlled.
 - Whether conversation turns share the per-CLI execution capacity of §6 or use separate limits, and how provider rate limits affect concurrent use.
-- How large selected files and histories are bounded, summarized and presented.
+- How large selected files and histories are bounded, summarized and presented. *(C4: bounded by fixed character, line and file limits and presented in the Sources list; summaries remain open.)*
 - What happens to a project's conversations and decisions when the project is disconnected (§4.1 requires an explicit decision about associated resources).
 
 ---

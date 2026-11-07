@@ -2,9 +2,11 @@ import {
   activePublicationStatuses,
   activeTaskRunStatuses,
   agentRuntimes,
+  conversationContextModes,
   conversationLanguageModes,
   conversationMessageKinds,
   conversationMessageRoles,
+  conversationTurnStages,
   conversationTurnStatuses,
   activeConversationTurnStatuses,
   executionSecurityModes,
@@ -12,6 +14,7 @@ import {
   gitOperationKinds,
   gitOperationStatuses,
   projectExecutionTrusts,
+  projectSourceAccessValues,
   publicationFailureStages,
   publicationStatuses,
   recoveryProcessChecks,
@@ -60,6 +63,15 @@ export const projects = sqliteTable('projects', {
     .default('none'),
   executionTrustedCommonDir: text('execution_trusted_common_dir'),
   executionTrustedAt: integer('execution_trusted_at'),
+  // C4 source sharing with AI Conversations (migration 0012). Separate from execution trust:
+  // `allowed` is valid only with the common Git directory and the disclosure version the operator
+  // accepted. Evaluated in `core` (`evaluateProjectSourceAccess`).
+  conversationSourceAccess: text('conversation_source_access', { enum: projectSourceAccessValues })
+    .notNull()
+    .default('none'),
+  conversationSourceCommonDir: text('conversation_source_common_dir'),
+  conversationSourceDisclosureVersion: text('conversation_source_disclosure_version'),
+  conversationSourceAllowedAt: integer('conversation_source_allowed_at'),
 });
 
 // Constant identifiers from `core`, rendered into CHECK constraints (never user data).
@@ -612,6 +624,10 @@ export const conversations = sqliteTable(
     agentRuntime: text('agent_runtime', { enum: agentRuntimes }).notNull(),
     modelId: text('model_id'),
     languageMode: text('language_mode', { enum: conversationLanguageModes }).notNull(),
+    /** C4 (migration 0012): `general` for every conversation created before C4. */
+    contextMode: text('context_mode', { enum: conversationContextModes })
+      .notNull()
+      .default('general'),
     revision: integer('revision').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
@@ -737,6 +753,16 @@ export const conversationTurns = sqliteTable(
     exitCode: integer('exit_code'),
     signal: text('signal'),
     replyTruncated: integer('reply_truncated', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * C4 (migration 0012): the context mode snapshotted when the turn was queued (`general` for
+     * every earlier turn), the progress of a project-aware turn, and its retrieval record (paths,
+     * line ranges, commit and limits; never file content).
+     */
+    contextMode: text('context_mode', { enum: conversationContextModes })
+      .notNull()
+      .default('general'),
+    contextStage: text('context_stage', { enum: conversationTurnStages }),
+    repositoryContextJson: text('repository_context_json'),
     createdAt: integer('created_at').notNull(),
     claimedAt: integer('claimed_at'),
     startedAt: integer('started_at'),

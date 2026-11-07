@@ -53,6 +53,11 @@ test('stores a project with defaults and persists it across connections', () => 
       executionTrust: 'none',
       executionTrustedCommonDir: null,
       executionTrustedAt: null,
+      // C4 (0012): no project shares source with AI Conversations by default.
+      conversationSourceAccess: 'none',
+      conversationSourceCommonDir: null,
+      conversationSourceDisclosureVersion: null,
+      conversationSourceAllowedAt: null,
     });
     assert.deepEqual(findProjectById(db, stored.id), stored);
     assert.equal(findProjectById(db, '00000000-0000-4000-8000-00000000ffff'), undefined);

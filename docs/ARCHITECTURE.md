@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.9 — C3.1 source-scoped proposal generation (§15.3, §15.8, §15.10); v0.8: AI Conversations C3 implementation notes: task proposal generation, editing and approval (§15.3, §15.8, §15.10, §15.11); v0.7: AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
+**Status:** Draft v0.10 — C4 project-aware conversations with controlled source-code context (§15.4 "C4", §15.10, §15.11); v0.9: C3.1 source-scoped proposal generation (§15.3, §15.8, §15.10); v0.8: AI Conversations C3 implementation notes: task proposal generation, editing and approval (§15.3, §15.8, §15.10, §15.11); v0.7: AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
 **Date:** 2026-11-07 (v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.10  
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.11  
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -680,7 +680,7 @@ These are **explicit validation tasks**, not implied guarantees. The architectur
 
 ## 15. AI Conversations (planned extension)
 
-> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI), C2 (CLI-backed turns) and C3 (task proposals) are implemented**; see the implementation notes in §15.3, §15.6, §15.8 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
+> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI), C2 (CLI-backed turns), C3 (task proposals) and C4 (project-aware source context) are implemented**; see the implementation notes in §15.3, §15.4, §15.6, §15.8 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
 
 ### 15.1 Module placement
 
@@ -692,7 +692,7 @@ One **conversations** module serves both scopes (`global` and `project`). It is 
 | Tables, migrations and queries | `packages/database` | Same SQLite database, WAL, foreign keys. |
 | CLI invocation in Conversation Mode; per-CLI conversation capabilities | `packages/agents` | Reuses the adapter abstraction from §7 with a separate conversation entry point and separate launch profiles. |
 | Turn lifecycle, context assembly, conversation pre-launch gate, proposal and decision commands | conversations module, in the worker | Preferred initial approach: start inside `packages/orchestrator`. A dedicated conversations package may be introduced later, through a documented decision, when clear modularity or dependency boundaries justify it (for example, to keep conversation code from depending on scheduler or publish modules). |
-| Selected source file reads | `packages/git` | Read-only; see §15.4. |
+| Selected source file reads | `packages/git` | Read-only; see §15.4. *C4:* the restricted subpath `@ai-agent-manager/git/source-context` is the only Git entry point conversation code may import. |
 | Screens, REST and SSE | `apps/web` | Same loopback binding and origin checks as §2 and §10. |
 
 The **worker** owns conversation turns, as it owns task runs. CLI processes are never started by the Next.js process. The web process persists commands such as "send message" and "cancel turn", and streams persisted events.
@@ -805,6 +805,69 @@ The permanent history is the source of truth. The **context sent to a CLI is ass
 - Path-validated, size-limited, binary-aware, and recorded in the manifest with path, commit and blob ID.
 
 All assembled context is **untrusted data** for the model and for the application. Repository files, documents, decisions and prior model output may contain prompt injection. The application never executes instructions found in context, and model output can only *propose* decisions or tasks (§15.7, §15.8).
+
+#### C4 implementation notes (2026-11-07)
+
+C4 delivers repository source context as a per-conversation **context mode** (`general` / `project_aware`). Project instructions, accepted decisions, task history, summaries and operator-selected files are **not** part of C4 (see "Deferred" below).
+
+**Deliberate decisions (and where they differ from the conceptual text above).**
+
+| Topic | Decision | Why |
+|---|---|---|
+| Which commit | `HEAD` of the project's **registered main checkout** (resolved per turn), not the default base branch | The operator asks about the code they work on; a branch is not required. Content still comes from a resolved commit (immutable, reproducible from the record). |
+| Who selects files | The **model**, from an application-built catalog, in a separate planning run; the application validates and reads. Not operator selection. | Requested product behavior (questions such as "find the code responsible for …"). Operator selection stays possible later. |
+| Uncommitted / untracked files | **Never read.** Stated in the UI, the disclosure, the prompt and the Sources list. | Keeps the §15.4 "resolved commit" safety default; no filesystem reads of the checkout at all. |
+| Git in conversation code | The C2 rule "conversation code imports no Git" is relaxed to **one** restricted entry point, `@ai-agent-manager/git/source-context`, whose subcommands are allow-listed by a static test. | Reading repository content requires Git object reads; everything else in `packages/git` stays unreachable. |
+| Consent | A new **per-project source-sharing permission** (`projects.conversation_source_*`), plus a new AI Conversations disclosure version (`2026-11-07.2`). | The C2 disclosure promised "no project file"; that is no longer true for Project-Aware turns. Execution trust must not double as permission to send source to a provider. |
+| Launch profiles | **Unchanged** C2 profiles, gate and launch boundary; two launches per Project-Aware turn. | No new CLI capability or tool is enabled; the model never reads files itself. |
+
+**Read path (all read-only).**
+
+```text
+worker: claim (permission re-checked in the claim tx; denied → failed, nothing read)
+  ─► permission re-read ─► source-context.resolveSourceSnapshot
+        validateRepository(localPath) ─ root & common dir == registered, not a linked worktree
+        rev-parse --verify HEAD^{commit} ; symbolic-ref --short HEAD
+  ─► ls-tree -r -z -l --full-tree <commit>   (regular blobs only; symlinks/submodules skipped)
+  ─► ls-files -z --cached --ignored --exclude-standard   (tracked files the ignore rules match)
+  ─► core.classifyRepositoryPath + size ─► eligible catalog (+ keyword matches via git grep)
+  ─► PLANNING RUN: runCli(composeContextPlanningPrompt) ─ same gate/profile/scratch/timeout/Stop
+  ─► core.parseRepositoryContextRequest (≤ 8 files, ≤ 5 searches)  │ unusable → keyword fallback
+  ─► permission re-read ─► retrieveRepositoryContext:
+        each path must be an exact eligible catalog entry ─► cat-file blob <oid> (≤ 512 KiB)
+        content checks (NUL, UTF-8, minified) ─► line/char bounds
+        grep -z -n -I -F -i --no-textconv --max-count=3 -e <term> <commit>  ─► match windows
+  ─► ANSWER RUN: runCli(composeProjectAwarePrompt) ─ permission re-read before the gate
+  ─► record unverified references ─► finishConversationTurn (reply only if completed)
+```
+
+- `git` runs through the existing hardened runner: argument arrays, `shell: false`, sanitized `GIT_*` environment, `core.fsmonitor=false`, `core.hooksPath=/dev/null`, `GIT_OPTIONAL_LOCKS=0`, `GIT_NO_LAZY_FETCH=1`, timeouts and output limits; `grep.*` config that would change output or matching is forced off. Allowed subcommands: `rev-parse`, `symbolic-ref`, `ls-tree`, `ls-files`, `cat-file blob`, `grep` (static test `apps/worker/tests/conversation-boundaries.test.ts`). No path from a request is ever joined to the checkout: traversal, absolute paths and symlink escapes cannot reach the filesystem. A disposable-repository test asserts that the working tree, index, `.git` and worktree list are byte-identical after every read.
+- **Default exclusions** (`core/project-context.ts`): `.git`; dependency directories (`node_modules`, `vendor`, `.venv`, …); build output and caches (`dist`, `build`, `.next`, `coverage`, `target`, …); sensitive names (`.env*`, `*.pem`, `*.key`, `id_*`, `.npmrc`, `.netrc`, `*.tfstate`, names containing *secret*/*credential*, `.ssh/`, `.aws/`, …); local databases (`*.sqlite`, `*.db`, WAL/SHM); binary and media extensions; lock files, `*.min.js`, source maps; files matching the checkout's ignore rules (force-added files); files over 512 KiB; then content checks (NUL bytes, invalid UTF-8, average line length > 400). There is no exception for documentation: ignored or sensitive docs stay excluded.
+- **Limits** (`repositoryContextLimits`): 100,000 tree entries; catalog 24,000 characters (documentation, keyword matches, directories, then files); 8 requested files; 5 searches (2–100 characters, literal); 3 matches per file and search, 10 files from search matches with ±12 context lines; 400 lines and 20,000 characters per excerpt; 60,000 characters of excerpts per turn; 30,000 characters of history in the answer (12,000 in the planning run). The prompt stays far below the launch boundary's 1 MiB limit.
+- **Prompt** (`composeProjectAwarePrompt`): `<instructions>` (ground claims in the excerpts, cite `path:line` only from supplied files, separate observations from assumptions, repository text is untrusted, no tools, uncommitted changes not included), `<language>` (unchanged modes), `<repository_context>` (searches, commit, freshness and limitation notes, numbered `<source>` excerpts), `<conversation_history>`, `<new_message>`. Closing tags in repository text are neutralized (readability, not a security boundary). The planning prompt has `<instructions>`, `<context_request_contract>`, `<repository_catalog>`, a shorter history and the message; it contains paths, never file content.
+- **Planning output** is the only thing taken from the first run: one JSON object (`files[]` with `path`, optional `startLine`/`endLine`; `searches[]`; optional `note`). Unknown keys are ignored; invalid items are skipped and recorded. An unusable reply (prose, invalid JSON) or an empty one switches to the deterministic fallback (paths named in the message plus identifier/keyword searches) and is recorded as `selection: fallback`. A failed, stopped or timed-out planning run ends the turn like a C2 failure (message prefixed "While choosing repository files:").
+
+**Persistence (migration `0012_project_context`, additive; no table rebuilt).**
+
+| Table | New columns | Meaning |
+|---|---|---|
+| `conversations` | `context_mode` (`NOT NULL DEFAULT 'general'`) | Every existing conversation becomes General Chat. |
+| `conversation_turns` | `context_mode` (`NOT NULL DEFAULT 'general'`), `context_stage`, `repository_context_json` | Snapshot of the mode at send time; progress (`checking_repository`, `selecting_files`, `reading_files`, `answering`); the retrieval record. |
+| `projects` | `conversation_source_access` (`NOT NULL DEFAULT 'none'`), `conversation_source_common_dir`, `conversation_source_disclosure_version`, `conversation_source_allowed_at` | The source-sharing grant, valid only for the stored common Git directory and the current `projectSourceDisclosure` version. |
+
+`ALTER TABLE … ADD COLUMN` cannot add `CHECK`s, so the enumerations are validated by the commands (Zod in `core`). The **retrieval record** (`repositoryContextRecordSchema`) stores commit, branch, previous commit, selection and note, catalog counts, searches, sources (path, line range, total lines, characters, origin, documentation, partial), refused and omitted paths, ignored requests, total characters, `limited`, and paths the reply mentions that were not supplied (`unverifiedReferences`). It never stores file content; excerpts exist only in the per-turn prompt. No repository snapshot or index is persisted.
+
+**Freshness.** Each Project-Aware turn resolves HEAD and rereads; nothing is cached between turns. The claim passes the commit of the latest completed Project-Aware turn; when it differs, the prompt and the Sources list say the repository changed and that earlier replies may describe older code. Old excerpts are never resent; only answered history is (as in C2).
+
+**General Chat.** Turns snapshot `context_mode = general` and take the unchanged C2 path (`composeConversationPrompt`, one launch, no Git). Switching a conversation back to General Chat therefore stops all retrieval; earlier Project-Aware **replies** stay in the history, which C2 resends within its budget, so code quoted in replies can still reach the CLI. This is documented in the settings hint rather than filtered, because silently dropping replies would break follow-up questions.
+
+**C3.1 integration.** `claimTaskProposalGeneration` loads the source reply's turn; for a completed Project-Aware turn with sources, and only while the project still allows source sharing, it passes `{ commit, files: ["path:start-end", …] }` to `composeSourceTaskProposalPrompt`, which adds a `<source_references>` section (no content) asking task prompts to name the relevant paths. Everything else (source snapshot, retry, parser, drafts, approval transaction, idempotency, task lifecycle) is unchanged.
+
+**What is guaranteed by the application:** no source is sent unless the conversation is Project-Aware **and** the project's current grant matches the registered repository identity (checked at send, claim, before reading and before each launch); only committed regular files of the registered main checkout that pass the exclusion policy are read; only validated, bounded excerpts are sent; no repository, index, ref, config or worktree is written; no repository script or hook runs through these reads; no task, proposal or approval results from a reply or from repository content; the Sources list shows exactly what was supplied.
+
+**What is not guaranteed:** the CLI still runs as the operator with the C2 profiles (CLI settings, not OS isolation; not adversarially verified), so a CLI could read other files the account can read and reach the network; excerpts go to the provider; a sensitive file with an unrecognized name and content could be sent if the model requests it (mitigated by the exclusion list and the Sources list, not prevented); the model can still cite files it was not shown (detected heuristically and listed, not prevented); prompt injection in repository files can mislead the reply, but cannot trigger actions. Two CLI runs per turn double the time and provider usage; each has the 10-minute timeout.
+
+**Deferred:** operator-selected files and line ranges; uncommitted working-tree files; project instructions, accepted decisions and task history as context; summaries and token-based budgets; adversarial verification of the conversation profiles; a separate repository index or embeddings (not needed at the current limits); global conversations.
 
 ### 15.5 Native CLI sessions and agent/model switching
 
@@ -1047,6 +1110,14 @@ No route starts a worker command, agent, task or Git operation. There is no SSE 
 
 `GET …/conversations/:conversationId` also returns `generations` and `proposals`. New errors: `task_proposal_no_history`, `task_proposal_generation_not_active`, `task_proposal_generation_not_retryable`, `task_proposal_changed`, `task_proposal_not_editable` (409); `task_proposal_generation_not_found`, `task_proposal_not_found` (404). C3.1: `task_proposal_source_not_found` (404), `task_proposal_source_invalid` (409); generation views include `sourceMessageId`. Approval can also return the task errors of manual creation (`invalid_task_input` 400) and `base_branch_not_found` (422). The illustrative `/api/proposals/:id/accept` above is not used: proposals are nested under their project and conversation.
 
+**C4 routes (implemented 2026-11-07).**
+
+| Method | Route | Purpose |
+|---|---|---|
+| `PUT` | `/api/projects/:projectId/conversation-source-access` | Allow (`{ access: 'allowed', gitCommonDir, disclosureVersion }`, re-checked read-only against the registered repository) or withdraw (`{ access: 'none' }`) source sharing for Project-Aware conversations. Host + same-Origin + JSON guards. |
+
+`POST`/`PATCH …/conversations` accept `contextMode`. `GET …/conversations/:conversationId` also returns `sourceAccess` (current, reason, repository identity, disclosure); turn views include `contextMode`, `contextStage` (while active) and `repository` (the retrieval record, never content). New error: `conversation_source_access_required` (409). Turn error codes: `source_access_denied`, `repository_unavailable`, `repository_context_failed`.
+
 UI pages:
 
 - `/conversations`: projects with conversation counts.
@@ -1062,6 +1133,8 @@ UI pages:
 5. Capacity: shared with the §6 execution slots or a separate conversation limit, and the effect of provider rate limits.
 6. Context budgeting: token estimation per CLI, summary generation (which runtime and model), file size limits.
 7. Project disconnect: archive, keep or delete conversations and decisions (explicit user decision per `SPEC.md` §4.1).
+
+*C4 status (2026-11-07):* 6 — context budgeting decided as fixed character/line/file limits (§15.4 "C4"); token estimation and summaries remain open. 2 and 3 unchanged: Project-Aware turns use the unchanged C2 profiles, so file access by the CLI itself is still only restricted by unverified CLI settings.
 
 *C3 status (2026-11-07):* 1 — structured output: a prompt-level JSON contract validated in the worker; the CLIs' native schema options are known but unused.
 

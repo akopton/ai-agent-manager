@@ -1,8 +1,10 @@
 import {
+  conversationContextModeDefault,
   conversationLanguageModeDefault,
   conversationRuntimeDefault,
   type AgentRuntime,
   type Conversation,
+  type ConversationContextMode,
   type ConversationLanguageMode,
   type UpdateConversationInput,
 } from '@ai-agent-manager/core';
@@ -25,6 +27,8 @@ export type ConversationFormValues = {
   /** An explicit model identifier, or `defaultModel`. */
   modelId: string;
   languageMode: ConversationLanguageMode;
+  /** C4: General Chat or Project-Aware. */
+  contextMode: ConversationContextMode;
 };
 
 export type ConversationFormField = keyof ConversationFormValues;
@@ -36,6 +40,7 @@ export const newConversationFormValues = (): ConversationFormValues => ({
   agentRuntime: conversationRuntimeDefault,
   modelId: defaultModel,
   languageMode: conversationLanguageModeDefault,
+  contextMode: conversationContextModeDefault,
 });
 
 export const conversationFormValues = (conversation: Conversation): ConversationFormValues => ({
@@ -43,6 +48,7 @@ export const conversationFormValues = (conversation: Conversation): Conversation
   agentRuntime: conversation.agentRuntime,
   modelId: conversation.modelId ?? defaultModel,
   languageMode: conversation.languageMode,
+  contextMode: conversation.contextMode,
 });
 
 /**
@@ -62,6 +68,7 @@ const conversationFormFields = new Set<string>([
   'agentRuntime',
   'modelId',
   'languageMode',
+  'contextMode',
 ]);
 
 export const isConversationFormField = (key: string): key is ConversationFormField =>
@@ -77,6 +84,7 @@ const parseConversationForm = (values: ConversationFormValues): Validated => {
     agentRuntime: values.agentRuntime,
     modelId: values.modelId.trim() === defaultModel ? null : values.modelId,
     languageMode: values.languageMode,
+    contextMode: values.contextMode,
   });
   if (parsed.success) {
     return { ok: true, request: parsed.data };
@@ -138,6 +146,9 @@ export const buildConversationUpdate = (
     ...(request.languageMode === conversation.languageMode
       ? {}
       : { languageMode: request.languageMode }),
+    ...(request.contextMode === conversation.contextMode
+      ? {}
+      : { contextMode: request.contextMode }),
   };
   return {
     ok: true,

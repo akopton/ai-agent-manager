@@ -10,6 +10,11 @@
       "@ai-agent-manager/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./source-context": {
+      "@ai-agent-manager/source": "./src/source-context.ts",
+      "types": "./dist/source-context.d.ts",
+      "import": "./dist/source-context.js"
     }
   },
   "scripts": {

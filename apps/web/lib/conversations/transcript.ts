@@ -5,6 +5,7 @@ import {
 } from '@ai-agent-manager/core';
 import type { ConversationAiStatus, ConversationTurnView } from '@/lib/conversations/contracts';
 import { describeModelChoice } from '@/lib/models/model-selection';
+import { describeTurnStage } from '@/lib/conversations/sources';
 
 // Pure presentation model of a conversation transcript: notes, sent messages with the state of
 // their latest reply request, and replies with the runtime and model that produced them. Kept free
@@ -64,8 +65,16 @@ export const describeTurnState = (
     case 'running':
       return {
         tone: 'running',
-        title: turn.startedAt === null ? `Starting ${name}…` : `${name} is writing a reply…`,
-        description: null,
+        title:
+          turn.contextStage !== null
+            ? describeTurnStage(turn.contextStage, name)
+            : turn.startedAt === null
+              ? `Starting ${name}…`
+              : `${name} is writing a reply…`,
+        description:
+          turn.contextMode === 'project_aware'
+            ? 'Project-Aware: repository excerpts are sent with this message.'
+            : null,
         canStop: true,
         canRetry: false,
       };
@@ -115,6 +124,7 @@ export const describeReplyMeta = (turn: ConversationTurnView): string => {
     runtimeNames[turn.agentRuntime],
     `${requested}${reported}`,
     conversationLanguageModeLabels[turn.languageMode],
+    ...(turn.contextMode === 'project_aware' ? ['Project-Aware'] : []),
   ].join(' · ');
 };
 

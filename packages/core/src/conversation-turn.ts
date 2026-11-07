@@ -69,6 +69,25 @@ export const sendConversationMessageInputSchema = z.strictObject({
 
 export type SendConversationMessageInput = z.input<typeof sendConversationMessageInputSchema>;
 
+/**
+ * Progress of a project-aware turn (C4), shown while it runs. `null` for General Chat turns.
+ *
+ * - `checking_repository`: access and repository identity are re-checked; the tree is listed.
+ * - `selecting_files`: the CLI chooses files and searches from the catalog (planning phase).
+ * - `reading_files`: AI Agent Manager validates the request and reads the excerpts.
+ * - `answering`: the CLI writes the reply with the excerpts.
+ */
+export const conversationTurnStages = [
+  'checking_repository',
+  'selecting_files',
+  'reading_files',
+  'answering',
+] as const;
+
+export const conversationTurnStageSchema = z.enum(conversationTurnStages);
+
+export type ConversationTurnStage = z.infer<typeof conversationTurnStageSchema>;
+
 /** Retrying a turn: the client's request ID deduplicates double clicks. */
 export const retryConversationTurnInputSchema = z.strictObject({ requestId: z.uuid() });
 
@@ -280,6 +299,13 @@ export const conversationTurnErrorCodes = [
   'worker_error',
   'worker_restarted',
   'worker_shutdown',
+  // C4 — project-aware turns.
+  /** The project's source-sharing permission is missing, stale or for another repository. */
+  'source_access_denied',
+  /** The registered repository is missing, moved, not a repository or has no commit. */
+  'repository_unavailable',
+  /** Reading the repository failed (Git error, limits); nothing was sent. */
+  'repository_context_failed',
 ] as const;
 
 export type ConversationTurnErrorCode = (typeof conversationTurnErrorCodes)[number];

@@ -6,6 +6,7 @@ import {
   ConversationError,
   conversationReplyMaxLength,
   evaluateConversationConsent,
+  parseRepositoryContextRecord,
   retryableConversationTurnStatuses,
   retryConversationTurnInputSchema,
   sendConversationMessageInputSchema,
@@ -35,10 +36,15 @@ import {
   type Transaction,
 } from './conversations.js';
 import {
+  evaluateStoredProjectSourceAccess,
+  requireProjectSourceAccess,
+} from './project-source-access.js';
+import {
   conversationMessages,
   conversations,
   conversationSettings,
   conversationTurns,
+  projects,
 } from './schema.js';
 
 // C2 — CLI-backed conversation turns. The web process records a user `chat` message and a
@@ -171,6 +177,8 @@ const insertTurn = (
       agentRuntime: conversation.agentRuntime,
       requestedModelId: conversation.modelId,
       languageMode: conversation.languageMode,
+      // C4: General Chat never reads the repository, whatever the conversation says later.
+      contextMode: conversation.contextMode,
       createdAt: values.now,
       updatedAt: values.now,
     })
@@ -262,6 +270,9 @@ export const sendConversationMessage = (
       );
     }
     requireConsent(tx);
+    if (conversation.contextMode === 'project_aware') {
+      requireProjectSourceAccess(tx, conversation.projectId);
+    }
     if (hasActiveTurn(tx, conversation.id)) {
       throw activeTurnError();
     }
@@ -387,6 +398,9 @@ export const retryConversationTurn = (
       );
     }
     requireConsent(tx);
+    if (conversation.contextMode === 'project_aware') {
+      requireProjectSourceAccess(tx, conversation.projectId);
+    }
     if (hasActiveTurn(tx, conversation.id)) {
       throw activeTurnError();
     }
@@ -499,6 +513,16 @@ export type ClaimedConversationTurn = {
   history: ConversationHistoryEntry[];
   /** Notes before this message; never sent. */
   notesExcluded: number;
+  /**
+   * C4: for a project-aware turn, the registered repository (identity re-checked by the worker
+   * before anything is read) and the commit of the latest earlier project-aware reply, so a
+   * changed repository can be pointed out. `null` for General Chat turns.
+   */
+  repository: {
+    localPath: string;
+    gitCommonDir: string;
+    previousCommit: string | null;
+  } | null;
 };
 
 /**
@@ -592,9 +616,35 @@ export const claimConversationTurn = (
       }
       return { claimed: false };
     }
+    // C4: a project-aware turn whose project no longer allows source sharing fails before it is
+    // claimed; nothing is read or sent.
+    const claimable = queued.filter((turn) => {
+      if (turn.contextMode !== 'project_aware') return true;
+      const owner = tx
+        .select({ projectId: conversations.projectId })
+        .from(conversations)
+        .where(eq(conversations.id, turn.conversationId))
+        .get();
+      const access =
+        owner === undefined
+          ? ({ ok: false, message: 'The conversation no longer exists.' } as const)
+          : evaluateStoredProjectSourceAccess(tx, owner.projectId);
+      if (access.ok) return true;
+      tx.update(conversationTurns)
+        .set({
+          status: 'failed',
+          errorCode: 'source_access_denied',
+          errorMessage: `No repository content was read or sent. ${access.message}`,
+          endedAt: now,
+          updatedAt: now,
+        })
+        .where(and(eq(conversationTurns.id, turn.id), eq(conversationTurns.status, 'queued')))
+        .run();
+      return false;
+    });
     // One conversation slot per CLI, shared with C3 proposal generations.
     const runningByRuntime: Map<AgentRuntime, number> = runningConversationWorkByRuntime(tx);
-    const next = queued.find(
+    const next = claimable.find(
       (turn) => (runningByRuntime.get(turn.agentRuntime) ?? 0) < maxActivePerRuntime,
     );
     if (next === undefined) {
@@ -627,7 +677,25 @@ export const claimConversationTurn = (
       throw new Error(`Conversation turn ${next.id} could not be claimed consistently.`);
     }
     const { history, notesExcluded } = loadHistory(tx, conversation.id, userMessage.sequence);
-    return { claimed: true, claim: { turn, conversation, userMessage, history, notesExcluded } };
+    let repository: ClaimedConversationTurn['repository'] = null;
+    if (turn.contextMode === 'project_aware') {
+      const project = tx
+        .select({ localPath: projects.localPath, gitCommonDir: projects.gitCommonDir })
+        .from(projects)
+        .where(eq(projects.id, conversation.projectId))
+        .get();
+      if (project === undefined) {
+        throw new Error(`The project of conversation turn ${turn.id} no longer exists.`);
+      }
+      repository = {
+        ...project,
+        previousCommit: findPreviousRepositoryCommit(tx, conversation.id),
+      };
+    }
+    return {
+      claimed: true,
+      claim: { turn, conversation, userMessage, history, notesExcluded, repository },
+    };
   }, immediate);
 
 export type ConversationTurnProgress = Partial<
@@ -639,8 +707,31 @@ export type ConversationTurnProgress = Partial<
     | 'pid'
     | 'startedAt'
     | 'effectiveModelId'
+    | 'contextStage'
+    | 'repositoryContextJson'
   >
 >;
+
+/**
+ * The commit read by the latest completed project-aware turn of the conversation, if any. Used to
+ * tell the model (and the operator) that the repository changed since earlier replies.
+ */
+const findPreviousRepositoryCommit = (tx: Transaction, conversationId: string): string | null => {
+  const previous = tx
+    .select({ json: conversationTurns.repositoryContextJson })
+    .from(conversationTurns)
+    .where(
+      and(
+        eq(conversationTurns.conversationId, conversationId),
+        eq(conversationTurns.status, 'completed'),
+        eq(conversationTurns.contextMode, 'project_aware'),
+        isNotNull(conversationTurns.repositoryContextJson),
+      ),
+    )
+    .orderBy(desc(conversationTurns.createdAt), desc(conversationTurns.id))
+    .get();
+  return parseRepositoryContextRecord(previous?.json ?? null)?.commit ?? null;
+};
 
 /** Records launch facts of an active turn. Never changes its status. */
 export const updateConversationTurnProgress = (

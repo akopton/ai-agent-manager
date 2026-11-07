@@ -47,6 +47,25 @@ export const conversationLanguageModeDescriptions: Readonly<
 };
 
 /**
+ * Context modes (C4):
+ *
+ * - `general`: General Chat, the C2 behavior. Only the answered conversation history is sent; no
+ *   repository file is read or sent.
+ * - `project_aware`: Project-Aware Chat. For each new message, relevant committed files of the
+ *   project's repository are selected, read read-only by AI Agent Manager and sent as bounded
+ *   excerpts. Requires the project's separate source-sharing permission.
+ *
+ * Existing conversations are `general` (migration default); a new conversation chooses explicitly.
+ */
+export const conversationContextModes = ['general', 'project_aware'] as const;
+
+export const conversationContextModeSchema = z.enum(conversationContextModes);
+
+export type ConversationContextMode = z.infer<typeof conversationContextModeSchema>;
+
+export const conversationContextModeDefault: ConversationContextMode = 'general';
+
+/**
  * The runtime of a new conversation when none is chosen. It matches the default of the task form;
  * there is no stored project or global runtime preference yet.
  */
@@ -112,6 +131,7 @@ export const createConversationInputSchema = z.strictObject({
   agentRuntime: agentRuntimeSchema.default(conversationRuntimeDefault),
   modelId: modelSelectionSchema.default(null),
   languageMode: conversationLanguageModeSchema.default(conversationLanguageModeDefault),
+  contextMode: conversationContextModeSchema.default(conversationContextModeDefault),
 });
 
 export type CreateConversationInput = z.input<typeof createConversationInputSchema>;
@@ -129,10 +149,11 @@ export const updateConversationInputSchema = z
     agentRuntime: agentRuntimeSchema.optional(),
     modelId: modelSelectionSchema.optional(),
     languageMode: conversationLanguageModeSchema.optional(),
+    contextMode: conversationContextModeSchema.optional(),
   })
   .refine(
     (value) =>
-      [value.title, value.agentRuntime, value.modelId, value.languageMode].some(
+      [value.title, value.agentRuntime, value.modelId, value.languageMode, value.contextMode].some(
         (field) => field !== undefined,
       ),
     { message: 'Change at least one setting.' },
@@ -162,6 +183,8 @@ export const conversationSchema = z.object({
   /** An explicit model identifier, or `null` for `Default`. */
   modelId: z.string().nullable(),
   languageMode: conversationLanguageModeSchema,
+  /** C4: General Chat or Project-Aware Chat, for future messages. */
+  contextMode: conversationContextModeSchema,
   /** Increases with every settings change; used to reject stale updates. */
   revision: z.number().int(),
   createdAt: z.number().int(),
@@ -241,6 +264,9 @@ export const conversationErrorCodes = [
   'task_proposal_source_not_found',
   /** The selected message is not a completed AI reply (a user message or a note). */
   'task_proposal_source_invalid',
+  // C4 — project-aware conversations.
+  /** Project-Aware Chat needs the project's current source-sharing permission. */
+  'conversation_source_access_required',
 ] as const;
 
 export const conversationErrorCodeSchema = z.enum(conversationErrorCodes);

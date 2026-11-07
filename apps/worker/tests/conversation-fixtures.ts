@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import {
   conversationDisclosure,
   type AgentRuntime,
+  type ConversationContextMode,
   type ConversationLanguageMode,
 } from '@ai-agent-manager/core';
 import {
@@ -67,7 +68,11 @@ const done = (text) => process.stdout.write(text, () => process.exit(0));
 if (args[0] === '--version') done(${JSON.stringify(versionLines[runtime])} + '\\n');
 else if (args.includes('--help')) done(${JSON.stringify(helpTexts[runtime])});
 else {
-  const steps = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8'));
+  const scenario = JSON.parse(fs.readFileSync(path.join(dir, 'scenario.json'), 'utf8'));
+  // C4: a { sequence } scenario gives each invocation its own steps (planning, then answer).
+  const logFile = path.join(dir, 'invocations.jsonl');
+  const previous = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').split('\\n').filter(Boolean).length : 0;
+  const steps = Array.isArray(scenario) ? scenario : scenario.sequence[Math.min(previous - scenario.offset, scenario.sequence.length - 1)];
   let stdin = '';
   process.stdin.on('data', (chunk) => (stdin += chunk));
   process.stdin.on('end', async () => {
@@ -93,6 +98,8 @@ else {
 export type Fake = {
   path: string;
   setSteps: (steps: Step[]) => void;
+  /** C4: the next invocations use these steps in order (the last one repeats). */
+  setSequence: (sequence: Step[][]) => void;
   invocations: () => { args: string[]; cwd: string; stdin: string; pid: number }[];
 };
 
@@ -105,9 +112,20 @@ export const createFake = (directory: string, runtime: AgentRuntime): Fake => {
     writeFileSync(join(directory, 'scenario.json'), JSON.stringify(steps));
   setSteps([]);
   const log = join(directory, 'invocations.jsonl');
+  const count = () =>
+    existsSync(log)
+      ? readFileSync(log, 'utf8')
+          .split('\n')
+          .filter((line) => line !== '').length
+      : 0;
   return {
     path: realpathSync(path),
     setSteps,
+    setSequence: (sequence) =>
+      writeFileSync(
+        join(directory, 'scenario.json'),
+        JSON.stringify({ offset: count(), sequence }),
+      ),
     invocations: () =>
       existsSync(log)
         ? readFileSync(log, 'utf8')
@@ -152,6 +170,7 @@ export type Fixture = {
 export type ConversationOptions = {
   modelId?: string | null;
   languageMode?: ConversationLanguageMode;
+  contextMode?: ConversationContextMode;
 };
 
 export const withFixture = async (run: (fixture: Fixture) => Promise<void>): Promise<void> => {
@@ -204,6 +223,7 @@ export const withFixture = async (run: (fixture: Fixture) => Promise<void>): Pro
             agentRuntime: runtime,
             modelId: options.modelId ?? null,
             languageMode: options.languageMode ?? 'pl_technical_en',
+            contextMode: options.contextMode ?? 'general',
           },
           now: Date.now(),
         });

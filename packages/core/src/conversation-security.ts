@@ -20,12 +20,15 @@ import {
  * acceptance of an older version is stale and blocks every turn until the operator accepts again.
  */
 export const conversationDisclosure = Object.freeze({
-  version: '2026-11-07.1',
+  // C4 (2026-11-07.2): project-aware conversations can send repository excerpts, so the earlier
+  // statement "gives it no … project file" changed and the acceptance must be renewed.
+  version: '2026-11-07.2',
   title: 'AI Conversations (Trusted Local)',
   statements: Object.freeze([
     'Sending a chat message starts Claude Code or Codex on this Mac as your user, with your account’s permissions and the CLI login you already use. No API keys are used or stored.',
     'The message, a language instruction and the earlier chat messages of the same conversation are sent to the provider behind the selected CLI. Notes are never sent.',
-    'The CLI runs in a new, empty scratch directory under the AI Agent Manager data folder. AI Agent Manager gives it no repository path, worktree, project file or task data.',
+    'The CLI runs in a new, empty scratch directory under the AI Agent Manager data folder. AI Agent Manager never gives it a repository path, worktree or task data.',
+    'General Chat sends no project files. A Project-Aware conversation additionally sends excerpts of committed files that AI Agent Manager reads from that project’s repository, and only after you allowed source sharing for that project separately. Before the answer, the CLI is run once more to choose the files from a list of paths.',
     'Claude Code is started with all tools disabled; Codex runs in its read-only sandbox. These are CLI settings, not OS-enforced isolation, and they have not been adversarially verified: a CLI could still read files your account can read and reach the network.',
     'Conversations never create, queue or start tasks, create worktrees, commit, push or publish. AI Agent Manager does not act on anything a reply says.',
     'Stop terminates the CLI’s process group, not every possible descendant process.',

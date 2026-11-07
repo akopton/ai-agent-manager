@@ -299,7 +299,10 @@ export const listConversationMessages = (
 };
 
 /**
- * Changes a conversation's title, runtime, model or language for future messages. The update must
+ * Changes a conversation's title, runtime, model, language or context mode (C4) for future
+ * messages. Switching to Project-Aware does not require the project's source-sharing permission
+ * yet (it is checked when a message is sent); switching to General Chat stops all retrieval for
+ * later turns. The update must
  * name the settings revision it was based on; a stale revision is rejected with
  * `conversation_changed` and nothing is written. Switching the runtime without choosing a model
  * resets the model to `Default`. Past messages are never changed.
@@ -344,6 +347,7 @@ export const updateConversation = (
         agentRuntime: changes.agentRuntime,
         modelId: changes.modelId,
         languageMode: changes.languageMode,
+        contextMode: changes.contextMode,
         revision: current.revision + 1,
         updatedAt: now,
       })
