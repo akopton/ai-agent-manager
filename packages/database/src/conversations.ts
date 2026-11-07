@@ -13,12 +13,19 @@ import {
   type ConversationMessageKind,
   type ConversationMessageRole,
   type CreateConversationInput,
+  type AgentRuntime,
   type UpdateConversationInput,
 } from '@ai-agent-manager/core';
-import { and, asc, count, desc, eq, inArray, max } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
-import { conversationMessages, conversations, conversationTurns, projects } from './schema.js';
+import {
+  conversationMessages,
+  conversations,
+  conversationTurns,
+  projects,
+  taskProposalGenerations,
+} from './schema.js';
 
 // AI Conversations persistence (C1; C2 turns live in `conversation-turns.ts`). Every read and command is scoped by the project ID as well
 // as the conversation ID, so a conversation of another project is reported as missing and its
@@ -67,6 +74,69 @@ export const activeTurnError = (): ConversationError =>
     'conversation_turn_active',
     'A reply is still pending in this conversation. Wait for it or stop it first.',
   );
+
+/**
+ * Whether a C3 task proposal generation of this conversation is queued, running or stopping.
+ *
+ * @internal Shared with `conversation-turns.ts` and `task-proposal-generations.ts`.
+ */
+export const hasActiveGeneration = (db: Database | Transaction, conversationId: string): boolean =>
+  db
+    .select({ id: taskProposalGenerations.id })
+    .from(taskProposalGenerations)
+    .where(
+      and(
+        eq(taskProposalGenerations.conversationId, conversationId),
+        inArray(taskProposalGenerations.status, [...activeConversationTurnStatuses]),
+      ),
+    )
+    .get() !== undefined;
+
+/**
+ * A chat turn and a proposal generation of one conversation never run at the same time, so the
+ * operator always has one AI request per conversation to wait for or stop.
+ *
+ * @internal Shared with `conversation-turns.ts`.
+ */
+export const activeGenerationError = (): ConversationError =>
+  new ConversationError(
+    'conversation_turn_active',
+    'Task proposals are being generated in this conversation. Wait for them or stop the generation first.',
+  );
+
+/**
+ * Running (`running` or `stopping`) conversation work per CLI: chat turns and proposal
+ * generations share one conversation slot per CLI, separate from task execution slots.
+ *
+ * @internal Shared with `conversation-turns.ts` and `task-proposal-generations.ts`.
+ */
+export const runningConversationWorkByRuntime = (
+  tx: Database | Transaction,
+): Map<AgentRuntime, number> => {
+  const counts = new Map<AgentRuntime, number>();
+  const add = (rows: { runtime: AgentRuntime; count: number }[]) => {
+    for (const { runtime, count: value } of rows) {
+      counts.set(runtime, (counts.get(runtime) ?? 0) + value);
+    }
+  };
+  add(
+    tx
+      .select({ runtime: conversationTurns.agentRuntime, count: sql<number>`count(*)` })
+      .from(conversationTurns)
+      .where(inArray(conversationTurns.status, ['running', 'stopping']))
+      .groupBy(conversationTurns.agentRuntime)
+      .all(),
+  );
+  add(
+    tx
+      .select({ runtime: taskProposalGenerations.agentRuntime, count: sql<number>`count(*)` })
+      .from(taskProposalGenerations)
+      .where(inArray(taskProposalGenerations.status, ['running', 'stopping']))
+      .groupBy(taskProposalGenerations.agentRuntime)
+      .all(),
+  );
+  return counts;
+};
 
 const conversationNotFound = (): ConversationError =>
   new ConversationError('conversation_not_found', 'The conversation does not exist.');

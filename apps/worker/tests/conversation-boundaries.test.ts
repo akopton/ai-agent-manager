@@ -19,6 +19,9 @@ const conversationFiles = [
   join(repositoryRoot, 'packages/agents/src/conversation-profiles.ts'),
   join(repositoryRoot, 'packages/agents/src/conversation-issuance.ts'),
   join(repositoryRoot, 'packages/database/src/conversation-turns.ts'),
+  // C3: proposal generation runs in the worker and may only store drafts.
+  join(repositoryRoot, 'packages/database/src/task-proposal-generations.ts'),
+  join(repositoryRoot, 'packages/core/src/task-proposal.ts'),
 ];
 
 const forbidden: readonly RegExp[] = [
@@ -41,7 +44,7 @@ const code = (file: string): string =>
     .replace(/^\s*\/\/.*$/gm, '');
 
 test('conversation code has no path to execution authorizations, Git, tasks or publishing', () => {
-  assert.ok(conversationFiles.length >= 6);
+  assert.ok(conversationFiles.length >= 8);
   for (const file of conversationFiles) {
     const source = code(file);
     for (const pattern of forbidden) {
@@ -62,5 +65,39 @@ test('the execution path does not import the conversation launch boundary or iss
       source,
       /startConversationTurn|conversation-issuer|claimConversationIssuer/,
     );
+  }
+});
+
+test('C3: the worker has no approval or proposal-editing capability', () => {
+  for (const file of conversationFiles) {
+    assert.doesNotMatch(
+      code(file),
+      /\b(?:approveTaskProposal|updateTaskProposal|rejectTaskProposal|reopenTaskProposal)\b|task-proposals\.js/,
+      `${file} must not reach operator proposal commands`,
+    );
+  }
+});
+
+test('C3: approval creates a task through createTask only and never queues, starts or runs Git', () => {
+  const approval = code(join(repositoryRoot, 'packages/database/src/task-proposals.ts'));
+  assert.match(approval, /\bcreateTask\(tx,/);
+  for (const pattern of [
+    /\b(?:transitionTask|requestTaskExecution|claimStartCommand|requestTaskRecovery)\b/,
+    /\b(?:workerCommands|taskRuns|workspaces|publications|workspaceCleanups)\b/,
+    /\b(?:createPublication|requestWorkspaceCleanup|createTaskWorktree)\b/,
+    /@ai-agent-manager\/(?:git|agents|orchestrator)/,
+    /node:child_process/,
+    /status: 'queued'/,
+  ]) {
+    assert.doesNotMatch(approval, pattern);
+  }
+  // The web side of approval only adds a read-only branch check.
+  const web = code(join(repositoryRoot, 'apps/web/lib/server/task-proposals.ts'));
+  for (const pattern of [
+    /@ai-agent-manager\/(?:git|agents|orchestrator)/,
+    /lib\/server\/(?:execution|review|publication|recovery|workspace|tasks)\b/,
+    /\b(?:transitionTask|requestTaskExecution|createTask)\b/,
+  ]) {
+    assert.doesNotMatch(web, pattern);
   }
 });

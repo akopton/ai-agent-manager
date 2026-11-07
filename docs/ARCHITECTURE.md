@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.7 — AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
-**Date:** 2026-11-07 (v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.8  
+**Status:** Draft v0.9 — C3.1 source-scoped proposal generation (§15.3, §15.8, §15.10); v0.8: AI Conversations C3 implementation notes: task proposal generation, editing and approval (§15.3, §15.8, §15.10, §15.11); v0.7: AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
+**Date:** 2026-11-07 (v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.10  
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -680,7 +680,7 @@ These are **explicit validation tasks**, not implied guarantees. The architectur
 
 ## 15. AI Conversations (planned extension)
 
-> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI) and C2 (CLI-backed turns) are implemented**; see the implementation notes in §15.3, §15.6 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
+> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI), C2 (CLI-backed turns) and C3 (task proposals) are implemented**; see the implementation notes in §15.3, §15.6, §15.8 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
 
 ### 15.1 Module placement
 
@@ -765,6 +765,24 @@ Rules:
 - All appends go through one internal function, which C2 reuses for assistant messages.
 - Content is trimmed, uses `\n` line endings, is 1–20,000 characters long and contains no NUL. It is stored as plain text (Markdown kept as written).
 - The conversations module imports no agents, Git, orchestrator, execution, worker-command or task-command code. A static test enforces this (`apps/web/tests/conversations-ui.test.ts`).
+
+#### C3 implementation notes (2026-11-07)
+
+Migration `0010_task_proposals` adds two tables, **additively**; no existing table (including `tasks`) changes.
+
+| Table | Columns | Constraints |
+|---|---|---|
+| `task_proposal_generations` | `id`, `conversation_id` (`RESTRICT`), `request_id` (unique), `retry_of_generation_id`, `status` (turn states), runtime/model/language snapshot, `instructions` (operator focus), `based_on_sequence`, launch facts (`security_mode`, `disclosure_version`, `launch_profile_id`, `cli_version`, `context_manifest_json`, `worker_instance_id`, `pid`), outcome (`error_code`, `error_message`, `exit_code`, `signal`, `proposal_count`, `skipped_count`, `output_note`), timestamps | Partial unique index: one active (`queued`/`running`/`stopping`) generation per conversation; `proposal_count = 0` unless `completed`. |
+| `task_proposals` | `id`, `project_id` (`RESTRICT`), `conversation_id` (`RESTRICT`), `generation_id` (`RESTRICT`), `position`, `status` (`draft`/`approved`/`rejected`), editable task fields (`title`, `prompt`, `agent_runtime`, `model_id`, `priority`, `base_branch`), AI values (`suggested_title`, `suggested_prompt`, `suggested_priority`, `rationale`, `dependencies`), `revision`, `task_id` (unique, `RESTRICT` to `tasks`), `created_at`, `updated_at`, `approved_at`, `rejected_at` | `(generation_id, position)` unique; `CHECK`s: `approved` ⇔ `task_id` and `approved_at` set; `rejected` ⇔ `rejected_at` set; runtime and priority lists. |
+
+Deviations from the conceptual model above, all intentional:
+
+- **No `target_project_id`.** C3 conversations are project-scoped; `project_id` is copied from the conversation when the proposal is stored and is never written again.
+- **No `origin_*` columns on `tasks`.** The origin reference is kept on the proposal (`task_proposals.task_id`, unique), so a task carries no conversation metadata and `tasks` is unchanged. The task page looks the origin up (`findTaskProposalByTask`). Deletion rules (`SET NULL`) are decided together with conversation deletion, which is still deferred.
+- **`accepted` is called `approved`**, matching the UI action *Approve to Backlog*.
+- **Generations are a separate table, not `conversation_turns` rows.** A turn requires a user message and appends a reply; a generation appends nothing to the history. Reusing the turn table would have needed a table rebuild (`user_message_id NOT NULL`).
+
+**C3.1 (migration `0011_proposal_sources`, additive).** `task_proposal_generations` gains `source_message_id` (nullable, references `conversation_messages`) and `source_content` (nullable snapshot of the reply text at request time), plus an index on `source_message_id`. Both are `NULL` for C3 rows, which therefore keep their meaning ("generated from the answered conversation") and their proposals. Proposals reach their source through `generation_id`; they need no column of their own. SQLite `ADD COLUMN` cannot add `CHECK`s or `ON DELETE` actions, so the rule "a source is a completed AI reply of the same conversation" is enforced by the request command (messages are never deleted).
 
 ### 15.4 Context assembly and isolation
 
@@ -886,6 +904,70 @@ Closing tags inside conversation text are neutralized so text cannot end a secti
 - For a `global` conversation, acceptance requires an explicit `target_project_id` chosen and confirmed by the user. Choosing a project does not add its context to the conversation.
 - No conversation code path can enqueue a task, start a run, create a worktree or call the publish service. This is enforced by module boundaries: the conversations module only has access to task creation, never to queue, scheduler or Git mutation commands.
 
+#### C3 implementation notes (2026-11-07)
+
+**What runs where.**
+
+```text
+Browser ──POST /proposal-generations──► web: requestTaskProposals (IMMEDIATE tx)
+                 consent ✓, no active turn/generation ✓, ≥1 answered exchange ✓
+                 queued generation (runtime/model/language/based_on_sequence snapshot) ──► 202
+worker tick ──► conversation service (shared with C2 turns)
+   claimTaskProposalGeneration (consent re-read; shared per-CLI conversation slot)
+   ─► composeTaskProposalPrompt ─► runCli: detect ─► scratch dir ─► prepareConversationTurn
+   ─► consent re-read ─► authorizeConversationTurn ─► startConversationTurn ─► supervised CLI
+   ─► parseTaskProposalOutput (Zod) ─► finishTaskProposalGeneration: drafts in the same tx
+Browser ──POST /proposals/:id/approve──► web: read-only branch check (explicit branch only)
+   ─► approveTaskProposal (IMMEDIATE tx): createTask (Backlog) + proposal → approved
+```
+
+- `packages/core/src/task-proposal.ts`: statuses, inputs, the output contract and parser, the proposal language rules and `composeTaskProposalPrompt`.
+- `packages/database/src/task-proposal-generations.ts`: request, retry, stop, claim, progress, finish and expiry of generations. It imports no task, worker-command, worktree or Git code.
+- `packages/database/src/task-proposals.ts`: operator commands (edit, reject, reopen, approve). It is the only proposal code that creates tasks, and only through `createTask`.
+- `apps/worker/src/conversations/conversation-turn-service.ts`: one supervised CLI pipeline (`runCli`) for chat turns and generations; their prompts, outcomes and storage differ. C2 turn behavior and messages are unchanged.
+- `apps/web/lib/server/task-proposals.ts` and the routes in §15.10; UI in `components/conversations/task-proposals-panel.tsx`, `task-proposal-card.tsx` and `generate-proposals-form.tsx`.
+
+**Structured-output contract.** The prompt (`<instructions>`, `<language>`, `<output_contract>`, `<conversation_history>`, `<developer_request>`) asks for exactly one JSON object `{ "proposals": [{ "title", "prompt", "priority"?, "rationale"?, "dependencies"? }], "note"? }`. The worker accepts the whole reply if it starts with `{`, otherwise the content of exactly one fenced block. Then:
+
+- not one document (prose, several documents), invalid JSON (truncated) or a wrong shape: the generation **fails** with `malformed_output`; nothing is stored;
+- each item is validated with the task title/prompt schemas and the task priority list; invalid items and items beyond 12 are skipped and counted (`skipped_count`);
+- unknown keys are ignored. The AI cannot set the runtime, model, base branch or status;
+- an empty list is a **completed** generation with no proposals and the AI's note.
+
+The CLIs' native schema options (Claude Code `--json-schema`, Codex `--output-schema <file>`) exist in the supported versions but are **not used**: they would change the parse-checked C2 launch profiles and need their own verification. The prompt contract plus application-side validation keeps the profiles identical to chat turns. Using the native options is a possible later hardening.
+
+**Context.** Completed exchanges with a sequence up to `based_on_sequence` (the last message when the request was made), newest first within the 60,000-character C2 budget; notes, unanswered messages and other conversations are never included. A later message therefore never changes what a queued generation sends. The manifest (`purpose: task_proposals`, included sequences, omitted count, sizes, notes excluded) is stored; the prompt is not. Language: `pl_technical_en` writes `title` and `prompt` in English and explanations in Polish; `pl` and `en` follow C2.
+
+**Lifecycle, Stop and recovery.** Identical to C2 turns: `queued → running → completed | failed | cancelled | interrupted` and `running → stopping → cancelled`; queued requests older than 10 minutes expire; restart marks other instances' `running`/`stopping` generations `interrupted` without signalling; graceful shutdown records `interrupted`; nothing is retried automatically. An operator Stop recorded while the CLI was finishing wins over late output, so a stopped generation never stores proposals. **Retry** creates a new generation for the latest failed, stopped or interrupted one (same focus, current settings and history).
+
+**Exclusivity and capacity.** A conversation has at most one active AI request: a chat turn and a generation never overlap (checked in both commands inside their `IMMEDIATE` transactions, plus a partial unique index per table). Notes stay allowed during a generation, because it is based on a fixed sequence. Turns and generations share **one conversation slot per CLI**, still separate from task execution slots.
+
+**Idempotency and stale requests.**
+
+- A request ID deduplicates requests and retries; reuse for other content is `conversation_request_conflict`.
+- `finishTaskProposalGeneration` only acts on an active generation, so drafts are stored at most once per generation.
+- A generation only inserts new drafts. It never updates or deletes existing proposals, so a late or retried generation cannot replace operator edits.
+- Every edit, reject, reopen and approve names the proposal `revision`; a stale one is `task_proposal_changed`.
+
+**Approval guarantees.**
+
+- Only `POST …/proposals/:id/approve` approves, and only for a draft whose revision matches. Nothing in the worker or the CLI can reach it (static test `apps/worker/tests/conversation-boundaries.test.ts`).
+- One `IMMEDIATE` transaction calls `createTask(tx, …)` (manual creation: input schema, model/runtime compatibility, project existence, `Backlog`, `queued_at = NULL`) and then changes the proposal to `approved` with `task_id`, guarded by the revision. Any error rolls back both. The `project_id` comes from the stored proposal, never from the request.
+- A repeat of an approved proposal returns its task (`created: false`, HTTP 200); concurrent approvals serialize on the write lock and the second sees `approved`. `task_id` is unique.
+- An explicit base branch is checked with the same read-only Git query as manual task creation before the transaction; the project default needs no Git access.
+- Approval never writes `worker_commands`, `task_runs`, `workspaces` or publications, never transitions the task and never runs Git mutations (tests in `packages/database`, `apps/web` and the static checks).
+
+#### C3.1 — source-scoped generation (2026-11-07)
+
+A small refinement before C4: generation is started from one AI reply and sends only that reply.
+
+- **Request.** `POST …/proposal-generations` requires `sourceMessageId` (plus `requestId`, optional `instructions`). The body cannot carry source text (strict schema). In the `IMMEDIATE` transaction, after consent and the one-active-request check, `requireSourceReply` loads the message by ID **within the route's conversation** (and thus project) and requires `role = assistant`, `kind = chat` and a `completed` turn whose `assistant_message_id` is that message. Otherwise: `task_proposal_source_not_found` (404; also for another conversation's or project's message) or `task_proposal_source_invalid` (409; user messages and notes). The generation stores `source_message_id`, `source_content` (snapshot) and `based_on_sequence` = the reply's sequence.
+- **Prompt.** `composeSourceTaskProposalPrompt`: `<instructions>` (the reply is the only source; `prompt` holds only what the agent must do, explanations go to `rationale`, ordering to `dependencies`, remarks to `note`), `<language>`, `<output_contract>`, `<source_response>` (the snapshot) and `<developer_request>` (the focus). The claim loads **no** history for such a generation; the manifest records `scope: source_message`, the source ID and sizes. The output contract, parser and draft storage are unchanged.
+- **Idempotency and regeneration.** The same request ID returns the same generation only for the same source and focus; otherwise `conversation_request_conflict`. One active AI request per conversation still prevents accidental duplicates while a generation runs. After it finishes, a new click (new request ID) is a deliberate new generation from the same reply.
+- **Retry.** Only the latest failed, stopped or interrupted generation **of the same source reply** can be retried; the retry copies the source reference, the snapshot and the focus, and uses the conversation's current runtime, model and language. C3 generations without a source cannot be retried (`task_proposal_generation_not_retryable`).
+- **Existing C3 rows.** Kept as they are. A C3 generation still queued at upgrade time runs with the C3 history prompt; no new one can be created.
+- **UI.** `ReplyTaskActions` under every eligible reply (Generate tasks, Focus toggle, state, Stop/Retry, View proposals → `#proposals-<generationId>`); replies have the anchor `#message-<messageId>`. The panel groups proposals by generation, and batches and cards link back to the source reply. Unchanged: worker pipeline, gate, launch profiles, Stop, timeout, recovery, editing, approval and task semantics.
+
 ### 15.9 Security boundaries and trust
 
 | Boundary | Trust |
@@ -950,11 +1032,26 @@ No route starts a worker command, agent, task or Git operation. There is no SSE 
 
 `GET …/conversations/:conversationId` also returns `turns` (status, runtime, requested and reported model, language, error, context counts; never the prompt) and `ai` (consent status). New errors: `conversation_ai_disabled`, `conversation_ai_stale`, `conversation_turn_active`, `conversation_turn_not_active`, `conversation_turn_not_retryable` (409) and `conversation_turn_not_found` (404). The web process still starts no process: the worker owns every turn.
 
+**C3 routes (implemented 2026-11-07).** Under `/api/projects/:projectId/conversations/:conversationId`. Mutations use the Host + same-Origin + JSON guards; reads use the content-read guard (loopback Host, no cross-origin browser request).
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `…/proposal-generations` | Explicit request (`requestId`, `sourceMessageId` since C3.1, optional `instructions`); `202` new, `200` repeat |
+| `GET` | `…/proposal-generations/:generationId` | Status of one request (never the prompt) |
+| `POST` | `…/proposal-generations/:generationId/stop` | Stop a queued (cancelled at once) or running request |
+| `POST` | `…/proposal-generations/:generationId/retry` | New request for the latest failed, stopped or interrupted one (`requestId`) |
+| `GET` | `…/proposals` | Proposals in stable order (generation, then position) with their requests |
+| `GET/PATCH` | `…/proposals/:proposalId` | Read; edit a draft (`revision` + changed fields) |
+| `POST` | `…/proposals/:proposalId/reject` · `/reopen` | `revision`; idempotent |
+| `POST` | `…/proposals/:proposalId/approve` | `revision`; `201` with the new Backlog task, `200` for a repeat |
+
+`GET …/conversations/:conversationId` also returns `generations` and `proposals`. New errors: `task_proposal_no_history`, `task_proposal_generation_not_active`, `task_proposal_generation_not_retryable`, `task_proposal_changed`, `task_proposal_not_editable` (409); `task_proposal_generation_not_found`, `task_proposal_not_found` (404). C3.1: `task_proposal_source_not_found` (404), `task_proposal_source_invalid` (409); generation views include `sourceMessageId`. Approval can also return the task errors of manual creation (`invalid_task_input` 400) and `base_branch_not_found` (422). The illustrative `/api/proposals/:id/accept` above is not used: proposals are nested under their project and conversation.
+
 UI pages:
 
 - `/conversations`: projects with conversation counts.
 - `/projects/:projectId/conversations`: the list, plus **New conversation** at `…/new`.
-- `/projects/:projectId/conversations/:conversationId`: history, note composer and settings panel.
+- `/projects/:projectId/conversations/:conversationId`: history, note composer, settings panel and (C3) the Task proposals panel.
 
 ### 15.11 Verification gates and open questions
 
@@ -965,6 +1062,8 @@ UI pages:
 5. Capacity: shared with the §6 execution slots or a separate conversation limit, and the effect of provider rate limits.
 6. Context budgeting: token estimation per CLI, summary generation (which runtime and model), file size limits.
 7. Project disconnect: archive, keep or delete conversations and decisions (explicit user decision per `SPEC.md` §4.1).
+
+*C3 status (2026-11-07):* 1 — structured output: a prompt-level JSON contract validated in the worker; the CLIs' native schema options are known but unused.
 
 *C2 status (2026-11-07):* 1 — streaming format and effective-model metadata are known per CLI (above); session resume is not used. 2 — profiles defined and parse-checked, **not** adversarially verified. 3 — Claude: `--safe-mode`, `--restricted` and `--strict-mcp-config` skip CLAUDE.md, user/project settings, hooks, plugins and MCP (managed settings still apply); Codex: `--ignore-user-config` and `--ignore-rules`; both run in an empty scratch directory. 5 — decided: one conversation slot per CLI, separate from execution slots. 4, 6 and 7 remain open.
 

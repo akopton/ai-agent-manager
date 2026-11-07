@@ -1,7 +1,7 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.8 — AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
-**Date:** 2026-11-07 (v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
+**Status:** Draft v0.10 — C3.1: task proposals are generated from one selected AI reply (§18.1, §18.8); v0.9: AI Conversations C3 delivered: explicitly requested task proposals, operator editing and individual Approve to Backlog (§18.1, §18.8); v0.8: AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
+**Date:** 2026-11-07 (v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
 
@@ -463,7 +463,7 @@ The "no live conversational input while a task runs" exclusion (§2) still appli
 |---|---|
 | **C1** *(delivered)* | Project conversations with runtime, model and language settings, a durable history and a UI. Persistence and UI only. |
 | **C2** *(delivered)* | Real CLI-backed planning conversations (Conversation Mode) in Trusted Local Mode with a separate consent. |
-| **C3** | Task proposals and their approval into Backlog (§18.8). |
+| **C3** *(delivered)* | Explicitly requested task proposals and their individual approval into Backlog (§18.8). **C3.1** *(delivered)*: proposals are generated from one selected AI reply. |
 | **C4** | Deeper project and task awareness (context assembly, §18.6, §18.9). |
 
 Global AI (§18.5) and architecture decisions (§18.7) remain specified but are not yet scheduled.
@@ -487,6 +487,23 @@ Global AI (§18.5) and architecture decisions (§18.7) remain specified but are 
 - Replies are rendered as Markdown (code blocks, lists, headings, emphasis, links); nothing in a reply is executed or acted on.
 - AI replies need a **separate AI Conversations acceptance** in Settings (§18.2). Trusted Local execution consent and project trust do not enable conversations, and the conversation acceptance enables nothing else. Strict Isolated conversations are refused (fail-closed).
 - Conversations still never create, queue or start tasks, create worktrees, run Git operations, commit, push or publish. Task proposals (C3) and project context (C4) are not part of C2.
+
+**C3 behavior.** (Details in §18.8.)
+
+- The conversation page has a **Task proposals** panel, separate from the transcript, with an explicit **Generate task proposals** action and an optional focus text. Ordinary chat never produces proposals.
+- A request is accepted only with the AI Conversations acceptance, when no reply or other request of the conversation is pending, and after at least one answered exchange. It uses the conversation's current runtime, model and language and its answered chat history (never notes); it adds no message to the history.
+- Valid proposals appear as **Draft** cards. Each can be edited (title, prompt, runtime, model, priority, base branch), **Rejected**, **Reopened** after rejection, or **Approved to Backlog**. The AI's suggestion stays visible next to edited values.
+- **Approve to Backlog** creates exactly one task in the conversation's project, in `Backlog`, with the proposal's current values, and links the card to it. It never queues or starts the task, creates a worktree or runs Git; a repeated approval returns the same task.
+- Malformed, partial, failed, stopped and interrupted requests are shown with their reason; nothing is retried automatically, and **Retry** is explicit.
+- Project knowledge, task history and repository files are still not sent (C4).
+
+**C3.1 behavior (refinement, 2026-11-07).** Proposal generation is contextual to one AI reply instead of a separate form:
+
+- Every AI reply stored by a completed turn has a compact **Generate tasks** action directly below it, with an optional **Focus**. User messages, notes, failed or interrupted turns and pending replies have none. The separate generation form below the transcript is removed.
+- The request sends **only that reply's text** as the planning source, plus the fixed output contract and language rule and the optional focus. Earlier or later messages, other replies, the operator's messages, notes and the conversation history are not sent.
+- The state of the latest request from a reply (waiting, generating, failed, stopped, interrupted, generated) appears under that reply, with Stop, Retry and **View proposals**. Clicking Generate tasks again after it finished is a deliberate new batch.
+- The Task proposals panel stays below the transcript with the same editing, rejection, reopening and approval. Proposals are grouped in batches; each batch and card names its source reply and links back to it.
+- Proposals made by C3 before this refinement are kept and labelled as generated from the whole conversation; they cannot be retried.
 
 ### 18.2 Execution Mode and Conversation Mode
 
@@ -589,6 +606,16 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 - Conversations **never queue tasks, start agents, create worktrees, commit, push or publish**. Queueing remains an explicit user action (§4.2, §6).
 - Tasks created from proposals keep a reference to their originating conversation and proposal while those exist. Deleting the conversation does not delete the tasks; it only removes the reference.
 - A project conversation proposes tasks for its own project.
+
+**C3 implementation (2026-11-07).**
+
+- *Explicit request only.* Proposals are generated only when the operator asks for them (**Generate tasks** under an AI reply since C3.1; optional focus up to 2,000 characters). A dedicated request runs Claude Code or Codex through the same Conversation Mode consent, gate, launch profiles, scratch directory, timeout and Stop as a chat turn. The AI never receives an approval or task-creation capability, and ordinary replies are never parsed into proposals.
+- *Context (C3.1).* Exactly one selected AI reply, loaded by the application by its ID and snapshotted when the request is made; retries reuse that snapshot. No other message, note or history is sent. *(C3 originally sent the answered exchanges up to the request, within the C2 history budget; notes were never sent.)* The conversation's runtime, model and language at request time are used. With `pl_technical_en`, task titles and implementation prompts are written in English and explanations in Polish; `pl` and `en` keep their C2 rules.
+- *Structured output.* The AI must reply with one JSON document (`proposals[]` with `title`, `prompt`, optional `priority`, `rationale`, `dependencies`, and an optional `note`). The application validates it: a reply that is not such a document (prose, truncated, several documents) stores nothing and is shown as failed; invalid items are skipped and counted; at most 12 proposals are kept per request; an empty list is a valid answer, shown with the AI's note.
+- *Defaults.* A proposal belongs to the conversation's project. Its runtime and model default to the conversation's at request time, its base branch to the project default, its priority to the AI's suggestion (`Normal` if none). The AI cannot choose the runtime, model or branch.
+- *Lifecycle.* `Draft` → `Approved` (final) or `Rejected` → (Reopen) `Draft`. Only drafts can be edited; every edit and action names the proposal revision the operator saw, so a stale page never overwrites newer edits. Editing, rejecting or approving never changes the conversation history, and a later request never changes existing proposals.
+- *Approval.* An explicit operator request. It uses the manual task creation rules (model/runtime compatibility, existing explicit base branch, project ownership) and creates exactly one `Backlog` task atomically with the proposal's status change; repeats return the same task. The task carries no conversation metadata; the origin is recorded on the proposal and shown on the task page.
+- *Not in C3:* global conversations and target-project selection, bulk approval, dependency tracking, conversation deletion, project file context (C4).
 - A **global conversation** may propose tasks only after the user **explicitly chooses and confirms the target project**. Choosing a target project does not automatically add that project's context to the global conversation.
 
 ### 18.9 Conversation persistence and context
@@ -620,14 +647,14 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 5. **Model selection:** `Default` and explicit models work as for tasks; an unsupported model fails visibly without fallback; switching the runtime keeps history and starts a fresh native session.
 6. **Streaming and cancellation:** a response streams. Cancelling stops the CLI and stores the partial response as cancelled.
 7. **Decisions:** a drafted decision becomes project knowledge only after acceptance, and survives deletion of its conversation.
-8. **Task proposals:** proposals can be edited. Accepted proposals create tasks in `Backlog` with an origin reference. Nothing is queued or executed automatically.
+8. **Task proposals:** proposals can be edited. Accepted proposals create tasks in `Backlog` with an origin reference. Nothing is queued or executed automatically. *(C3: met for project conversations, with fake CLIs; see `IMPLEMENTATION_PLAN.md` §8.)*
 9. **Global-to-project proposals:** proposals from a global conversation require explicit selection and confirmation of a target project.
 
 ### 18.12 Open technical questions (to verify during implementation)
 
 These are **not** confirmed capabilities:
 
-- Per CLI: streaming output format, native session persistence and resume, model switching within a session, context-window limits and reporting, structured output for proposals, and effective-model metadata.
+- Per CLI: streaming output format, native session persistence and resume, model switching within a session, context-window limits and reporting, structured output for proposals, and effective-model metadata. *(C3: proposals use a prompt-level JSON contract validated by the application; the CLIs' own schema options are not used yet.)*
 - Per CLI: whether Conversation Mode can run with **no tools** or read-only tools, whether that can be verified as enforced, and whether repository instruction files or settings are loaded from the working directory.
 - Whether web search or browsing (useful for Global AI research) can be enabled safely, and how it is controlled.
 - Whether conversation turns share the per-CLI execution capacity of §6 or use separate limits, and how provider rate limits affect concurrent use.

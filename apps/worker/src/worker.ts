@@ -40,6 +40,8 @@ const executionTables = [
   'conversation_messages',
   'conversation_settings',
   'conversation_turns',
+  'task_proposal_generations',
+  'task_proposals',
 ] as const;
 
 const databaseMigrateCommand = 'pnpm --filter @ai-agent-manager/database db:migrate';
@@ -139,7 +141,7 @@ export const createWorker = ({
       'Task execution is available for explicit operator start requests (Trusted Local Mode only; no automatic queue processing).',
     );
     logger.info(
-      'AI conversation replies are processed for sent chat messages when AI Conversations are enabled in Settings.',
+      'AI conversation replies and explicitly requested task proposals are processed when AI Conversations are enabled in Settings. Proposals never create, queue or start tasks.',
     );
   };
 

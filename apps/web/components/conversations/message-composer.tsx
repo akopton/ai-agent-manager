@@ -29,6 +29,8 @@ type MessageComposerProps = {
   aiEnabled: boolean;
   /** A reply is pending or running; nothing new can be added until it finishes. */
   turnActive: boolean;
+  /** Task proposals are being generated (C3); chat waits, notes can still be saved. */
+  proposalsActive?: boolean;
   /** For example "Claude Code · Default · Polish, technical English". */
   target: string;
 };
@@ -43,6 +45,7 @@ export const MessageComposer = ({
   conversationId,
   aiEnabled,
   turnActive,
+  proposalsActive = false,
   target,
 }: MessageComposerProps) => {
   const router = useRouter();
@@ -57,7 +60,7 @@ export const MessageComposer = ({
   const isEmpty = length === 0;
   const tooLong = length > conversationMessageMaxLength;
   const chat = mode === 'chat';
-  const blocked = turnActive || (chat && !aiEnabled);
+  const blocked = turnActive || (chat && (!aiEnabled || proposalsActive));
 
   const switchMode = (next: ComposerMode) => {
     if (next === mode) return;
@@ -207,6 +210,11 @@ export const MessageComposer = ({
       {turnActive ? (
         <p role="status" className="text-xs text-muted-foreground">
           A reply is still pending. Wait for it or stop it before adding a message or note.
+        </p>
+      ) : proposalsActive && chat ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Task proposals are being generated. Wait for them or stop the generation before sending a
+          message; notes can still be saved.
         </p>
       ) : null}
       {error !== null ? (

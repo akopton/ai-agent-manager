@@ -17,6 +17,8 @@ import {
   recoveryProcessChecks,
   reviewStatuses,
   taskPriorities,
+  taskProposalGenerationStatuses,
+  taskProposalStatuses,
   taskRecoveryKinds,
   taskRunStatuses,
   taskStatuses,
@@ -766,6 +768,174 @@ export const conversationTurns = sqliteTable(
   ],
 );
 
+/**
+ * C3 task proposal generations (migration `0010_task_proposals`). One row per explicit operator
+ * request for task proposals from a conversation. Runs through the same conversation gate and
+ * launch boundary as a C2 turn and shares its lifecycle, but appends **no** message: the history
+ * is never changed. The runtime, model, language and the last message sequence it is based on
+ * are snapshotted when it is queued. At most one active generation per conversation; a chat turn
+ * and a generation are never active at the same time (enforced by the commands). Rows are never
+ * deleted.
+ */
+export const taskProposalGenerations = sqliteTable(
+  'task_proposal_generations',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    retryOfGenerationId: text('retry_of_generation_id'),
+    /** Client request ID of the request or retry; deduplicates repeated submissions. */
+    requestId: text('request_id').notNull().unique(),
+    status: text('status', { enum: taskProposalGenerationStatuses }).notNull(),
+    agentRuntime: text('agent_runtime', { enum: agentRuntimes }).notNull(),
+    requestedModelId: text('requested_model_id'),
+    effectiveModelId: text('effective_model_id'),
+    languageMode: text('language_mode', { enum: conversationLanguageModes }).notNull(),
+    /** The operator's optional focus; empty when none was given. */
+    instructions: text('instructions').notNull().default(''),
+    /**
+     * C3.1 (migration `0011`): the completed AI reply the proposals are generated from, and a
+     * snapshot of its text taken when the request was made (retries reuse it). Both `NULL` for C3
+     * generations, which used the answered conversation history instead.
+     */
+    sourceMessageId: text('source_message_id').references(() => conversationMessages.id, {
+      onDelete: 'restrict',
+      onUpdate: 'restrict',
+    }),
+    sourceContent: text('source_content'),
+    /** The highest message sequence when requested; later messages are not sent. */
+    basedOnSequence: integer('based_on_sequence').notNull(),
+    securityMode: text('security_mode', { enum: executionSecurityModes }),
+    disclosureVersion: text('disclosure_version'),
+    launchProfileId: text('launch_profile_id'),
+    cliVersion: text('cli_version'),
+    contextManifestJson: text('context_manifest_json'),
+    workerInstanceId: text('worker_instance_id'),
+    pid: integer('pid'),
+    stopRequestedAt: integer('stop_requested_at'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    exitCode: integer('exit_code'),
+    signal: text('signal'),
+    /** Proposals stored by this generation (only when completed). */
+    proposalCount: integer('proposal_count').notNull().default(0),
+    /** Items of the reply that failed validation or exceeded the limit; never stored. */
+    skippedCount: integer('skipped_count').notNull().default(0),
+    /** The AI's note from the proposal document, if any. */
+    outputNote: text('output_note'),
+    createdAt: integer('created_at').notNull(),
+    claimedAt: integer('claimed_at'),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    index('task_proposal_generations_conversation_created_idx').on(
+      table.conversationId,
+      table.createdAt,
+    ),
+    index('task_proposal_generations_status_created_idx').on(table.status, table.createdAt),
+    index('task_proposal_generations_source_message_idx').on(table.sourceMessageId),
+    uniqueIndex('task_proposal_generations_one_active_per_conversation_idx')
+      .on(table.conversationId)
+      .where(sql`status IN (${sqlList(activeConversationTurnStatuses)})`),
+    check(
+      'task_proposal_generations_status_check',
+      sql`${table.status} IN (${sqlList(taskProposalGenerationStatuses)})`,
+    ),
+    check(
+      'task_proposal_generations_agent_runtime_check',
+      sql`${table.agentRuntime} IN (${sqlList(agentRuntimes)})`,
+    ),
+    check(
+      'task_proposal_generations_language_mode_check',
+      sql`${table.languageMode} IN (${sqlList(conversationLanguageModes)})`,
+    ),
+    check(
+      'task_proposal_generations_counts_check',
+      sql`${table.proposalCount} >= 0 AND ${table.skippedCount} >= 0 AND (${table.status} = 'completed' OR ${table.proposalCount} = 0)`,
+    ),
+    check('task_proposal_generations_sequence_check', sql`${table.basedOnSequence} >= 0`),
+  ],
+);
+
+/**
+ * C3 task proposals. Stored only by a completed generation, as `draft`. The editable task fields
+ * (`title` … `base_branch`) hold the operator's current values; `suggested_*`, `rationale` and
+ * `dependencies` keep what the AI suggested and never change. `project_id` is copied from the
+ * conversation and never changes, so a proposal cannot move to another project. An approved
+ * proposal points to the one task its approval created (`task_id`, unique); tasks themselves are
+ * unchanged and carry no conversation metadata. `revision` rejects stale edits and approvals.
+ */
+export const taskProposals = sqliteTable(
+  'task_proposals',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    generationId: text('generation_id')
+      .notNull()
+      .references(() => taskProposalGenerations.id, {
+        onDelete: 'restrict',
+        onUpdate: 'restrict',
+      }),
+    /** Order within the generation, as the AI listed them (1, 2, 3…). */
+    position: integer('position').notNull(),
+    status: text('status', { enum: taskProposalStatuses }).notNull(),
+    title: text('title').notNull(),
+    prompt: text('prompt').notNull(),
+    agentRuntime: text('agent_runtime', { enum: agentRuntimes }).notNull(),
+    modelId: text('model_id'),
+    priority: text('priority', { enum: taskPriorities }).notNull(),
+    baseBranch: text('base_branch'),
+    suggestedTitle: text('suggested_title').notNull(),
+    suggestedPrompt: text('suggested_prompt').notNull(),
+    suggestedPriority: text('suggested_priority', { enum: taskPriorities }).notNull(),
+    rationale: text('rationale').notNull().default(''),
+    dependencies: text('dependencies').notNull().default(''),
+    revision: integer('revision').notNull().default(1),
+    taskId: text('task_id')
+      .unique()
+      .references(() => tasks.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    approvedAt: integer('approved_at'),
+    rejectedAt: integer('rejected_at'),
+  },
+  (table) => [
+    unique('task_proposals_generation_position_unique').on(table.generationId, table.position),
+    index('task_proposals_conversation_created_idx').on(table.conversationId, table.createdAt),
+    index('task_proposals_project_id_idx').on(table.projectId),
+    check(
+      'task_proposals_status_check',
+      sql`${table.status} IN (${sqlList(taskProposalStatuses)})`,
+    ),
+    check(
+      'task_proposals_agent_runtime_check',
+      sql`${table.agentRuntime} IN (${sqlList(agentRuntimes)})`,
+    ),
+    check(
+      'task_proposals_priority_check',
+      sql`${table.priority} IN (${sqlList(taskPriorities)}) AND ${table.suggestedPriority} IN (${sqlList(taskPriorities)})`,
+    ),
+    check('task_proposals_revision_check', sql`${table.revision} >= 1`),
+    check('task_proposals_position_check', sql`${table.position} >= 1`),
+    check(
+      'task_proposals_approved_check',
+      sql`(${table.status} = 'approved') = (${table.taskId} IS NOT NULL) AND (${table.status} = 'approved') = (${table.approvedAt} IS NOT NULL)`,
+    ),
+    check(
+      'task_proposals_rejected_check',
+      sql`(${table.status} = 'rejected') = (${table.rejectedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -784,4 +954,6 @@ export const schema = {
   conversationMessages,
   conversationSettings,
   conversationTurns,
+  taskProposalGenerations,
+  taskProposals,
 };

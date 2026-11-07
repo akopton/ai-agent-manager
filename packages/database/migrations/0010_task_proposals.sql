@@ -1,0 +1,85 @@
+CREATE TABLE `task_proposal_generations` (
+	`id` text PRIMARY KEY NOT NULL,
+	`conversation_id` text NOT NULL,
+	`retry_of_generation_id` text,
+	`request_id` text NOT NULL,
+	`status` text NOT NULL,
+	`agent_runtime` text NOT NULL,
+	`requested_model_id` text,
+	`effective_model_id` text,
+	`language_mode` text NOT NULL,
+	`instructions` text DEFAULT '' NOT NULL,
+	`based_on_sequence` integer NOT NULL,
+	`security_mode` text,
+	`disclosure_version` text,
+	`launch_profile_id` text,
+	`cli_version` text,
+	`context_manifest_json` text,
+	`worker_instance_id` text,
+	`pid` integer,
+	`stop_requested_at` integer,
+	`error_code` text,
+	`error_message` text,
+	`exit_code` integer,
+	`signal` text,
+	`proposal_count` integer DEFAULT 0 NOT NULL,
+	`skipped_count` integer DEFAULT 0 NOT NULL,
+	`output_note` text,
+	`created_at` integer NOT NULL,
+	`claimed_at` integer,
+	`started_at` integer,
+	`ended_at` integer,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`conversation_id`) REFERENCES `conversations`(`id`) ON UPDATE restrict ON DELETE restrict,
+	CONSTRAINT "task_proposal_generations_status_check" CHECK("task_proposal_generations"."status" IN ('queued', 'running', 'stopping', 'completed', 'failed', 'cancelled', 'interrupted')),
+	CONSTRAINT "task_proposal_generations_agent_runtime_check" CHECK("task_proposal_generations"."agent_runtime" IN ('claude', 'codex')),
+	CONSTRAINT "task_proposal_generations_language_mode_check" CHECK("task_proposal_generations"."language_mode" IN ('pl_technical_en', 'pl', 'en')),
+	CONSTRAINT "task_proposal_generations_counts_check" CHECK("task_proposal_generations"."proposal_count" >= 0 AND "task_proposal_generations"."skipped_count" >= 0 AND ("task_proposal_generations"."status" = 'completed' OR "task_proposal_generations"."proposal_count" = 0)),
+	CONSTRAINT "task_proposal_generations_sequence_check" CHECK("task_proposal_generations"."based_on_sequence" >= 0)
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `task_proposal_generations_request_id_unique` ON `task_proposal_generations` (`request_id`);--> statement-breakpoint
+CREATE INDEX `task_proposal_generations_conversation_created_idx` ON `task_proposal_generations` (`conversation_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `task_proposal_generations_status_created_idx` ON `task_proposal_generations` (`status`,`created_at`);--> statement-breakpoint
+CREATE UNIQUE INDEX `task_proposal_generations_one_active_per_conversation_idx` ON `task_proposal_generations` (`conversation_id`) WHERE status IN ('queued', 'running', 'stopping');--> statement-breakpoint
+CREATE TABLE `task_proposals` (
+	`id` text PRIMARY KEY NOT NULL,
+	`project_id` text NOT NULL,
+	`conversation_id` text NOT NULL,
+	`generation_id` text NOT NULL,
+	`position` integer NOT NULL,
+	`status` text NOT NULL,
+	`title` text NOT NULL,
+	`prompt` text NOT NULL,
+	`agent_runtime` text NOT NULL,
+	`model_id` text,
+	`priority` text NOT NULL,
+	`base_branch` text,
+	`suggested_title` text NOT NULL,
+	`suggested_prompt` text NOT NULL,
+	`suggested_priority` text NOT NULL,
+	`rationale` text DEFAULT '' NOT NULL,
+	`dependencies` text DEFAULT '' NOT NULL,
+	`revision` integer DEFAULT 1 NOT NULL,
+	`task_id` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	`approved_at` integer,
+	`rejected_at` integer,
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE restrict ON DELETE restrict,
+	FOREIGN KEY (`conversation_id`) REFERENCES `conversations`(`id`) ON UPDATE restrict ON DELETE restrict,
+	FOREIGN KEY (`generation_id`) REFERENCES `task_proposal_generations`(`id`) ON UPDATE restrict ON DELETE restrict,
+	FOREIGN KEY (`task_id`) REFERENCES `tasks`(`id`) ON UPDATE restrict ON DELETE restrict,
+	CONSTRAINT "task_proposals_status_check" CHECK("task_proposals"."status" IN ('draft', 'approved', 'rejected')),
+	CONSTRAINT "task_proposals_agent_runtime_check" CHECK("task_proposals"."agent_runtime" IN ('claude', 'codex')),
+	CONSTRAINT "task_proposals_priority_check" CHECK("task_proposals"."priority" IN ('critical', 'high', 'normal', 'low') AND "task_proposals"."suggested_priority" IN ('critical', 'high', 'normal', 'low')),
+	CONSTRAINT "task_proposals_revision_check" CHECK("task_proposals"."revision" >= 1),
+	CONSTRAINT "task_proposals_position_check" CHECK("task_proposals"."position" >= 1),
+	CONSTRAINT "task_proposals_approved_check" CHECK(("task_proposals"."status" = 'approved') = ("task_proposals"."task_id" IS NOT NULL) AND ("task_proposals"."status" = 'approved') = ("task_proposals"."approved_at" IS NOT NULL)),
+	CONSTRAINT "task_proposals_rejected_check" CHECK(("task_proposals"."status" = 'rejected') = ("task_proposals"."rejected_at" IS NOT NULL))
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `task_proposals_task_id_unique` ON `task_proposals` (`task_id`);--> statement-breakpoint
+CREATE INDEX `task_proposals_conversation_created_idx` ON `task_proposals` (`conversation_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `task_proposals_project_id_idx` ON `task_proposals` (`project_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `task_proposals_generation_position_unique` ON `task_proposals` (`generation_id`,`position`);

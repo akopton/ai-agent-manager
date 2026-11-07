@@ -422,6 +422,10 @@ test('conversation code has no path to agents, Git, execution, workers or task c
     ...collect(join(webRoot, 'components/conversations')),
     ...collect(join(webRoot, 'lib/conversations')),
     join(webRoot, 'lib/server/conversations.ts'),
+    // C3: proposal requests, editing and approval reach tasks only through the database command.
+    join(webRoot, 'lib/server/task-proposals.ts'),
+    join(webRoot, '../../packages/core/src/task-proposal.ts'),
+    join(webRoot, '../../packages/database/src/task-proposal-generations.ts'),
     ...collect(join(webRoot, 'app/api/projects/[projectId]/conversations')),
     ...collect(join(webRoot, 'app/projects/[projectId]/conversations')),
     join(webRoot, 'app/conversations/page.tsx'),

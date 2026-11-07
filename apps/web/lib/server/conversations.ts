@@ -40,7 +40,10 @@ import type {
   ConversationTurnView,
   CreateProjectConversationRequest,
   SendConversationMessageRequest,
+  TaskProposalGenerationView,
+  TaskProposalView,
 } from '@/lib/conversations/contracts';
+import { findConversationProposals } from '@/lib/server/task-proposals';
 
 // Project-scoped conversation commands for the web app. Every lookup resolves the project from the
 // route first and treats a conversation of another project as missing. Writes go through the
@@ -141,11 +144,14 @@ export const listConversations = (db: Database, projectId: string): Conversation
   getProjectConversations(db, requireProject(db, projectId).id)?.conversations ?? [];
 
 export type ConversationDetail = {
-  project: ConversationProject;
+  project: ConversationProject & Pick<ProjectRecord, 'defaultBaseBranch'>;
   conversation: Conversation;
   messages: ConversationMessage[];
   turns: ConversationTurnView[];
   ai: ConversationAiStatus;
+  /** C3: explicit task proposal requests and the proposals they stored. */
+  generations: TaskProposalGenerationView[];
+  proposals: TaskProposalView[];
 };
 
 const manifestSchema = z.object({
@@ -223,15 +229,23 @@ export const findConversationDetail = (
   const conversation = findProjectConversation(db, scope);
   const messages = listConversationMessages(db, scope);
   const turns = listConversationTurns(db, scope);
-  if (conversation === undefined || messages === undefined || turns === undefined) {
+  const proposals = findConversationProposals(db, scope);
+  if (
+    conversation === undefined ||
+    messages === undefined ||
+    turns === undefined ||
+    proposals === undefined
+  ) {
     return undefined;
   }
   return {
-    project: { id: project.id, name: project.name },
+    project: { id: project.id, name: project.name, defaultBaseBranch: project.defaultBaseBranch },
     conversation: toConversation(conversation),
     messages: messages.map(toMessage),
     turns: turns.map(toTurnView),
     ai: getConversationAiStatus(db),
+    generations: proposals.generations,
+    proposals: proposals.proposals,
   };
 };
 

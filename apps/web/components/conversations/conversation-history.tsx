@@ -2,9 +2,20 @@ import { AlertCircle, Bot, Loader2, MessagesSquare, NotebookPen, OctagonX } from
 import type { ConversationMessage } from '@ai-agent-manager/core';
 
 import { MarkdownContent } from '@/components/conversations/markdown-content';
+import { ReplyTaskActions } from '@/components/conversations/reply-task-actions';
 import { TurnActions } from '@/components/conversations/turn-actions';
-import type { ConversationAiStatus, ConversationTurnView } from '@/lib/conversations/contracts';
-import { buildTranscript, type TurnState } from '@/lib/conversations/transcript';
+import type {
+  ConversationAiStatus,
+  ConversationTurnView,
+  TaskProposalGenerationView,
+} from '@/lib/conversations/contracts';
+import {
+  hasActiveGeneration,
+  latestGenerationBySource,
+  messageAnchor,
+  replyGenerationBlockedReason,
+} from '@/lib/conversations/proposals';
+import { buildTranscript, hasActiveTurn, type TurnState } from '@/lib/conversations/transcript';
 import { formatTimestamp } from '@/lib/projects/format';
 import { cn } from '@/lib/utils';
 
@@ -14,6 +25,8 @@ type ConversationHistoryProps = {
   messages: readonly ConversationMessage[];
   turns: readonly ConversationTurnView[];
   ai: ConversationAiStatus;
+  /** C3.1: proposal requests, shown under the AI reply they were made from. */
+  generations?: readonly TaskProposalGenerationView[];
 };
 
 const Timestamp = ({ value }: { value: number }) => (
@@ -77,7 +90,14 @@ export const ConversationHistory = ({
   messages,
   turns,
   ai,
+  generations = [],
 }: ConversationHistoryProps) => {
+  const bySource = latestGenerationBySource(generations);
+  const blockedReason = replyGenerationBlockedReason({
+    aiEnabled: ai.enabled,
+    turnActive: hasActiveTurn(turns),
+    generating: hasActiveGeneration(generations),
+  });
   if (messages.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center">
@@ -123,8 +143,14 @@ export const ConversationHistory = ({
           );
         }
         if (entry.kind === 'reply') {
+          // C3.1: only replies stored by a completed turn can be a task source.
+          const eligible = entry.turn?.status === 'completed' && message.kind === 'chat';
           return (
-            <li key={message.id} className="flex justify-start">
+            <li
+              key={message.id}
+              id={messageAnchor(message.id)}
+              className="flex scroll-mt-20 flex-col items-start gap-1 rounded-2xl target:ring-2 target:ring-primary/40 target:ring-offset-4 target:ring-offset-background"
+            >
               <article
                 aria-label={`AI reply, ${formatTimestamp(message.createdAt)}`}
                 className="max-w-[92%] min-w-0 rounded-2xl rounded-tl-sm border bg-card px-4 py-3"
@@ -144,6 +170,16 @@ export const ConversationHistory = ({
                   </p>
                 ) : null}
               </article>
+              {eligible ? (
+                <ReplyTaskActions
+                  projectId={projectId}
+                  conversationId={conversationId}
+                  messageId={message.id}
+                  generation={bySource.get(message.id) ?? null}
+                  aiEnabled={ai.enabled}
+                  blockedReason={blockedReason}
+                />
+              ) : null}
             </li>
           );
         }

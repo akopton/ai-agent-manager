@@ -28,7 +28,9 @@ import { getDatabase } from '@/lib/server/database';
 import { getTaskExecution } from '@/lib/server/execution';
 import { getTaskRecoveryOptions } from '@/lib/server/recovery';
 import { loadForPage } from '@/lib/server/load';
+import { findTaskOrigin } from '@/lib/server/task-proposals';
 import { findProjectTask } from '@/lib/server/tasks';
+import { conversationUrl } from '@/lib/conversations/format';
 import { getTaskArchiveOption, getTaskWorkspacePanel } from '@/lib/server/workspace';
 import { taskEditability, taskStatusNotes } from '@/lib/tasks/actions';
 import {
@@ -78,6 +80,7 @@ const TaskPage = async ({
           recoveryOptions: getTaskRecoveryOptions(db, found.task),
           archiveOption: getTaskArchiveOption(db, found.task),
           workspacePanel: await getTaskWorkspacePanel(db, found.project.id, found.task.id),
+          origin: findTaskOrigin(db, found.task.id),
         };
   });
 
@@ -88,7 +91,8 @@ const TaskPage = async ({
     notFound();
   }
 
-  const { project, task, execution, recoveryOptions, archiveOption, workspacePanel } = result.data;
+  const { project, task, execution, recoveryOptions, archiveOption, workspacePanel, origin } =
+    result.data;
   const archived = task.archivedAt !== null;
   // An archived task accepts no lifecycle action or edit until it is restored.
   const editability = archived ? { content: false, priority: false } : taskEditability(task.status);
@@ -233,6 +237,17 @@ const TaskPage = async ({
             <Field label="Priority">{taskPriorityLabels[task.priority]}</Field>
             <Field label="Urgent">{task.urgent ? 'Yes' : 'No'}</Field>
             <Field label="Created">{formatTimestamp(task.createdAt)}</Field>
+            {origin !== undefined ? (
+              <Field label="Origin">
+                Approved task proposal from{' '}
+                <Link
+                  href={conversationUrl(project.id, origin.conversationId)}
+                  className="text-primary underline-offset-4 hover:underline"
+                >
+                  a conversation
+                </Link>
+              </Field>
+            ) : null}
             {task.updatedAt !== task.createdAt ? (
               <Field label="Updated">{formatTimestamp(task.updatedAt)}</Field>
             ) : null}

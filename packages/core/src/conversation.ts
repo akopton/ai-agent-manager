@@ -223,6 +223,24 @@ export const conversationErrorCodes = [
   'conversation_turn_not_active',
   /** Only the latest failed, stopped or interrupted turn can be retried. */
   'conversation_turn_not_retryable',
+  // C3 — task proposals.
+  /** Proposals need at least one answered exchange to work from. */
+  'task_proposal_no_history',
+  'task_proposal_generation_not_found',
+  /** Stop was requested for a generation that already finished. */
+  'task_proposal_generation_not_active',
+  /** Only the latest failed, stopped or interrupted generation can be retried. */
+  'task_proposal_generation_not_retryable',
+  'task_proposal_not_found',
+  /** The proposal changed since the operator loaded it (stale revision). */
+  'task_proposal_changed',
+  /** The proposal is approved or rejected and cannot be changed this way. */
+  'task_proposal_not_editable',
+  // C3.1 — source-scoped generation.
+  /** The selected source reply does not exist in this conversation. */
+  'task_proposal_source_not_found',
+  /** The selected message is not a completed AI reply (a user message or a note). */
+  'task_proposal_source_invalid',
 ] as const;
 
 export const conversationErrorCodeSchema = z.enum(conversationErrorCodes);

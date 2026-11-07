@@ -6,9 +6,17 @@ import {
   conversationSchema,
   conversationTurnStatusSchema,
   createConversationInputSchema,
+  requestTaskProposalsInputSchema,
   retryConversationTurnInputSchema,
+  retryTaskProposalGenerationInputSchema,
   sendConversationMessageInputSchema,
+  taskPrioritySchema,
+  taskProposalActionInputSchema,
+  taskProposalGenerationStatuses,
+  taskProposalStatusSchema,
+  taskStatusSchema,
   updateConversationInputSchema,
+  updateTaskProposalInputSchema,
 } from '@ai-agent-manager/core';
 import { z } from 'zod';
 
@@ -99,11 +107,131 @@ export const conversationAiStatusSchema = z.object({
 
 export type ConversationAiStatus = z.infer<typeof conversationAiStatusSchema>;
 
+// ---------------------------------------------------------------------------------------------
+// C3 — task proposals
+// ---------------------------------------------------------------------------------------------
+
+/** An explicit request for task proposals from one AI reply (C3.1), with an optional focus. */
+export const requestTaskProposalsRequestSchema = requestTaskProposalsInputSchema;
+
+export type RequestTaskProposalsRequest = z.input<typeof requestTaskProposalsRequestSchema>;
+
+export const retryTaskProposalGenerationRequestSchema = retryTaskProposalGenerationInputSchema;
+
+/** Edit of a draft proposal, based on the revision the operator loaded. */
+export const updateTaskProposalRequestSchema = updateTaskProposalInputSchema;
+
+export type UpdateTaskProposalRequest = z.input<typeof updateTaskProposalRequestSchema>;
+
+/** Approve to Backlog, Reject and Reopen name the revision the operator saw. */
+export const taskProposalActionRequestSchema = taskProposalActionInputSchema;
+
+/** One explicit proposal request, as the UI shows it. Never contains the prompt. */
+export const taskProposalGenerationViewSchema = z.object({
+  id: z.string(),
+  status: z.enum(taskProposalGenerationStatuses),
+  active: z.boolean(),
+  retryOfGenerationId: z.string().nullable(),
+  agentRuntime: agentRuntimeSchema,
+  requestedModelId: z.string().nullable(),
+  effectiveModelId: z.string().nullable(),
+  languageMode: conversationLanguageModeSchema,
+  /** The operator's optional focus; empty when none. */
+  instructions: z.string(),
+  /**
+   * C3.1: the AI reply the proposals were generated from. `null` for C3 requests, which used the
+   * whole answered conversation. The source text itself is never returned here.
+   */
+  sourceMessageId: z.string().nullable(),
+  basedOnSequence: z.number().int(),
+  cliVersion: z.string().nullable(),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  proposalCount: z.number().int(),
+  skippedCount: z.number().int(),
+  /** The AI's note from the proposal document. */
+  note: z.string().nullable(),
+  context: z
+    .object({
+      includedMessages: z.number().int(),
+      omittedMessages: z.number().int(),
+      notesExcluded: z.number().int(),
+    })
+    .nullable(),
+  createdAt: z.number().int(),
+  startedAt: z.number().int().nullable(),
+  endedAt: z.number().int().nullable(),
+  stopRequestedAt: z.number().int().nullable(),
+});
+
+export type TaskProposalGenerationView = z.infer<typeof taskProposalGenerationViewSchema>;
+
+/**
+ * A task proposal. The top-level task fields are the operator's current (approved, once
+ * approved) values; `suggested` keeps what the AI suggested, so the two stay distinguishable.
+ */
+export const taskProposalViewSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  conversationId: z.string(),
+  generationId: z.string(),
+  position: z.number().int(),
+  status: taskProposalStatusSchema,
+  title: z.string(),
+  prompt: z.string(),
+  agentRuntime: agentRuntimeSchema,
+  modelId: z.string().nullable(),
+  priority: taskPrioritySchema,
+  /** `null` = the project's default base branch. */
+  baseBranch: z.string().nullable(),
+  suggested: z.object({
+    title: z.string(),
+    prompt: z.string(),
+    priority: taskPrioritySchema,
+    agentRuntime: agentRuntimeSchema,
+    modelId: z.string().nullable(),
+  }),
+  /** Whether the operator changed any value the AI suggested (or chose a base branch). */
+  edited: z.boolean(),
+  rationale: z.string(),
+  dependencies: z.string(),
+  revision: z.number().int(),
+  /** The task created by approval. */
+  taskId: z.string().nullable(),
+  createdAt: z.number().int(),
+  updatedAt: z.number().int(),
+  approvedAt: z.number().int().nullable(),
+  rejectedAt: z.number().int().nullable(),
+});
+
+export type TaskProposalView = z.infer<typeof taskProposalViewSchema>;
+
+export const taskProposalGenerationResponseSchema = z.object({
+  generation: taskProposalGenerationViewSchema,
+  created: z.boolean().optional(),
+});
+
+export const taskProposalListResponseSchema = z.object({
+  proposals: z.array(taskProposalViewSchema),
+  generations: z.array(taskProposalGenerationViewSchema),
+});
+
+export const taskProposalResponseSchema = z.object({ proposal: taskProposalViewSchema });
+
+export const approveTaskProposalResponseSchema = z.object({
+  proposal: taskProposalViewSchema,
+  task: z.object({ id: z.string(), title: z.string(), status: taskStatusSchema }),
+  /** `false` when the proposal was already approved and its existing task is returned. */
+  created: z.boolean(),
+});
+
 export const conversationDetailResponseSchema = z.object({
   conversation: conversationSchema,
   messages: z.array(conversationMessageSchema),
   turns: z.array(conversationTurnViewSchema),
   ai: conversationAiStatusSchema,
+  generations: z.array(taskProposalGenerationViewSchema),
+  proposals: z.array(taskProposalViewSchema),
 });
 
 export const conversationMessageResponseSchema = z.object({

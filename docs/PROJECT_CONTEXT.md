@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.5 — AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
+**Status:** Context snapshot v0.7 — C3.1 decisions recorded (§10); v0.6: AI Conversations C3 decisions recorded (§10); v0.5: AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
 **Date:** 2026-11-07 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.5, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.4, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.4
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.10, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.9, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.9
 
 ## 1. Why this project exists
 
@@ -139,8 +139,8 @@ Specified in `SPEC.md` §18, with the architecture in `ARCHITECTURE.md` §15 and
 | Milestone | Scope |
 |---|---|
 | **C1** | Persistence and UI only. Delivered 2026-11-06. |
-| **C2** | Real CLI-backed conversations. |
-| **C3** | Task proposals and approval into Backlog. |
+| **C2** | Real CLI-backed conversations. Delivered 2026-11-07. |
+| **C3** | Task proposals and approval into Backlog. Delivered 2026-11-07. |
 | **C4** | Deeper project and task awareness. |
 
 Global AI and Architecture Decisions remain specified but unscheduled.
@@ -172,3 +172,21 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - **Context:** each turn is a new CLI process; earlier completed exchanges are resent within a 60,000-character budget; notes are never sent; the language instruction is its own prompt section. Project knowledge stays in C4.
 - **Model selection:** curated per-runtime catalog plus custom IDs, shared by tasks and conversations. `codex debug models --bundled` exists but is a debug command, so it informs the catalog and is not run by the application.
 - **Deferred:** token streaming/SSE, partial replies on Stop, native session resume, summaries, adversarial profile verification, C3 task proposals, C4 project awareness.
+
+**C3 decisions (2026-11-07):**
+
+- **Explicit generation only:** proposals come from a dedicated **Generate task proposals** request (optional focus), never from ordinary replies. It runs through the C2 consent, gate, launch profiles, scratch directory, Stop and restart handling, and shares the per-CLI conversation slot. A chat turn and a generation of one conversation never run at the same time.
+- **Structured output:** a prompt-level JSON contract validated with Zod in the worker. Non-documents and truncated JSON store nothing (`malformed_output`); invalid items are skipped and counted; at most 12 per request. The CLIs' native schema options (`--json-schema`, `--output-schema`) are deliberately unused so the C2 launch profiles stay unchanged.
+- **Context:** answered chat exchanges up to the request, within the C2 budget; notes excluded; no project files (C4). `pl_technical_en` produces English titles and prompts with Polish explanations.
+- **Lifecycle:** `draft → approved` (final), `draft ⇄ rejected` via explicit Reopen. Revision-guarded edits; a generation only adds drafts and never changes existing proposals or the history.
+- **Approval:** operator-only API mutation; one `IMMEDIATE` transaction creates exactly one `Backlog` task through `createTask` and marks the proposal approved; repeats return the same task. Never queues, starts, creates a worktree or runs Git; an explicit base branch gets the read-only existence check of manual creation.
+- **Origin reference:** stored on the proposal (`task_proposals.task_id`); `tasks` is unchanged and carries no conversation metadata.
+- **Deferred:** conversation archive/deletion, global conversations with target-project selection, bulk approval, dependency tracking, native CLI schema options, authenticated real-CLI verification of proposal generation. **Next:** C4 project and task awareness.
+
+**C3.1 decisions (2026-11-07, after C3 operator acceptance):**
+
+- **Contextual generation:** **Generate tasks** sits under each completed AI reply (optional Focus); the separate form below the transcript is gone. Ordinary replies still never produce proposals.
+- **Source-scoped context:** the request sends only the selected reply, loaded server-side by ID and snapshotted at request time; no history, user messages or notes. Retries reuse the snapshot; a new click after completion is a deliberate new batch.
+- **Provenance:** `task_proposal_generations.source_message_id` and `source_content` (additive migration `0011`); proposals reach their source through their generation. The UI links batches and cards back to the reply.
+- **Existing C3 data:** preserved and labelled as whole-conversation; not retryable.
+- **Next:** C4 project and task awareness.

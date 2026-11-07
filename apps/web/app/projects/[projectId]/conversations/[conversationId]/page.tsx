@@ -9,15 +9,18 @@ import { ConversationHistory } from '@/components/conversations/conversation-his
 import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { ConversationSettingsForm } from '@/components/conversations/conversation-settings-form';
 import { MessageComposer } from '@/components/conversations/message-composer';
+import { TaskProposalsPanel } from '@/components/conversations/task-proposals-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { conversationsUrl, describeLanguageMode } from '@/lib/conversations/format';
+import { hasActiveGeneration } from '@/lib/conversations/proposals';
 import { hasActiveTurn } from '@/lib/conversations/transcript';
 import { describeModelChoice } from '@/lib/models/model-selection';
 import { findConversationDetail } from '@/lib/server/conversations';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
+import { getProjectDetails } from '@/lib/server/projects';
 import { agentRuntimeLabels } from '@/lib/tasks/board';
 
 export const metadata: Metadata = { title: 'Conversation · AI Agent Manager' };
@@ -40,12 +43,21 @@ const ConversationPage = async ({
     notFound();
   }
 
-  const { project, conversation, messages, turns, ai } = result.data;
+  const { project, conversation, messages, turns, ai, generations, proposals } = result.data;
   const active = hasActiveTurn(turns);
+  const generating = hasActiveGeneration(generations);
   const model = describeModelChoice(conversation.agentRuntime, conversation.modelId);
+  // Branches for the proposal editor are read live (read-only), and only while drafts exist.
+  const branches = proposals.some((proposal) => proposal.status === 'draft')
+    ? await getProjectDetails(getDatabase(), project.id)
+        .then((details) =>
+          details?.repository.status === 'available' ? details.repository.branches : null,
+        )
+        .catch(() => null)
+    : null;
   return (
     <>
-      <ConversationAutoRefresh active={active} />
+      <ConversationAutoRefresh active={active || generating} />
       <section aria-labelledby="page-title" className="space-y-3">
         <Button asChild variant="ghost" size="sm" className="-ml-2.5">
           <Link href={conversationsUrl(project.id)}>
@@ -85,6 +97,7 @@ const ConversationPage = async ({
             messages={messages}
             turns={turns}
             ai={ai}
+            generations={generations}
           />
           <Card>
             <CardContent>
@@ -93,10 +106,19 @@ const ConversationPage = async ({
                 conversationId={conversation.id}
                 aiEnabled={ai.enabled}
                 turnActive={active}
+                proposalsActive={generating}
                 target={`${agentRuntimeLabels[conversation.agentRuntime]} · ${model} · ${describeLanguageMode(conversation.languageMode)}`}
               />
             </CardContent>
           </Card>
+          <TaskProposalsPanel
+            projectId={project.id}
+            conversationId={conversation.id}
+            defaultBaseBranch={project.defaultBaseBranch}
+            branches={branches}
+            generations={generations}
+            proposals={proposals}
+          />
         </section>
 
         <Card className="lg:sticky lg:top-6">

@@ -230,7 +230,8 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
       publications.poll();
       // Remove local worktree (TM-02): operator-confirmed requests only, one at a time.
       cleanups.poll();
-      // AI conversation turns (C2): operator-sent messages only; never tasks or Git.
+      // AI conversation turns (C2) and task proposal generations (C3): operator requests only;
+      // never tasks or Git.
       conversations?.poll();
     } catch (error) {
       logger.error('Execution polling failed.', error);

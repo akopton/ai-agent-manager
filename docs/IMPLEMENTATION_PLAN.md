@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.7 — AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
-**Date:** 2026-11-07 (v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.8 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.7  
+**Status:** Draft v0.9 — C3.1 (task proposals from individual AI replies) delivered (§8); v0.8: AI Conversations C3 (task proposals to Backlog) delivered (§8); v0.7: AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
+**Date:** 2026-11-07 (v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.10 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.9  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -253,7 +253,7 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 |---|---|---|
 | **C1 — AI Conversations Foundation** *(delivered 2026-11-06)* | Project-scoped conversations with runtime, model and language settings; durable, ordered history of operator notes; REST API and UI. No model runs. | M2, M3-01 |
 | **C2 — CLI-backed conversations** *(delivered 2026-11-07)* | Real replies from Claude Code or Codex in Conversation Mode: conversation gate and launch profiles, worker-owned turns, streaming, cancellation, restart handling, language-mode instructions. | C1, M1-02, M1-03 verification method, M4-03 (event log + SSE) |
-| **C3 — Task proposals to Backlog** | Structured task proposals from a conversation; edit, reject or accept each; accepted proposals create `Backlog` tasks with an origin reference. | C2, M3-02 |
+| **C3 — Task proposals to Backlog** *(delivered 2026-11-07)* | Structured task proposals from a conversation; edit, reject or accept each; accepted proposals create `Backlog` tasks with an origin reference. | C2, M3-02 |
 | **C4 — Project and task awareness** | Controlled, read-only context assembly: project instructions, task history and explicitly selected files, with a visible per-turn context manifest. | C2 |
 
 ### 8.2 Work packages
@@ -325,7 +325,31 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 
 **Done when:** a conversation exchanges messages with both CLIs under a verified conversation profile, or is refused with an actionable reason. Streaming, cancellation and restart behave as specified. No repository is touched. Tests use fake CLIs; live-CLI verification is recorded separately.
 
-#### C3 — Task proposals to Backlog
+#### C3 — Task proposals to Backlog (delivered 2026-11-07)
+
+**Delivered scope** (details: `ARCHITECTURE.md` §15.3 and §15.8 "C3 implementation notes", `SPEC.md` §18.8):
+
+- `packages/core/src/task-proposal.ts`: proposal and generation statuses, request/edit/action schemas, the structured-output contract and parser (`parseTaskProposalOutput`), proposal language rules and `composeTaskProposalPrompt`.
+- Migration `0010_task_proposals` (additive): `task_proposal_generations` and `task_proposals`. `tasks` is unchanged.
+- `packages/database`: `task-proposal-generations.ts` (request, retry, stop, claim with the shared per-CLI conversation slot, finish storing drafts exactly once, expiry) and `task-proposals.ts` (revision-guarded edit, reject, reopen, and atomic, idempotent approval through `createTask`). Chat sends and retries are refused while a generation is active, and vice versa.
+- Worker: chat turns and generations share one supervised CLI pipeline (gate, launch boundary, launch profiles, scratch directory, timeout, Stop, restart and shutdown handling). C2 behavior is unchanged.
+- REST routes under `…/conversations/:conversationId/proposal-generations` and `…/proposals` (`ARCHITECTURE.md` §15.10).
+- UI: a **Task proposals** panel on the conversation page with **Generate task proposals** (optional focus), request status with Stop and Retry, and proposal cards (Draft / Approved / Rejected, AI suggestion vs. edited values, editor with the shared model selector and branch list, Approve to Backlog, Reject, Reopen, link to the created task). The task page shows the proposal origin.
+- Tests with fake CLIs, disposable repositories and temporary databases: parser and prompt (core); persistence, idempotency, slots, rollback and constraints (database); one and several proposals, malformed and partial output, CLI failure, Stop, restart and shutdown with both CLIs (worker); API guards, scoping, consent separation, editing, rejection, approval idempotency (including concurrent requests) and no execution or Git side effects (web); UI states (render tests); static checks that the worker has no approval capability and that approval never queues, starts or runs Git.
+
+**Scope decisions:**
+
+- A **dedicated, explicitly requested generation** with a prompt-level JSON contract validated by the application, instead of extracting cards from ordinary replies. The CLIs' native schema options are not used, so the launch profiles stay identical to C2.
+- A generation requires at least one answered exchange, sends only answered chat history up to the request (never notes), adds no message to the history, and never changes existing proposals.
+- Proposals default to the conversation's runtime and model at request time, the project default base branch and the AI's priority (`Normal` if none). The AI cannot choose runtime, model or branch. At most 12 proposals per generation.
+- Lifecycle `draft → approved` (final) and `draft ⇄ rejected` (explicit Reopen). Approval is per proposal; no bulk approval.
+- The origin reference lives on the proposal (`task_proposals.task_id`), so `tasks` gains no conversation metadata.
+
+**Not done in C3 (recorded limitations):** conversation archive and confirmed deletion (still deferred; proposals use `RESTRICT` references, and projects with conversations still cannot be disconnected); global conversations and target-project selection; native CLI structured-output options; no authenticated real-CLI generation was run (fake CLIs only); no token streaming (polling refresh, as C2).
+
+**Manual verification (operator):** see the C3 browser acceptance checklist in the hand-off report; record its result here when run.
+
+**Original work package:**
 
 - Structured proposals parsed and validated into `draft` proposals; edit, reject, accept individually.
 - Acceptance reuses the M3 task creation command; tasks enter `Backlog` with origin references.
@@ -334,7 +358,20 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 
 **Done when:** `SPEC.md` §18.11 criterion 8 passes, and no conversation path can queue, run or publish a task.
 
+#### C3.1 — Contextual task proposals from individual AI replies (delivered 2026-11-07)
+
+A focused refinement of C3 before C4; it keeps C3's numbering and does not add a milestone.
+
+- **Why:** after C3's operator acceptance, chat and proposal generation felt like two workflows, and whole-conversation context made proposals harder to steer.
+- **Delivered:** **Generate tasks** (with optional Focus) under each completed AI reply; the request sends only that reply (server-loaded by ID, snapshotted, reused by retries); per-reply status with Stop, Retry and View proposals; the bottom generation form removed; proposal batches and cards link back to their source reply. Migration `0011_proposal_sources` (additive: `source_message_id`, `source_content`). Details: `ARCHITECTURE.md` §15.8 "C3.1".
+- **Unchanged:** consent, gate, launch profiles, worker pipeline, Stop, timeout and recovery; proposal editing, rejection, reopening; approval and task semantics.
+- **Existing C3 data:** kept and labelled "from the whole conversation"; C3 generations cannot be retried.
+- **Tests:** source eligibility and validation (user message, note, other conversation and project), source-only prompts (earlier and later messages and notes excluded), snapshot reuse on retry, per-source retry, idempotent repeats and deliberate regeneration, legacy rows, worker Stop/restart/shutdown, UI eligibility and source ↔ proposals navigation; the C2 and C3 suites still pass.
+- **Not done:** no authenticated real-CLI run; no scroll-into-view animation beyond anchor links.
+
 #### C4 — Project and task awareness
+
+**Next step after C3.1.** Proposals in C3.1 only see the selected AI reply. C4 adds controlled, read-only project context (instructions, task history, explicitly selected files from a resolved commit) with a visible manifest, which both chat turns and proposal generation will use.
 
 - Context sources:
   - project instructions;
@@ -355,6 +392,7 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 Listed in `SPEC.md` §18.12 and `ARCHITECTURE.md` §15.11. Resolve each with a documented decision before building the dependent work:
 
 - per-CLI conversation capabilities and enforceable no-tool profiles (C2: profiles defined and parse-checked; adversarial verification still open);
+- structured output for proposals (C3: prompt-level JSON contract validated by the application; native CLI schema options known but unused);
 - capacity sharing with the execution slots (C2: decided, separate conversation slot per CLI);
 - summary and context budgeting (C4);
 - project disconnect behavior for conversations (C1 refuses disconnect while conversations exist; a decision flow is still open);

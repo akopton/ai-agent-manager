@@ -188,6 +188,27 @@ const sectionClosing = new RegExp(`</(${sectionTags.join('|')})>`, 'gi');
 const neutralize = (text: string): string => text.replace(sectionClosing, '<\\/$1>');
 
 /**
+ * The newest history entries that fit into `budget` characters, in history order, and how many
+ * older entries were left out. Shared by chat turns and task proposal generation (C3).
+ */
+export const selectConversationHistory = (
+  history: readonly ConversationHistoryEntry[],
+  budget: number,
+): { included: ConversationHistoryEntry[]; omitted: number; characters: number } => {
+  const included: ConversationHistoryEntry[] = [];
+  let used = 0;
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (entry === undefined || used + entry.content.length > budget) {
+      break;
+    }
+    included.unshift(entry);
+    used += entry.content.length;
+  }
+  return { included, omitted: history.length - included.length, characters: used };
+};
+
+/**
  * Composes the stdin prompt of a turn: application instructions, the language instruction, earlier
  * **completed** chat exchanges (newest first until `historyBudget` characters; older ones are
  * omitted and counted), then the new message. Notes are excluded. Deterministic and pure.
@@ -208,17 +229,7 @@ export const composeConversationPrompt = ({
   notesExcluded?: number;
   historyBudget?: number;
 }): ComposedConversationPrompt => {
-  const included: ConversationHistoryEntry[] = [];
-  let used = 0;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const entry = history[index];
-    if (entry === undefined || used + entry.content.length > historyBudget) {
-      break;
-    }
-    included.unshift(entry);
-    used += entry.content.length;
-  }
-  const omitted = history.length - included.length;
+  const { included, omitted, characters: used } = selectConversationHistory(history, historyBudget);
   const historySection =
     included.length === 0
       ? omitted === 0

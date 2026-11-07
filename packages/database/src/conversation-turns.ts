@@ -17,15 +17,18 @@ import {
   type RetryConversationTurnInput,
   type SendConversationMessageInput,
 } from '@ai-agent-manager/core';
-import { and, asc, desc, eq, inArray, isNotNull, lt, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, lt, max } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import {
+  activeGenerationError,
   activeTurnError,
   appendMessage,
   findScoped,
+  hasActiveGeneration,
   hasActiveTurn,
   parseScope,
+  runningConversationWorkByRuntime,
   type ConversationMessageRecord,
   type ConversationRecord,
   type Scope,
@@ -132,7 +135,8 @@ export const disableConversationAi = (
   return getConversationConsent(db);
 };
 
-const requireConsent = (tx: Transaction): void => {
+/** @internal Shared with `task-proposal-generations.ts`. */
+export const requireConsent = (tx: Transaction): void => {
   const decision = evaluateConversationConsent(getConversationConsent(tx));
   if (!decision.ok) {
     throw new ConversationError(decision.code, decision.message);
@@ -261,6 +265,9 @@ export const sendConversationMessage = (
     if (hasActiveTurn(tx, conversation.id)) {
       throw activeTurnError();
     }
+    if (hasActiveGeneration(tx, conversation.id)) {
+      throw activeGenerationError();
+    }
     const message = appendMessage(tx, conversation, {
       id: parsedMessageId.data,
       role: 'user',
@@ -383,6 +390,9 @@ export const retryConversationTurn = (
     if (hasActiveTurn(tx, conversation.id)) {
       throw activeTurnError();
     }
+    if (hasActiveGeneration(tx, conversation.id)) {
+      throw activeGenerationError();
+    }
     const turn = insertTurn(tx, conversation, {
       id: parsedNewTurnId.data,
       userMessageId: source.userMessageId,
@@ -491,8 +501,12 @@ export type ClaimedConversationTurn = {
   notesExcluded: number;
 };
 
-/** Earlier completed exchanges before `beforeSequence`. Failed, unanswered messages are left out. */
-const loadHistory = (
+/**
+ * Earlier completed exchanges before `beforeSequence`. Failed, unanswered messages are left out.
+ *
+ * @internal Shared with `task-proposal-generations.ts`.
+ */
+export const loadHistory = (
   tx: Transaction,
   conversationId: string,
   beforeSequence: number,
@@ -578,15 +592,8 @@ export const claimConversationTurn = (
       }
       return { claimed: false };
     }
-    const runningByRuntime = new Map<AgentRuntime, number>(
-      tx
-        .select({ runtime: conversationTurns.agentRuntime, count: sql<number>`count(*)` })
-        .from(conversationTurns)
-        .where(inArray(conversationTurns.status, ['running', 'stopping']))
-        .groupBy(conversationTurns.agentRuntime)
-        .all()
-        .map(({ runtime, count }) => [runtime, count]),
-    );
+    // One conversation slot per CLI, shared with C3 proposal generations.
+    const runningByRuntime: Map<AgentRuntime, number> = runningConversationWorkByRuntime(tx);
     const next = queued.find(
       (turn) => (runningByRuntime.get(turn.agentRuntime) ?? 0) < maxActivePerRuntime,
     );

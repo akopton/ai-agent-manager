@@ -117,6 +117,9 @@ const conversationErrorStatus = (code: ConversationErrorCode): number => {
     case 'project_not_found':
     case 'conversation_not_found':
     case 'conversation_turn_not_found':
+    case 'task_proposal_generation_not_found':
+    case 'task_proposal_not_found':
+    case 'task_proposal_source_not_found':
       return 404;
     case 'conversation_changed':
     case 'conversation_request_conflict':
@@ -125,6 +128,12 @@ const conversationErrorStatus = (code: ConversationErrorCode): number => {
     case 'conversation_ai_stale':
     case 'conversation_turn_not_active':
     case 'conversation_turn_not_retryable':
+    case 'task_proposal_no_history':
+    case 'task_proposal_generation_not_active':
+    case 'task_proposal_generation_not_retryable':
+    case 'task_proposal_changed':
+    case 'task_proposal_not_editable':
+    case 'task_proposal_source_invalid':
       return 409;
   }
 };
