@@ -268,3 +268,86 @@ Chat stays separate from task execution: a conversation can never queue, start, 
   loader without its native binary. The web app now directly declares the existing pinned
   `better-sqlite3` version and explicitly externalizes it. The rebuilt production server then
   loaded the disposable database successfully. No new dependency version or schema migration.
+
+
+**UI-04B decisions (2026-11-07, after operator acceptance of UI-04A/theme follow-up):**
+
+- Shared project conversation navigation occupies a compact desktop sidebar and collapses on
+  narrow screens. It is scoped by the existing query and defensively filtered in presentation.
+  Existing recent activity ordering, URLs and UI-04A remembered detail paths remain.
+- Chat shows exchanges and turn states; Tasks shows all generation requests and existing cards;
+  Notes shows local C1/C2 notes and Save as Note. Fixed-mode composers retain separate drafts
+  while switching tabs. Notes remain excluded by the unchanged worker context assembly.
+- Query-backed tabs use native browser history and existing Radix Tabs keyboard behavior;
+  inactive panels remain mounted/hidden. Legacy source/batch hashes select the correct panel.
+- Conversation settings now lives in a header disclosure, with the original validation,
+  revision guards and Project Settings source-permission link. Enabled AI context details
+  collapse; missing consent/source permission stays visible. Composer uses primary Send to AI,
+  duplicate-submit protection, and IME/key-repeat-safe Ctrl/Command+Enter.
+- No dependency, API, schema, model catalog, consent, source retrieval, worker, task lifecycle,
+  scheduler or Git/publication changes. UI-04C (message/task refinements) and UI-04D
+  (references/chips/final polish) remain deferred; no deletion was added.
+- Validation on Node.js 24.22.2 / pnpm 12.16.1: `pnpm lint`, `pnpm typecheck`,
+  `pnpm format:check` and `pnpm test` passed (842 tests). The final generation-status copy
+  cleanup also passed all 33 focused conversation/workspace/proposal UI tests. Webpack production
+  build and the separate worker build passed. Default `pnpm build` failed both inside and
+  outside the sandbox with the existing Turbopack CSS worker port-binding error (`Operation
+  not permitted (os error 1)`); it did not pass. The second failed recursive build killed the
+  parallel worker build; the separate worker build passed afterward. Tests needed outside-
+  sandbox execution for tsx IPC sockets.
+- Headless Chrome QA against the final Webpack production server passed with a temporary
+  migrated SQLite database, unavailable disposable repository registrations and a fresh browser
+  profile. Completed replies/proposal generations were synthetic database fixtures; no CLI or
+  worker was launched by this browser run. The full test suite separately exercised fake CLIs.
+- Browser checks passed: scoped navigation and active item; Chat excludes notes/cards; Tasks
+  shows cards and failed requests; note persistence and same-tick double-submit protection;
+  retained chat draft across tabs; query refresh and back/forward; legacy source/batch hashes
+  (including conflicting queries); source links across tabs; arrow focus and Enter activation;
+  settings validation/save/runtime change; proposal edit/reject/reopen/approve into Backlog;
+  all four primary accents and matching active-control accents; collapsed/open narrow list;
+  no 360px horizontal overflow; IME/key-repeat guards; keyboard Send, waiting, switching during
+  a pending turn, blocked note saving and Stop. No browser runtime exceptions. Database checks
+  confirmed zero execution commands, task runs, workspaces and publications. Desktop (1440px)
+  and mobile (360px) screenshots were visually inspected.
+- Operator acceptance is still required for UI-04B. The full manual checklist is in
+  `IMPLEMENTATION_PLAN.md` §10; remaining broader checks include Safari, blocked browser storage,
+  long real transcripts/input, Project-Aware Sources, all running/interruption/retry variants,
+  lost responses, stale settings revisions, explicit branch/model changes and approved-task
+  origin navigation. Existing automated coverage of those underlying behaviors remains; no
+  authenticated CLI verification or CLI-isolation claim is added. UI-04C/D stay deferred.
+
+
+**UI-04B scroll-to-latest follow-up (after manual layout acceptance):**
+
+- The operator accepted the UI-04B sidebar, tabs, settings disclosure and composer. This
+  supersedes the earlier pending layout acceptance note; scroll-to-latest is a bounded follow-up.
+- Chat previously used document scrolling and opened at the oldest exchange. It now uses a
+  bounded focusable transcript, with its composer in a separate footer. Each mounted conversation
+  starts at latest unless a fragment specifies otherwise. A successful Send resumes following;
+  new replies/layout changes follow within 96px of the bottom, while scrolling upward preserves
+  reading position. Notes/Tasks transitions retain Chat state; note saving never resumes following.
+- Relative scroll offsets preserve message anchors without scrolling the whole workspace. Layout
+  effects suppress the initial oldest-message flash; ResizeObserver covers delayed rendering.
+  Polling does not repeatedly scroll an unchanged viewport. No automatic composer focus, backend,
+  persistence, context assembly, task execution or dependency changes.
+- Deliberate layout limit: existing mobile navigation can exceed a small viewport; ordinary
+  page scrolling may be needed to reach Chat initially. The pane retains a 384px readability
+  minimum and a bounded composer footer; browsing its history then leaves page/navigation
+  position unchanged. Changing the surrounding mobile application shell is outside this follow-up.
+- Node.js 24.22.2 validation: `pnpm lint`, `pnpm typecheck`, `pnpm format` and `pnpm test`
+  passed (850 tests, including eight new scroll regressions). All 41 focused conversation,
+  workspace, proposal and scroll tests passed. Webpack production build passed for browser QA;
+  the known Turbopack problem was not re-tested as part of this follow-up. Tests ran outside
+  the sandbox for tsx IPC sockets.
+- Real headless Chrome QA used two long disposable conversations (24 synthetic completed
+  exchanges each, over 10,000px transcript height), temporary SQLite and no real CLI/worker.
+  Passed: latest on open/refresh/switch; visible desktop composer; no autofocus; outgoing chat
+  after reading history; following a reply from 60px above bottom; no forced movement while
+  reading older messages through polling and reply arrival; Tasks/Notes restoration and note
+  saving; source links and direct anchored refresh; delayed anchor alignment and delayed
+  bottom growth; keyboard PageDown; no mobile horizontal overflow; narrow-screen local scrolling
+  and tab restoration. Desktop header and page stayed fixed during Chat scrolling. No browser
+  runtime exceptions or task/execution mutations occurred. Mobile geometry confirmed the
+  documented outer-navigation limit; the QA explicitly reached Chat before checking local scroll.
+- Remaining manual checks: Safari, touch/virtual-keyboard behavior, browser zoom and unusually
+  large composer input. No authenticated CLI verification or new isolation claim was added.

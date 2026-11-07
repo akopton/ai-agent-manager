@@ -597,11 +597,59 @@ are recorded in `PROJECT_CONTEXT.md`.
 - Observe an already running disposable fake-CLI turn/task while switching sections; navigation
   must neither restart nor stop worker-owned work.
 
-### UI-04B — Conversations Layout (deferred)
+### UI-04B — Conversations Workspace Layout (2026-11-07)
 
-- Project conversation list.
-- Chat / Tasks / Notes tabs.
-- Cleaner composer and collapsed conversation settings.
+Implemented as a presentation-only refinement; browser acceptance and validation results are
+recorded in `PROJECT_CONTEXT.md`.
+
+- Shared project-scoped conversation sidebar on list/new/detail routes; active item, recent
+  activity, New conversation and collapsible narrow-screen navigation.
+- URL-backed Chat / Tasks / Notes views, retained drafts and legacy source/batch anchors.
+- Chat excludes notes; Notes retains C1/C2 saving and ordering; Tasks includes all generation
+  history and unchanged proposal editing/approval.
+- Header Conversation settings disclosure reuses the existing revision-guarded form. Chat has
+  primary Send to AI; secondary Save as Note lives in Notes. Context details are collapsible;
+  blocked consent/source permission remains visible.
+- No API, persistence, context assembly, source retrieval, worker or task lifecycle changes.
+  UI-04C and UI-04D remain deferred below.
+
+**Scroll-to-latest follow-up (after operator layout acceptance):**
+
+- Bounded Chat transcript with a separate composer; initial opening, refresh and conversation
+  changes start at latest unless an explicit message fragment takes precedence.
+- Successful outgoing chat resumes following. Replies/layout changes follow only within 96px
+  of the bottom; older-history reading and same-conversation tab restoration stay under user control.
+- Relative transcript anchors, pre-paint positioning, ResizeObserver for delayed layout and no
+  composer autofocus. Mobile/short-window outer navigation remains normally scrollable; Chat
+  itself has a 384px minimum and scrolls locally. No API/persistence/execution changes.
+- Regression coverage: controller lifecycle, threshold, outgoing/assistant updates, anchors,
+  delayed layout, hidden panels and polling; real headless Chrome with long synthetic exchanges.
+
+**Manual browser acceptance checklist (disposable data and fake CLIs only):**
+
+- Open list/new/detail in projects A and B. Confirm scoped recent-first lists, active item,
+  New conversation, empty state and long-title truncation. Switch projects and return through
+  UI-04A's remembered conversation. Repeat with sessionStorage blocked.
+- Switch Chat → Tasks → Notes, refresh, then use back/forward. Check only the selected panel
+  is visible and drafts remain after switching. Open legacy message/batch anchors directly,
+  including conflicting tab queries. Follow proposal source → reply → proposals and approved
+  task → origin conversation links.
+- Save a note, reload and confirm ordering, timestamp and exact text. Confirm it appears only
+  in Notes and never in the next fake-CLI prompt. Send to AI from Chat with click and
+  Ctrl/Command+Enter; plain Enter, IME composition and repeated keydown must not send.
+- Exercise pending/running/failed/stopped/interrupted turns and generations. Check progress,
+  Stop/Retry and busy state from each tab; switching must not stop, duplicate or restart work.
+  Double-submit and simulate a lost response: existing request deduplication must hold.
+- Open Conversation settings using keyboard, validate an empty title, change runtime/model,
+  language/context, save and reload. Confirm stale revisions still fail. Project Settings
+  alone owns source sharing; separate App Settings consent is still required.
+- In Tasks, edit title/prompt/runtime/model/priority/branch; reject, reopen, approve once to
+  Backlog and follow the task link. Confirm no automatic queue, execution, worktree or publish.
+- At 360px and desktop widths, check compact navigation, no horizontal overflow, long input,
+  transcript readability and composer flow (no overlay). Tab through disclosures/actions;
+  use arrow/Home/End and Enter/Space on tabs. Confirm visible focus and hidden-panel exclusion.
+- Repeat visual checks with Violet, Ocean, Teal and Amber; primary actions follow the accent,
+  secondary controls stay neutral, semantic statuses are unchanged. Kanban colors are unchanged.
 
 ### UI-04C — Message & Task UX (deferred)
 

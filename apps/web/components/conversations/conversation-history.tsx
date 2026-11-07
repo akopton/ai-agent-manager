@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Loader2, MessagesSquare, NotebookPen, OctagonX } from 'lucide-react';
+import { AlertCircle, Bot, Loader2, MessagesSquare, OctagonX } from 'lucide-react';
 import type { ConversationMessage } from '@ai-agent-manager/core';
 
 import { MarkdownContent } from '@/components/conversations/markdown-content';
@@ -84,7 +84,7 @@ const TurnStatus = ({
   </div>
 );
 
-/** The transcript: notes, messages sent to the AI with their reply state, and AI replies. */
+/** Chat only; keep the full history when computing turn eligibility. Notes live in Notes. */
 export const ConversationHistory = ({
   projectId,
   conversationId,
@@ -99,7 +99,7 @@ export const ConversationHistory = ({
     turnActive: hasActiveTurn(turns),
     generating: hasActiveGeneration(generations),
   });
-  if (messages.length === 0) {
+  if (!messages.some((message) => message.kind === 'chat')) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10 text-center">
         <div className="flex size-10 items-center justify-center rounded-xl bg-muted">
@@ -118,31 +118,7 @@ export const ConversationHistory = ({
     <ol aria-label="Conversation history" className="space-y-4">
       {buildTranscript(messages, turns, ai).map((entry) => {
         const { message } = entry;
-        if (entry.kind === 'note') {
-          return (
-            <li key={message.id}>
-              <article
-                aria-label={`Note, ${formatTimestamp(message.createdAt)}`}
-                className="rounded-xl border border-dashed bg-inset/60 px-4 py-3"
-              >
-                <header className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
-                  <NotebookPen
-                    className="size-3.5 self-center text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="font-semibold text-foreground">Note</span>
-                  <span className="text-muted-foreground">Not sent to an AI</span>
-                  <span className="ml-auto">
-                    <Timestamp value={message.createdAt} />
-                  </span>
-                </header>
-                <p className="text-sm leading-6 break-words whitespace-pre-wrap">
-                  {message.content}
-                </p>
-              </article>
-            </li>
-          );
-        }
+        if (entry.kind === 'note') return null;
         if (entry.kind === 'reply') {
           // C3.1: only replies stored by a completed turn can be a task source.
           const eligible = entry.turn?.status === 'completed' && message.kind === 'chat';

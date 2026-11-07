@@ -1216,3 +1216,58 @@ Production HTTP QA exposed a Webpack native-addon resolution problem: a transiti
 now declares the same pinned `better-sqlite3` version as the database package and explicitly
 lists it in `serverExternalPackages`. This is a runtime packaging correction, not a new
 persistence layer. Both processes still use the existing database package and SQLite schema.
+
+
+## 18. UI-04B — Conversations workspace presentation
+
+`/projects/[projectId]/conversations/layout.tsx` reads the existing project-scoped summary query
+and renders one responsive `ConversationNavigation` alongside list/new/detail content. The
+query's existing `updatedAt` ordering includes saved settings and message activity; navigation
+writes nothing. The navigation marks the exact detail path, truncates long titles (full title
+available), and uses one collapsible list on narrow screens. UI-04A's parent project layout and
+validated sessionStorage detail-path memory are unchanged.
+
+The detail server page supplies Chat, Tasks and Notes as slots to `ConversationViews`. Radix
+Tabs (already installed) supplies tab/panel wiring and arrow/Home/End keys with manual
+activation (Enter/Space). Inactive panels stay mounted and hidden, retaining composer/proposal
+drafts across view changes; the worker-owned auto-refresh remains outside the panels. Native
+History API updates `?tab=` through Next.js's supported integration, preserving unrelated query
+parameters and creating back/forward entries without server navigation or commands. Hash/popstate
+subscriptions reveal legacy message/batch targets and scroll after the panel becomes visible.
+
+`ConversationHistory` computes turn eligibility from the full history before omitting note
+entries. This deliberately preserves C2 retry rules when a note follows an unanswered message.
+`ConversationNotes` renders only notes, preserving sequence, plain text and timestamps. Two
+instances of the existing composer have fixed Chat/Note modes, separate drafts and request IDs;
+only the Notes instance calls `/messages`. A synchronous ref guards duplicate submissions before
+React renders busy state; the field is disabled during requests, and failed responses preserve
+text and request identity. Ctrl/Command+Enter ignores IME composition and key-repeat events.
+
+`TaskProposalsPanel` now includes every generation, not only those with cards. Existing state
+formatting and Stop/Retry actions are reused. Retry is limited to the latest generation per
+source reply while no conversation AI work is active; source-less legacy C3 requests cannot
+retry. Cards, revision checks, model/branch selection, approval transactions and task links are
+unchanged. Existing hash links continue to work across panels without rewritten provenance.
+
+Conversation settings use native `details/summary` in the header, reusing the existing settings
+form and source-permission link. No new dependencies, APIs, schema, context assembly, retrieval,
+worker, consent or task/Git authority are introduced. Nebula Graphite tokens drive navigation,
+tabs and primary Send; Save as Note remains neutral. UI-04C/D remain separate deferred work.
+
+
+**UI-04B scroll follow-up.** `ConversationChat` owns a local transcript viewport and separate
+composer footer. It is keyed by conversation ID. `createChatScrollController` tracks initial
+positioning, user reading position, 96px near-bottom following and intentional fragment anchors.
+Successful chat submission notifies this presentation component after the existing API succeeds;
+note saves do not notify it. Layout effects position before showing the initial transcript;
+ResizeObserver handles delayed content/viewport changes. Idle polling does not rewrite scrollTop
+when it already matches. Hidden panels' zero geometry cannot overwrite the saved position.
+
+Message-anchor offsets are computed relative to the transcript and applied to its scrollTop;
+they never use scrollIntoView. Same-conversation source links are intercepted before native
+fragment scrolling can move ancestors, while keeping URL/history semantics and modifier clicks.
+An anchor remains aligned through delayed layout until the user scrolls or deliberately sends.
+The existing proposal-batch navigation remains. Chat gains no autofocus. Pane height uses document
+coordinates to avoid resizing as the outer page scrolls, fits the desktop viewport, and keeps a
+384px floor for small windows. Existing tall mobile navigation retains normal outer page access;
+Chat history remains local once reached. No dependencies or backend changes are needed.

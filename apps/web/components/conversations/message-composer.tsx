@@ -18,12 +18,12 @@ import {
   conversationMessageResponseSchema,
   sendConversationMessageResponseSchema,
 } from '@/lib/conversations/contracts';
-import { cn } from '@/lib/utils';
 
 type ComposerMode = 'chat' | 'note';
 
-type MessageComposerProps = {
+export type MessageComposerProps = {
   projectId: string;
+  mode?: ComposerMode;
   conversationId: string;
   /** AI replies are enabled in Settings. */
   aiEnabled: boolean;
@@ -33,6 +33,8 @@ type MessageComposerProps = {
   proposalsActive?: boolean;
   /** For example "Claude Code · Default · Polish, technical English". */
   target: string;
+  /** Presentation-only notification after a successful chat submission. */
+  onSent?: () => void;
 };
 
 /**
@@ -42,19 +44,21 @@ type MessageComposerProps = {
  */
 export const MessageComposer = ({
   projectId,
+  mode = 'chat',
   conversationId,
   aiEnabled,
   turnActive,
   proposalsActive = false,
   target,
+  onSent,
 }: MessageComposerProps) => {
   const router = useRouter();
   const fieldId = useId();
-  const [mode, setMode] = useState<ComposerMode>(aiEnabled ? 'chat' : 'note');
   const [content, setContent] = useState('');
   const [error, setError] = useState<ClientError | null>(null);
   const [pending, setPending] = useState(false);
   const requestId = useRef<string | null>(null);
+  const submitting = useRef(false);
 
   const length = content.replace(/\r\n?/g, '\n').trim().length;
   const isEmpty = length === 0;
@@ -62,16 +66,8 @@ export const MessageComposer = ({
   const chat = mode === 'chat';
   const blocked = turnActive || (chat && (!aiEnabled || proposalsActive));
 
-  const switchMode = (next: ComposerMode) => {
-    if (next === mode) return;
-    setMode(next);
-    // A note and a chat message are different submissions.
-    requestId.current = null;
-    setError(null);
-  };
-
   const submit = async () => {
-    if (pending || blocked) {
+    if (submitting.current || blocked) {
       return;
     }
     const parsed = conversationMessageContentSchema.safeParse(content);
@@ -84,12 +80,14 @@ export const MessageComposer = ({
     }
     requestId.current ??= crypto.randomUUID();
     setError(null);
+    submitting.current = true;
     setPending(true);
     const base = `/api/projects/${projectId}/conversations/${conversationId}`;
     const body = { requestId: requestId.current, content };
     const response = chat
       ? await requestJson('POST', `${base}/turns`, sendConversationMessageResponseSchema, body)
       : await requestJson('POST', `${base}/messages`, conversationMessageResponseSchema, body);
+    submitting.current = false;
     setPending(false);
     if (!response.ok) {
       // Keep the draft and its request ID: retrying the same text cannot store it twice.
@@ -98,6 +96,7 @@ export const MessageComposer = ({
     }
     requestId.current = null;
     setContent('');
+    if (chat) onSent?.();
     router.refresh();
   };
 
@@ -107,7 +106,12 @@ export const MessageComposer = ({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    if (
+      event.key === 'Enter' &&
+      (event.metaKey || event.ctrlKey) &&
+      !event.nativeEvent.isComposing &&
+      !event.repeat
+    ) {
       event.preventDefault();
       void submit();
     }
@@ -117,38 +121,11 @@ export const MessageComposer = ({
     <form onSubmit={handleSubmit} className="space-y-3" noValidate aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Label htmlFor={`${fieldId}-content`}>{chat ? 'Message to the AI' : 'New note'}</Label>
-        <div
-          role="radiogroup"
-          aria-label="What to do with the text"
-          className="inline-flex rounded-lg border bg-inset p-0.5 text-xs"
-        >
-          {(
-            [
-              ['chat', 'Send to AI'],
-              ['note', 'Save as note'],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="radio"
-              aria-checked={mode === value}
-              onClick={() => switchMode(value)}
-              className={cn(
-                'rounded-md px-2.5 py-1 font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
-                mode === value
-                  ? 'bg-card text-foreground shadow-xs'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
       <Textarea
         id={`${fieldId}-content`}
         name="content"
+        disabled={pending}
         value={content}
         onChange={(event) => {
           setContent(event.target.value);
@@ -159,8 +136,8 @@ export const MessageComposer = ({
           setError(null);
         }}
         onKeyDown={handleKeyDown}
-        rows={5}
-        className="min-h-28 resize-y"
+        rows={4}
+        className="max-h-[50dvh] min-h-28 resize-y"
         placeholder={
           chat
             ? 'Ask a question, describe a goal or paste context to plan…'
@@ -184,7 +161,7 @@ export const MessageComposer = ({
                 <Link href="/settings" className="text-primary underline underline-offset-4">
                   Enable AI Conversations in Settings
                 </Link>{' '}
-                or save a note.{' '}
+                or save a note in Notes.{' '}
               </>
             )
           ) : (
@@ -196,7 +173,11 @@ export const MessageComposer = ({
           </span>{' '}
           <span className="whitespace-nowrap">Ctrl/⌘ + Enter submits.</span>
         </p>
-        <Button type="submit" disabled={pending || isEmpty || tooLong || blocked}>
+        <Button
+          type="submit"
+          variant={chat ? 'default' : 'outline'}
+          disabled={pending || isEmpty || tooLong || blocked}
+        >
           {pending ? (
             <Loader2 className="animate-spin" aria-hidden="true" />
           ) : chat ? (
@@ -204,7 +185,7 @@ export const MessageComposer = ({
           ) : (
             <NotebookPen aria-hidden="true" />
           )}
-          {pending ? (chat ? 'Sending…' : 'Saving…') : chat ? 'Send' : 'Save note'}
+          {pending ? (chat ? 'Sending…' : 'Saving…') : chat ? 'Send to AI' : 'Save as Note'}
         </Button>
       </div>
       {turnActive ? (

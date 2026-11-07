@@ -742,3 +742,57 @@ remain small actions; the Projects library is preserved.
 
 Deferred UX work is tracked in `IMPLEMENTATION_PLAN.md` §10. Individual feature-page
 redesigns and destination-status action color changes are outside UI-04A.
+
+
+## 20. UI-04B — Conversations Workspace Layout (2026-11-07)
+
+Refines the historical C2 composer and C3.1 panel placement above, without changing their
+commands, context assembly or approval guarantees. A shared project conversation sidebar is
+available on conversation list, new and detail routes. It shows titles, runtime and persisted
+recent activity, ordered by the existing updated timestamp. The active conversation is marked;
+New conversation stays visible. On narrow screens, a keyboard-operated disclosure hides the
+list until requested. The UI-04A project navigation shell is not repeated.
+
+Each selected conversation has three views:
+
+- **Chat:** sent user messages, completed Markdown replies, Sources, message-level Generate
+  tasks and existing turn states with Stop/Retry. Manually saved notes do not appear here.
+- **Tasks:** all generation history, including pending, failed, interrupted and empty requests,
+  plus the existing Draft/Approved/Rejected proposals, editing and individual Approve to Backlog.
+- **Notes:** ordered, timestamped local notes and a secondary **Save as Note** composer. Notes
+  never enter AI context. Note editing and deletion remain deferred.
+
+The header summarizes runtime, model, language and context mode. **Conversation settings** is
+an initially collapsed native disclosure in that header; it reuses the existing revision-guarded
+form. Source-sharing permission still lives in Project Settings, with a link from this panel.
+Routine context details are collapsible in Chat; missing consent/source permission stays visible.
+Chat has one primary **Send to AI** action. Ctrl/Command+Enter submits; plain Enter adds a line;
+IME composition and repeated key events do not submit. Limits, validation, busy states,
+idempotent request IDs and the prohibition on adding notes during an active turn remain.
+
+`?tab=chat|tasks|notes` preserves the view on refresh and supports browser history. Legacy
+`#message-…` and `#proposals-…` anchors reveal Chat and Tasks respectively, including when a
+conflicting tab query is present. Switching views preserves local drafts and performs no AI,
+worker, task or Git command. Existing conversation URLs, approved-task origin links and
+UI-04A last-visited conversation paths remain valid. All accents use existing semantic tokens.
+
+UI-04C (message footers, compact Sources/proposals and task UX) and UI-04D (explicit references,
+composer chips and final polish) remain deferred. No lifecycle, retrieval, consent, model catalog,
+schema, scheduler, permanent deletion or publication behavior changes.
+
+
+### UI-04B follow-up — Scroll to latest
+
+Opening Chat without a fragment, refreshing it, or switching conversations starts at the latest
+messages. Successful Send to AI resumes bottom following. Later replies and delayed content
+follow only while the operator is within 96px of the transcript bottom; scrolling farther up
+preserves the reading position. Returning from Tasks/Notes retains Chat's position for the same
+mounted conversation. Explicit message anchors take precedence, including on refresh; no
+composer autofocus is added.
+
+Chat has a bounded, keyboard-focusable transcript with the composer outside its scrolling area.
+Scroll management changes only that transcript, leaving project navigation and the sidebar in
+place. Pane height fits the available desktop viewport with a 384px readability minimum; the
+existing tall mobile/short-window chrome can require ordinary page scrolling to reach Chat.
+Once reached, browsing history does not move the page or composer. Oversized composer content
+can scroll within its own bounded footer. No API, persistence, context or execution behavior changes.

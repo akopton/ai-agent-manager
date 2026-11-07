@@ -1,12 +1,14 @@
 import { ArrowUp, ListChecks } from 'lucide-react';
 
 import { TaskProposalCard } from '@/components/conversations/task-proposal-card';
+import { ProposalGenerationStatus } from '@/components/conversations/reply-task-actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TaskProposalGenerationView, TaskProposalView } from '@/lib/conversations/contracts';
 import {
   countProposals,
   describeRuntimeAndModel,
-  groupProposalsByGeneration,
+  hasActiveGeneration,
+  latestGenerationBySource,
   messageAnchor,
   proposalBatchAnchor,
 } from '@/lib/conversations/proposals';
@@ -19,6 +21,8 @@ type TaskProposalsPanelProps = {
   branches: readonly string[] | null;
   generations: readonly TaskProposalGenerationView[];
   proposals: readonly TaskProposalView[];
+  aiEnabled?: boolean;
+  turnActive?: boolean;
 };
 
 const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
@@ -36,8 +40,15 @@ export const TaskProposalsPanel = ({
   branches,
   generations,
   proposals,
+  aiEnabled = false,
+  turnActive = false,
 }: TaskProposalsPanelProps) => {
-  const batches = groupProposalsByGeneration(generations, proposals);
+  const batches = generations.map((generation) => ({
+    generation,
+    proposals: proposals.filter((proposal) => proposal.generationId === generation.id),
+  }));
+  const latest = latestGenerationBySource(generations);
+  const busy = turnActive || hasActiveGeneration(generations);
   const counts = countProposals(proposals);
 
   return (
@@ -100,11 +111,17 @@ export const TaskProposalsPanel = ({
                     </a>
                   )}
                 </header>
-                {generation.note === null ? null : (
-                  <p className="text-xs leading-5 break-words text-muted-foreground">
-                    AI note: {generation.note}
-                  </p>
-                )}
+                <ProposalGenerationStatus
+                  projectId={projectId}
+                  conversationId={conversationId}
+                  generation={generation}
+                  retryable={
+                    !busy &&
+                    generation.sourceMessageId !== null &&
+                    latest.get(generation.sourceMessageId)?.id === generation.id
+                  }
+                  aiEnabled={aiEnabled}
+                />
                 <ol aria-label="Proposals in this batch" className="space-y-3">
                   {batch.map((proposal) => (
                     <li key={proposal.id}>

@@ -374,6 +374,52 @@ test('rejected proposals can only be reopened', () => {
   assert.doesNotMatch(html, /Approve to Backlog/);
 });
 
+test('Tasks preserves failed, empty and pending generation history without cards', () => {
+  const html = panel({
+    aiEnabled: true,
+    generations: [
+      generation({
+        id: id(1),
+        status: 'failed',
+        errorMessage: 'Invalid proposal output.',
+        proposalCount: 0,
+      }),
+      generation({
+        id: id(2),
+        status: 'completed',
+        proposalCount: 0,
+        note: 'No actionable tasks.',
+      }),
+      generation({ id: id(3), status: 'queued', active: true, startedAt: null, proposalCount: 0 }),
+    ],
+  });
+  assert.match(html, /Invalid proposal output/);
+  assert.match(html, /No actionable tasks/);
+  assert.match(html, /Waiting for the worker/);
+  assert.match(html, />Stop</);
+  assert.doesNotMatch(html, />Retry</, 'busy conversations cannot retry a failed generation');
+  assert.doesNotMatch(html, /No task proposals yet/);
+  for (const n of [1, 2, 3]) assert.match(html, new RegExp(`id="proposals-${id(n)}"`));
+});
+
+test('Tasks offers Retry only for the latest failed request per reply and never for C3 legacy', () => {
+  const failed = generation({ status: 'failed', proposalCount: 0 });
+  const html = panel({
+    aiEnabled: true,
+    generations: [
+      { ...failed, id: id(1) },
+      { ...failed, id: id(2) },
+      { ...failed, id: id(3), sourceMessageId: null },
+    ],
+  });
+  assert.equal(html.match(/>Retry</g)?.length, 1);
+  assert.doesNotMatch(panel({ aiEnabled: false, generations: [failed] }), />Retry</);
+  assert.doesNotMatch(
+    panel({ aiEnabled: true, turnActive: true, generations: [failed] }),
+    />Retry</,
+  );
+});
+
 test('generation states describe every lifecycle status', () => {
   const statuses = [
     ['queued', 'pending', true, false],

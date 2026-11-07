@@ -12,6 +12,7 @@ import {
   AppRouterContext,
   type AppRouterInstance,
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
+import { ConversationNotes } from '@/components/conversations/conversation-notes';
 import { ConversationHistory } from '@/components/conversations/conversation-history';
 import { ConversationList } from '@/components/conversations/conversation-list';
 import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
@@ -125,13 +126,15 @@ test('the history empty state explains that notes are never sent', () => {
   assert.match(html, /Notes are never sent to Claude Code or Codex/);
 });
 
-test('notes are labelled as notes, escaped, and never shown as AI replies', () => {
-  const html = history([
+test('notes live in Notes, are ordered, escaped and never shown as AI replies', () => {
+  const messages = [
     message({ id: id(101), sequence: 1, content: 'Alpha <script>alert(1)</script>' }),
     message({ id: id(102), sequence: 2, content: 'Beta\n\n- item' }),
-  ]);
+  ];
+  assert.doesNotMatch(history(messages), /Alpha|Beta|Not sent to an AI/);
+  const html = render(createElement(ConversationNotes, { messages }));
   assert.ok(html.indexOf('Alpha') < html.indexOf('Beta'));
-  assert.match(html, /<ol aria-label="Conversation history"/);
+  assert.match(html, /<ol aria-label="Saved notes"/);
   assert.equal(html.match(/Not sent to an AI/g)?.length, 2);
   assert.doesNotMatch(html, /AI reply/);
   assert.doesNotMatch(html, /<script>/, 'content is escaped');
@@ -345,18 +348,24 @@ test('the composer sends to the AI by default and keeps notes clearly separate',
   const labelFor = /<label[^>]*for="([^"]+)"/.exec(html)?.[1];
   assert.ok(labelFor !== undefined);
   assert.match(html, new RegExp(`<textarea[^>]* id="${labelFor}"`));
-  assert.match(html, /role="radio" aria-checked="true"[^>]*>Send to AI/);
-  assert.match(html, /Save as note/);
+  assert.doesNotMatch(html, /radiogroup|Save as Note/);
+  assert.match(html, /Send to AI/);
   assert.match(html, /Notes are not sent/);
   assert.match(html, /0 \/ 20,000 characters/);
   assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Send/);
 });
 
-test('with AI replies off the composer starts in note mode and links to Settings', () => {
+test('AI-off Chat links to Settings; Notes remains local and secondary', () => {
   const html = composer({ aiEnabled: false });
-  assert.match(html, />New note<\/label>/);
-  assert.match(html, /role="radio" aria-checked="true"[^>]*>Save as note/);
-  assert.match(html, /never sent to Claude Code or Codex/);
+  assert.match(html, />Message to the AI<\/label>/);
+  assert.match(html, /AI replies are off/);
+  assert.match(html, /href="\/settings"/);
+  assert.match(html, /save a note in Notes/);
+  const note = composer({ aiEnabled: false, mode: 'note' });
+  assert.match(note, />New note<\/label>/);
+  assert.match(note, /Save as Note/);
+  assert.match(note, /data-variant="outline"/);
+  assert.match(note, /never sent to Claude Code or Codex/);
 });
 
 test('while a reply is pending the composer is blocked', () => {

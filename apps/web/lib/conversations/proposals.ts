@@ -57,7 +57,7 @@ export const describeGenerationState = (
             ? `Starting ${name}…`
             : `${name} is preparing task proposals…`,
         description:
-          'Proposals appear below as drafts when the answer is complete. Nothing is created until you approve one.',
+          'Proposals appear in Tasks as drafts when the answer is complete. No task is created until you approve one.',
         canStop: true,
         canRetry: false,
       };

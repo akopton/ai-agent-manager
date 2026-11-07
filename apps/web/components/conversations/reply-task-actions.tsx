@@ -223,6 +223,43 @@ type GenerationActionsProps = {
   canRetry: boolean;
 };
 
+/** Full generation history also includes requests that produced no proposal cards. */
+export const ProposalGenerationStatus = ({
+  generation,
+  projectId,
+  conversationId,
+  retryable,
+  aiEnabled,
+}: {
+  generation: TaskProposalGenerationView;
+  projectId: string;
+  conversationId: string;
+  retryable: boolean;
+  aiEnabled: boolean;
+}) => {
+  const state = describeGenerationState(generation, { latest: retryable, aiEnabled });
+  return (
+    <div role="status" className="space-y-2 text-xs" aria-live="polite">
+      <p className={cn('flex items-center gap-2 font-medium', toneClasses[state.tone])}>
+        <ToneIcon tone={state.tone} /> {state.title}
+      </p>
+      {state.description === null ? null : (
+        <p className="break-words text-muted-foreground">
+          {generation.status === 'completed' && generation.note ? 'AI note: ' : null}
+          {state.description}
+        </p>
+      )}
+      <ProposalGenerationActions
+        projectId={projectId}
+        conversationId={conversationId}
+        generationId={generation.id}
+        canStop={state.canStop}
+        canRetry={generation.sourceMessageId !== null && state.canRetry}
+      />
+    </div>
+  );
+};
+
 /** Stop and Retry for a proposal request, like a chat turn's actions. */
 export const ProposalGenerationActions = ({
   projectId,
