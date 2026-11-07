@@ -48,7 +48,7 @@ test('tracked current bytes distinguish HEAD matches, unstaged edits, staged edi
     writeFileSync(join(root, 'untracked.ts'), 'excluded\n');
     git(root, 'add', 'added.ts');
     const tree = await listWorkingSourceTree(source, { maxEntries: 100 });
-    assert.ok(!tree.files.some((file) => file.path === 'untracked.ts'));
+    assert.equal(tree.files.find((file) => file.path === 'untracked.ts')?.tracking, 'untracked');
     const added = tree.files.find((file) => file.path === 'added.ts');
     assert.ok(added);
     assert.equal((await readWorkingSource(source, added, 1000)).state, 'added');
@@ -128,5 +128,58 @@ test('concurrent file replacement yields a coherent captured file or a refusal',
     } finally {
       clearInterval(writer);
     }
+  });
+});
+
+test('untracked discovery obeys Git ignores, caps, membership changes and no-follow reads without mutations', async () => {
+  await withFixtures(async (directory) => {
+    const { root, source } = await prepare(directory);
+    writeFile(join(root, '.gitignore'), 'ignored/\nignored.ts\n');
+    writeFile(join(root, 'ignored.ts'), 'private');
+    writeFile(join(root, 'ignored/child.ts'), 'private');
+    writeFile(join(root, 'src/new.ts'), 'export const fresh = true;\n');
+    writeFile(join(root, 'docs/new.md'), '# New design\n');
+    writeFile(join(root, 'nested/.gitignore'), '*.ts\n!allowed.ts\n');
+    writeFile(join(root, 'nested/refused.ts'), 'private');
+    writeFile(join(root, 'nested/allowed.ts'), 'allowed');
+    writeFile(join(root, '.git/info/exclude'), 'local.ts\n');
+    writeFile(join(root, 'local.ts'), 'private');
+    const before = snapshot(root);
+    const tree = await listWorkingSourceTree(source, { maxEntries: 100 });
+    assert.ok(!tree.files.some((file) => /ignored|refused|local\.ts/.test(file.path)));
+    for (const path of ['src/new.ts', 'docs/new.md', 'nested/allowed.ts']) {
+      const entry = tree.files.find((file) => file.path === path);
+      assert.ok(entry);
+      assert.equal(entry.tracking, 'untracked');
+      assert.equal((await readWorkingSource(source, entry, 1000)).state, 'untracked');
+    }
+    const capped = await listWorkingSourceTree(source, { maxEntries: 2 });
+    assert.equal(capped.files.length + capped.skipped.length, 2);
+    assert.equal(capped.truncated, true);
+    assert.deepEqual(snapshot(root), before);
+    const entry = tree.files.find((file) => file.path === 'src/new.ts');
+    assert.ok(entry);
+    writeFile(join(root, '.gitignore'), 'src/new.ts\n');
+    await assert.rejects(readWorkingSource(source, entry, 1000));
+    writeFile(join(root, '.gitignore'), '');
+    unlinkSync(join(root, entry.path));
+    await assert.rejects(readWorkingSource(source, entry, 1000));
+    symlinkSync(join(root, 'src/main.ts'), join(root, entry.path));
+    await assert.rejects(readWorkingSource(source, entry, 1000));
+    unlinkSync(join(root, entry.path));
+    writeFile(join(root, entry.path), 'new');
+    renameSync(join(root, 'src'), join(root, 'saved-src'));
+    symlinkSync(join(root, 'saved-src'), join(root, 'src'));
+    await assert.rejects(readWorkingSource(source, entry, 1000));
+    unlinkSync(join(root, 'src'));
+    renameSync(join(root, 'saved-src'), join(root, 'src'));
+    git(root, 'add', entry.path);
+    await assert.rejects(readWorkingSource(source, entry, 1000));
+    const next = (await listWorkingSourceTree(source, { maxEntries: 100 })).files.find(
+      (file) => file.path === entry.path,
+    );
+    assert.ok(next);
+    assert.equal(next.tracking, 'tracked');
+    assert.equal((await readWorkingSource(source, next, 1000)).state, 'added');
   });
 });

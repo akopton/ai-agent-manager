@@ -416,6 +416,24 @@ A narrow source-context refinement of C4; it does not add task execution or rede
 
 **Known limits:** individual captures, not an atomic repository snapshot; later edits may differ; macOS-only runtime validation; compiler and packaged native helper required; unchanged unverified CLI restrictions. Next: UI-04 polishing.
 
+#### C4.2 — Safe untracked source file awareness (2026-11-07, before UI-04)
+
+Small enhancement to C4.1: Git-nonignored saved source and documentation files join the names-only model catalog and bounded application retrieval without `git add`. Tracked/untracked labels, conservative untracked type allowlist, existing path/content exclusions, shared catalog/search/context limits, native no-follow reads, before/after membership/ignore checks and final identity checks preserve the boundary. Source-sharing disclosure `2026-11-07.3` requires renewal. Untracked captures carry local provenance, hash, time and ranges, with HEAD retained separately; historical records are unchanged. No CLI profile, task lifecycle or approval changes.
+
+**Automated acceptance:** Node.js 24; fake CLIs, temporary databases and disposable repositories only. Test saved TypeScript/docs, ignored files/directories and nested ignore exceptions, sensitive/unsupported/binary/oversized files, nested managed worktrees, symlink replacement and deletion, tracked transitions, fresh subsequent captures, immutable history, root-file fallback, budgets and no Git/task mutations. Run lint, typecheck, format:check, default build and full tests; record any Turbopack blocker and webpack alternative explicitly.
+
+**Validation result (2026-11-07, Node.js 24.22.2 / pnpm 12.16.1):** lint, typecheck, format:check and full `pnpm test` passed (829 tests). After the final managed-root/canonicalization and proposal-reference refinements, all 21 focused worker context/boundary tests and 85 core tests passed; final lint, typecheck, format:check, worker build, web dependency builds and `pnpm --filter @ai-agent-manager/web exec next build --webpack` passed. Default `pnpm build` failed both inside and outside the sandbox: Turbopack processing `apps/web/app/globals.css` could not bind its CSS worker port, `Operation not permitted (os error 1)`. Build defaults were not changed. The sandbox also blocked tsx IPC socket creation (`listen EPERM`); tests passed outside it. The first full run found an obsolete disclosure-copy assertion; it was updated to the new sharing policy before the successful full rerun. No authenticated CLI or real-repository commit/push was performed.
+
+**Manual acceptance (pending):**
+
+1. Renew project source-sharing permission. Save `test.ts` and `docs/new.md` without staging, ask Project-Aware Chat about each, and verify current content plus **Untracked · Local**, hash and ranges in Sources.
+2. Edit and save again without changing HEAD; send another message and verify fresh content/hash and unchanged earlier Sources.
+3. Stage `test.ts`, send another message and verify tracked-addition provenance; earlier replies must remain untracked.
+4. In a disposable repository, check ignored files/directories, credentials, keys, build/dependency files, unknown types, binary/oversized files and managed worktrees are excluded. Replace a discovered path with a symlink or delete it before retrieval; verify conservative refusal.
+5. Withdraw permission and verify Project-Aware sends/retries fail; General Chat still works. Check limited searches are reported. Generate task proposals from a reply and verify only explicit approval creates a Backlog task, with no execution or Git writes from chat.
+
+**Known limits:** macOS/native-helper prerequisite; individual captures rather than an atomic repository snapshot; type allowlist can omit legitimate unfamiliar source formats; tracked-first catalog cap and bounded search can omit relevant files; no authenticated CLI verification in this implementation. Next: UI-04.
+
 #### Unscheduled (specified, not planned)
 
 - **Global AI** (`SPEC.md` §18.5): conversations without a project. It needs a schema decision, because C1 requires a project.

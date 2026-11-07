@@ -413,6 +413,7 @@ export {
 export {
   classifyRepositoryContent,
   classifyRepositoryPath,
+  classifyUntrackedRepositoryPath,
   composeContextPlanningPrompt,
   composeProjectAwarePrompt,
   conversationContextModeDescriptions,

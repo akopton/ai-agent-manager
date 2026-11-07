@@ -19,7 +19,7 @@ import { extractSingleJsonDocument } from './task-proposal.js';
 // - the prompts of the planning and answering phases;
 // - the retrieval record stored with a turn (`repository_context_json`).
 //
-// Reading itself happens in `@ai-agent-manager/git/source-context` (guarded tracked working-tree
+// Reading itself happens in `@ai-agent-manager/git/source-context` (guarded working-tree
 // reads, with HEAD provenance). Nothing here touches the filesystem, starts a process or acts on model output.
 
 // ---------------------------------------------------------------------------------------------
@@ -37,12 +37,12 @@ export type ProjectSourceAccess = z.infer<typeof projectSourceAccessSchema>;
  * to a CLI. A new version makes every earlier grant stale.
  */
 export const projectSourceDisclosure = Object.freeze({
-  version: '2026-11-07.2',
+  version: '2026-11-07.3',
   title: 'Share project source with AI Conversations',
   statements: Object.freeze([
     'Only Project-Aware conversations of this project use it. General Chat conversations and other projects never receive this repository’s files.',
-    'For each message, AI Agent Manager reads current on-disk contents of eligible Git-tracked files in the registered checkout, including uncommitted edits. Untracked and ignored files, task worktrees and Git internals are excluded; nothing in the repository is written.',
-    'The selected CLI first sees a list of file paths and chooses files or searches; AI Agent Manager checks every request against eligible tracked paths and sends bounded excerpts. Sensitive, dependency, build, binary, generated, Git-ignored and very large files are excluded by default.',
+    'For each message, AI Agent Manager reads current on-disk contents of eligible tracked and untracked source and documentation files in the registered checkout, including uncommitted edits. Ignored files, task worktrees and Git internals are excluded; nothing in the repository is written.',
+    'The selected CLI first sees a list of file paths and chooses files or searches; AI Agent Manager checks every request against eligible source paths and sends bounded excerpts. Sensitive, dependency, build, binary, generated, Git-ignored and very large files are excluded by default.',
     'The excerpts are sent with your message to the provider behind the selected CLI (Claude Code or Codex) under your account and leave this Mac.',
     'The CLI still runs as your user with your account’s permissions; its tool restrictions are CLI settings, not OS-enforced isolation. Repository content is treated as untrusted data and can never trigger an action in AI Agent Manager.',
     'You can withdraw this permission at any time. Replies already stored stay in the conversation history.',
@@ -202,6 +202,7 @@ export const repositoryPathExclusionReasons = [
   'gitignored',
   'too_large',
   'not_text',
+  'unsupported_type',
 ] as const;
 
 export type RepositoryPathExclusionReason = (typeof repositoryPathExclusionReasons)[number];
@@ -210,7 +211,7 @@ export const repositoryPathExclusionLabels: Readonly<
   Record<RepositoryPathExclusionReason, string>
 > = {
   invalid_path: 'not a valid repository-relative path',
-  not_found: 'not an eligible tracked file',
+  not_found: 'not an eligible source file',
   unavailable: 'missing, changed, unsafe or unreadable at retrieval time',
   not_regular_file: 'a symlink, submodule or other non-regular entry',
   git_metadata: 'Git metadata',
@@ -223,6 +224,7 @@ export const repositoryPathExclusionLabels: Readonly<
   gitignored: 'ignored by the checkout’s ignore rules',
   too_large: 'larger than the file size limit',
   not_text: 'not UTF-8 text',
+  unsupported_type: 'not a supported source or documentation type',
 };
 
 const gitMetadataSegments = new Set(['.git']);
@@ -447,6 +449,85 @@ export const isRepositoryRelativePath = (value: string): boolean =>
   // eslint-disable-next-line no-control-regex -- control characters are exactly what is refused.
   !/[\u0000-\u001f\u007f]/.test(value) &&
   value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+
+// Untracked files require a known source/documentation type; arbitrary UTF-8 files are not shared.
+const sourceExtensions = new Set([
+  'ts',
+  'tsx',
+  'js',
+  'jsx',
+  'mjs',
+  'cjs',
+  'mts',
+  'cts',
+  'json',
+  'jsonc',
+  'py',
+  'pyi',
+  'rs',
+  'go',
+  'c',
+  'h',
+  'cpp',
+  'hpp',
+  'cc',
+  'cs',
+  'java',
+  'kt',
+  'kts',
+  'swift',
+  'm',
+  'mm',
+  'rb',
+  'php',
+  'vue',
+  'svelte',
+  'html',
+  'css',
+  'scss',
+  'sass',
+  'less',
+  'sql',
+  'graphql',
+  'gql',
+  'yaml',
+  'yml',
+  'toml',
+  'xml',
+  'ini',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'ex',
+  'exs',
+  'erl',
+  'hrl',
+  'scala',
+  'clj',
+  'cljs',
+  'dart',
+  'lua',
+  'r',
+  'jl',
+  'hs',
+  'elm',
+  'proto',
+  'prisma',
+  ...documentationExtensions,
+]);
+
+export const classifyUntrackedRepositoryPath = (
+  path: string,
+): RepositoryPathExclusionReason | null => {
+  const excluded = classifyRepositoryPath(path);
+  if (excluded !== null) return excluded;
+  const basename = path.split('/').at(-1) ?? '';
+  return sourceExtensions.has(extensionOf(basename)) ||
+    /^(?:Dockerfile|Makefile|CMakeLists\.txt|LICENSE|NOTICE)$/i.test(basename)
+    ? null
+    : 'unsupported_type';
+};
 
 const extensionOf = (basename: string): string => {
   const index = basename.lastIndexOf('.');
@@ -689,7 +770,7 @@ export const repositorySourceSchema = z.object({
   documentation: z.boolean(),
   /** Not the whole file (range, line or character limit). */
   partial: z.boolean(),
-  state: z.enum(['matches_head', 'modified', 'added']).optional(),
+  state: z.enum(['matches_head', 'modified', 'added', 'untracked']).optional(),
   contentHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
@@ -718,6 +799,7 @@ export const repositoryContextRecordSchema = z.object({
   selectionNote: z.string().nullable(),
   catalog: z.object({
     trackedFiles: z.number().int(),
+    untrackedFiles: z.number().int().optional(),
     eligibleFiles: z.number().int(),
     excludedFiles: z.number().int(),
     listedFiles: z.number().int(),
@@ -848,6 +930,8 @@ export type RepositoryCatalog = {
   commit: string;
   branch: string | null;
   trackedFiles: number;
+  untrackedFiles?: number;
+  untrackedPaths?: string[];
   eligibleFiles: number;
   excludedFiles: number;
   treeTruncated: boolean;
@@ -867,7 +951,7 @@ export const renderRepositoryCatalog = (
   const budget = repositoryContextLimits.catalogCharacters;
   const lines: string[] = [
     `Commit: ${catalog.commit}${catalog.branch === null ? ' (detached HEAD)' : ` (branch ${catalog.branch})`}`,
-    `Tracked files: ${catalog.trackedFiles}; readable: ${catalog.eligibleFiles}; excluded by policy: ${catalog.excludedFiles}${catalog.treeTruncated ? ' (the tree was too large and was cut off)' : ''}.`,
+    `Tracked files: ${catalog.trackedFiles}; untracked candidates: ${catalog.untrackedFiles ?? 0}; readable: ${catalog.eligibleFiles}; excluded by policy: ${catalog.excludedFiles}${catalog.treeTruncated ? ' (the tree was too large and was cut off)' : ''}.`,
   ];
   // Room is kept for one "not all are listed" line per section.
   const reserve = 80;
@@ -879,11 +963,18 @@ export const renderRepositoryCatalog = (
     return true;
   };
   const listed = new Set<string>();
+  const untracked = new Set(catalog.untrackedPaths ?? []);
   const section = (title: string, items: readonly string[], files: boolean) => {
     if (items.length === 0) return;
     if (!push(`\n## ${title}`)) return;
     for (const item of items) {
-      if (!push(item)) {
+      if (
+        !push(
+          files && catalog.untrackedPaths !== undefined
+            ? `${item} [${untracked.has(item) ? 'Untracked · Local' : 'Tracked'}]`
+            : item,
+        )
+      ) {
         push(`… (${items.length} entries in total; not all are listed)`, 0);
         return;
       }
@@ -1015,9 +1106,9 @@ export const composeProjectAwarePrompt = ({
   );
   const notes: string[] = [
     record.sourceMode === 'working_tree'
-      ? 'Source: current working tree, including tracked edits. Files were captured individually; later edits may differ. Earlier replies may be stale even when HEAD is unchanged.'
+      ? 'Source: current working tree. Per-file state untracked means local content with no HEAD provenance; tracked states compare bytes to HEAD. Files were captured individually; later edits may differ. Earlier replies may be stale even when HEAD is unchanged.'
       : 'Source: committed content only; uncommitted changes were not included.',
-    `Commit: ${record.commit}${record.branch === null ? ' (detached HEAD)' : ` (branch ${record.branch})`}.`,
+    `${record.sourceMode === 'working_tree' ? 'Repository HEAD reference' : 'Commit'}: ${record.commit}${record.branch === null ? ' (detached HEAD)' : ` (branch ${record.branch})`}.`,
   ];
   if (record.previousCommit !== null && record.previousCommit !== record.commit) {
     notes.push(
@@ -1094,5 +1185,5 @@ export const conversationContextModeDescriptions: Readonly<
 > = {
   general: 'Uses the answered conversation history only. No repository files are read or sent.',
   project_aware:
-    'For each message, AI Agent Manager lets the CLI pick relevant files of this project’s repository (current working-tree contents of eligible tracked files, including uncommitted edits), reads them read-only and sends bounded excerpts with your message. Requires allowing source sharing for this project.',
+    'For each message, AI Agent Manager lets the CLI pick relevant files of this project’s repository (current working-tree contents of eligible tracked and untracked source and documentation files, including uncommitted edits), reads them read-only and sends bounded excerpts with your message. Requires allowing source sharing for this project.',
 };

@@ -485,7 +485,7 @@ test('settings show the context choice; the source-sharing card states what is s
   assert.match(card, /disabled=""/);
   assert.match(
     card,
-    /including uncommitted edits. Untracked and ignored files, task worktrees and Git internals are excluded/,
+    /including uncommitted edits. Ignored files, task worktrees and Git internals are excluded/,
   );
   assert.doesNotMatch(card, /sandbox(ed)?|isolated|read-only mode/i);
   const allowed = render(
@@ -542,4 +542,27 @@ test('working-tree Sources distinguish captured edits from legacy committed repl
   assert.match(html, /SHA-256/);
   assert.match(html, /not a complete repository snapshot/);
   assert.doesNotMatch(html, /uncommitted changes were not included/);
+});
+
+test('Sources label untracked local captures without relabelling historical records', () => {
+  const legacy = record();
+  const captured = record({
+    sourceMode: 'working_tree',
+    catalog: { ...legacy.catalog, untrackedFiles: 1 },
+    sources: legacy.sources.map((source) => ({
+      ...source,
+      state: 'untracked',
+      contentHash: 'b'.repeat(64),
+      readAt: '2026-11-07T12:00:00.000Z',
+    })),
+  });
+  const html = render(createElement(ReplySources, { record: captured }));
+  assert.match(html, /Untracked · Local/);
+  assert.match(html, /no HEAD provenance/);
+  assert.match(html, /HEAD reference/);
+  assert.match(html, /SHA-256/);
+  assert.doesNotMatch(html, /untracked and ignored files were excluded/);
+  const historical = render(createElement(ReplySources, { record: legacy }));
+  assert.match(historical, /Committed content only/);
+  assert.doesNotMatch(historical, /Untracked · Local/);
 });

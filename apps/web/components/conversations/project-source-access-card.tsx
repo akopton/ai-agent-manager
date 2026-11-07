@@ -21,7 +21,7 @@ type ProjectSourceAccessCardProps = {
 };
 
 /**
- * C4 — the explicit per-project permission to send tracked working-tree source excerpts to the selected CLI
+ * C4 — the explicit per-project permission to send eligible working-tree source excerpts to the selected CLI
  * in Project-Aware conversations. Separate from the AI Conversations acceptance and from Trusted
  * Local execution trust. The grant names the repository identity and disclosure version shown;
  * the server re-checks both.
@@ -79,9 +79,10 @@ export const ProjectSourceAccessCard = ({
       {sourceAccess.current ? (
         <>
           <p className="leading-6 text-muted-foreground">
-            Project-Aware conversations of {projectName} may send excerpts of eligible tracked files
-            from <span className="font-mono text-xs break-all">{sourceAccess.localPath}</span> to
-            the selected CLI.
+            Project-Aware conversations of {projectName} may send excerpts of eligible tracked and
+            untracked source files from{' '}
+            <span className="font-mono text-xs break-all">{sourceAccess.localPath}</span> to the
+            selected CLI.
           </p>
           <Button
             type="button"
@@ -122,7 +123,7 @@ export const ProjectSourceAccessCard = ({
             />
             <span className="leading-6">
               I allow Project-Aware conversations of {projectName} to send excerpts of this
-              repository’s eligible tracked files to Claude Code or Codex.
+              repository’s eligible tracked and untracked source files to Claude Code or Codex.
             </span>
           </label>
           <Button

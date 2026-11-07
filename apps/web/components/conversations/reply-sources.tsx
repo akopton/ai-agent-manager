@@ -18,7 +18,8 @@ export const ReplySources = ({ record }: { record: RepositoryContextRecord }) =>
           Sources ({view.items.length === 1 ? '1 excerpt' : `${view.items.length} excerpts`})
         </span>
         <span className="text-muted-foreground">
-          commit <span className="font-mono">{view.commitShort}</span>
+          {record.sourceMode === 'working_tree' ? 'HEAD reference' : 'commit'}{' '}
+          <span className="font-mono">{view.commitShort}</span>
           {view.branch === null ? ' (detached)' : ` on ${view.branch}`}
         </span>
         {view.incomplete ? (
@@ -49,7 +50,9 @@ export const ReplySources = ({ record }: { record: RepositoryContextRecord }) =>
       )}
       <p className="mt-2 leading-5 text-muted-foreground">
         {record.sourceMode === 'working_tree'
-          ? 'Current working tree; untracked and ignored files were excluded.'
+          ? record.catalog.untrackedFiles === undefined
+            ? 'Current working tree; untracked and ignored files were excluded.'
+            : 'Current working tree; eligible untracked files included. Ignored files excluded. HEAD identifies the repository; untracked files have no commit provenance.'
           : 'Committed content only; uncommitted changes were not included.'}
       </p>
     </details>

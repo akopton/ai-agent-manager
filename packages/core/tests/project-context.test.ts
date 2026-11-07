@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   classifyRepositoryContent,
   classifyRepositoryPath,
+  classifyUntrackedRepositoryPath,
   composeContextPlanningPrompt,
   composeProjectAwarePrompt,
   composeSourceTaskProposalPrompt,
@@ -345,6 +346,52 @@ test('C3.1 proposals name the source reply’s repository references, never thei
     withReferences.prompt,
     /- src\/worker\.ts:10-40\n- README\.md\n<\/source_references>/,
   );
+  const localReferences = composeSourceTaskProposalPrompt({
+    runtime: 'claude',
+    languageMode: 'en',
+    source,
+    instructions: '',
+    sourceReferences: {
+      sourceMode: 'working_tree',
+      commit,
+      files: ['test.ts'],
+      untrackedFiles: ['test.ts'],
+    },
+  });
+  assert.match(localReferences.prompt, /test\.ts \[Untracked · Local; no HEAD provenance\]/);
+  assert.match(localReferences.prompt, /HEAD reference/);
   assert.equal(withReferences.manifest.sourceReferenceCount, 2);
   assert.deepEqual(withReferences.manifest.includedSequences, [2]);
+});
+
+test('untracked types require known source/documentation names after all existing exclusions', () => {
+  for (const path of [
+    'test.ts',
+    'src/view.tsx',
+    'docs/new.md',
+    'notes.txt',
+    'Dockerfile',
+    'Makefile',
+    'config.toml',
+  ]) {
+    assert.equal(classifyUntrackedRepositoryPath(path), null, path);
+  }
+  for (const path of [
+    'unknown.blob',
+    'no-extension',
+    '.env',
+    'credentials.json',
+    'private.key',
+    'cert.crt',
+    '.git/config',
+    'node_modules/a.ts',
+    'build/a.ts',
+    '.agent-worktrees/a.ts',
+    'local.db',
+    'photo.png',
+    'bundle.min.js',
+    'link/../a.ts',
+  ]) {
+    assert.notEqual(classifyUntrackedRepositoryPath(path), null, path);
+  }
 });

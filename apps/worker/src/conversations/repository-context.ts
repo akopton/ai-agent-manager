@@ -1,6 +1,8 @@
+import { isAbsolute, relative, resolve } from 'node:path';
 import {
   classifyRepositoryContent,
   classifyRepositoryPath,
+  classifyUntrackedRepositoryPath,
   extractSearchTerms,
   isDocumentationPath,
   isRepositoryRelativePath,
@@ -27,7 +29,7 @@ import {
   type SourceTreeEntry,
 } from '@ai-agent-manager/git/source-context';
 
-// C4.1 — Git determines eligible tracked paths; a macOS no-follow descriptor read captures
+// C4.2 — Git determines tracked and nonignored untracked candidates; a macOS no-follow descriptor read captures
 // current bytes. Model selection and all application-side exclusions and budgets still apply.
 // Per-retrieval caching keeps literal search matches and excerpt line ranges consistent.
 
@@ -38,12 +40,13 @@ export type PreparedRepositoryContext = {
   previousCommit: string | null;
   /** Readable files by path. */
   eligible: Map<string, SourceTreeEntry>;
-  /** Tracked entries refused by policy, by path. */
+  /** Catalog entries refused by policy, by path. */
   excluded: Map<string, RepositoryPathExclusionReason>;
   catalog: RepositoryCatalog;
   catalogText: string;
   listedFiles: number;
   treeTotal: number;
+  untrackedTotal: number;
 };
 
 /** What the excerpts are selected from: the model's validated request or the fallback. */
@@ -100,13 +103,14 @@ const directoryOverview = (paths: readonly string[]): { path: string; files: num
 };
 
 /**
- * Re-validates the registered checkout, resolves HEAD, lists and classifies the tracked files and
+ * Re-validates the registered checkout, resolves HEAD, lists and classifies tracked/untracked candidates and
  * builds the planning catalog (including files that match words of the message). Read-only.
  * Throws `SourceContextError` when the repository is unavailable or cannot be read.
  */
 export const prepareRepositoryContext = async ({
   repository,
   message,
+  excludedRoots = [],
 }: {
   repository: {
     localPath: string;
@@ -115,6 +119,8 @@ export const prepareRepositoryContext = async ({
     sourceIdentity: string | null;
   };
   message: string;
+  /** Application-managed resource roots, even if Git metadata inside was removed. */
+  excludedRoots?: readonly string[];
 }): Promise<PreparedRepositoryContext> => {
   const snapshot = await resolveWorkingSourceSnapshot(repository);
   let expectedIdentity;
@@ -138,13 +144,35 @@ export const prepareRepositoryContext = async ({
       'The checkout or Git directory was replaced; review and allow source sharing again.',
     );
   }
+  const protectedPrefixes = excludedRoots
+    .filter((path) => path !== '')
+    .map((path) => {
+      const fromRoot = relative(snapshot.root.toLowerCase(), resolve(path).toLowerCase());
+      const toRoot = relative(resolve(path).toLowerCase(), snapshot.root.toLowerCase());
+      if (toRoot === '' || (!isAbsolute(toRoot) && toRoot !== '..' && !toRoot.startsWith('../'))) {
+        throw new SourceContextError(
+          'repository_unavailable',
+          'The checkout is inside a managed resource root.',
+        );
+      }
+      return fromRoot;
+    })
+    .filter((path) => !isAbsolute(path) && path !== '..' && !path.startsWith('../'));
   const tree = await listWorkingSourceTree(snapshot, { maxEntries: limits.maxTreeEntries });
   const ignored = await listIgnoredTrackedPaths(snapshot);
   const eligible = new Map<string, SourceTreeEntry>();
   const excluded = new Map<string, RepositoryPathExclusionReason>();
   for (const entry of tree.files) {
     const reason =
-      classifyRepositoryPath(entry.path) ??
+      (protectedPrefixes.some(
+        (prefix) =>
+          entry.path.toLowerCase() === prefix || entry.path.toLowerCase().startsWith(`${prefix}/`),
+      )
+        ? 'build_output'
+        : null) ??
+      (entry.tracking === 'untracked'
+        ? classifyUntrackedRepositoryPath(entry.path)
+        : classifyRepositoryPath(entry.path)) ??
       (ignored.has(entry.path) ? 'gitignored' : null) ??
       (entry.size > limits.maxFileBytes ? 'too_large' : null);
     if (reason === null) eligible.set(entry.path, entry);
@@ -170,7 +198,11 @@ export const prepareRepositoryContext = async ({
   const catalog: RepositoryCatalog = {
     commit: snapshot.commit,
     branch: snapshot.branch,
-    trackedFiles: tree.total,
+    trackedFiles: tree.total - (tree.untrackedFiles ?? 0),
+    untrackedFiles: tree.untrackedFiles ?? 0,
+    untrackedPaths: [...eligible.values()]
+      .filter((entry) => entry.tracking === 'untracked')
+      .map((entry) => entry.path),
     eligibleFiles: eligible.size,
     excludedFiles: excluded.size,
     treeTruncated: tree.truncated,
@@ -188,7 +220,8 @@ export const prepareRepositoryContext = async ({
     catalog,
     catalogText: text,
     listedFiles,
-    treeTotal: tree.total,
+    treeTotal: tree.total - (tree.untrackedFiles ?? 0),
+    untrackedTotal: tree.untrackedFiles ?? 0,
   };
 };
 
@@ -201,7 +234,13 @@ export const fallbackRepositoryPlan = (
   message: string,
   reason: string,
 ): RepositoryContextPlan => {
-  const named = [...new Set(message.match(/[\w.-]+(?:\/[\w.-]+)+/g) ?? [])]
+  const named = [
+    ...new Set(
+      message.match(
+        /[\w.-]+(?:\/[\w.-]+)+|[\w.-]+\.[a-zA-Z0-9]+|\b(?:Dockerfile|Makefile|LICENSE|NOTICE)\b/g,
+      ) ?? [],
+    ),
+  ]
     .map((path) => path.replace(/^\.\//, ''))
     .filter((path) => prepared.eligible.has(path))
     .slice(0, limits.maxRequestedFiles)
@@ -219,7 +258,7 @@ type ReadFile =
   | {
       ok: true;
       lines: string[];
-      state: 'matches_head' | 'modified' | 'added';
+      state: 'matches_head' | 'modified' | 'added' | 'untracked';
       contentHash: string;
       readAt: string;
       bytes: number;
@@ -495,6 +534,7 @@ export const retrieveRepositoryContext = async (
     selectionNote: plan.selectionNote,
     catalog: {
       trackedFiles: prepared.treeTotal,
+      untrackedFiles: prepared.untrackedTotal,
       eligibleFiles: prepared.eligible.size,
       excludedFiles: prepared.excluded.size,
       listedFiles: prepared.listedFiles,
@@ -526,13 +566,19 @@ export const retrieveRepositoryContext = async (
   const finalTree = await listWorkingSourceTree(prepared.snapshot, {
     maxEntries: limits.maxTreeEntries,
   });
-  const finalEntries = new Map(finalTree.files.map((entry) => [entry.path, entry.indexOid]));
+  const finalEntries = new Map(finalTree.files.map((entry) => [entry.path, entry]));
   if (
-    excerpts.some(
-      (excerpt) => finalEntries.get(excerpt.path) !== prepared.eligible.get(excerpt.path)?.indexOid,
-    )
+    excerpts.some((excerpt) => {
+      const current = finalEntries.get(excerpt.path);
+      const original = prepared.eligible.get(excerpt.path);
+      return (
+        current === undefined ||
+        current.tracking !== original?.tracking ||
+        current.indexOid !== original?.indexOid
+      );
+    })
   ) {
-    throw new SourceContextError('read_failed', 'Tracked membership changed during retrieval.');
+    throw new SourceContextError('read_failed', 'Source membership changed during retrieval.');
   }
   if (excerpts.some((excerpt) => finalIgnored.has(excerpt.path))) {
     throw new SourceContextError('read_failed', 'Source ignore rules changed during retrieval.');

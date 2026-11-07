@@ -614,6 +614,13 @@ const loadSourceReferences = (
     sourceMode: record.sourceMode,
     commit: record.commit,
     files: record.sources.map(formatSourceReference),
+    ...(record.catalog.untrackedFiles === undefined
+      ? {}
+      : {
+          untrackedFiles: record.sources
+            .filter((source) => source.state === 'untracked')
+            .map(formatSourceReference),
+        }),
   };
 };
 

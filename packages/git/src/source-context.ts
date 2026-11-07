@@ -21,7 +21,7 @@ import { validateRepository } from './repository.js';
 //   `ls-files` (to apply the checkout's ignore rules). None writes refs, the index, objects,
 //   config or the working tree; `GIT_OPTIONAL_LOCKS=0`, no hooks, no fsmonitor, no lazy fetch and
 //   a sanitized environment come from `runGit`.
-// - C4.1: index membership and ignore rules select eligible paths. A trusted native helper
+// - C4.2: index membership and nonignored untracked paths select candidates. A trusted native helper
 //   opens each component with openat/O_NOFOLLOW anchored to the expected checkout inode.
 //   All source reads are bounded and regular-file-only. Committed APIs remain for legacy callers.
 // - Every command is bounded by a timeout and an output limit.
@@ -66,6 +66,7 @@ export type SourceTreeEntry = {
   oid: string;
   size: number;
   indexOid?: string;
+  tracking?: 'tracked' | 'untracked';
 };
 
 export const sourceSnapshotIdentity = (
@@ -105,7 +106,7 @@ export const verifyWorkingSourceSnapshot = async (snapshot: SourceSnapshot): Pro
   }
 };
 
-/** Index membership determines tracked paths, including staged additions. HEAD supplies provenance. */
+/** Tracked paths followed by nonignored untracked candidates, within one shared entry cap. */
 export const listWorkingSourceTree = async (
   snapshot: SourceSnapshot,
   options: { maxEntries: number },
@@ -135,12 +136,45 @@ export const listWorkingSourceTree = async (
       skipped.push(path);
       continue;
     }
-    files.push({ path, oid: committed.get(path)?.oid ?? '', size: 0, indexOid: oid });
+    files.push({
+      path,
+      oid: committed.get(path)?.oid ?? '',
+      size: 0,
+      indexOid: oid,
+      tracking: 'tracked',
+    });
   }
-  return { files, skipped, total: entries.length, truncated: entries.length > options.maxEntries };
+  // Git applies nested .gitignore, info/exclude and core.excludesFile. It does not descend
+  // into nested repositories/worktrees; directory placeholders fail the path policy.
+  const others = await runGitChecked(['ls-files', '--others', '--exclude-standard', '-z'], {
+    cwd: snapshot.root,
+    timeoutMs: readTimeoutMs,
+    maxOutputBytes: 64 * 1024 * 1024,
+  });
+  let untrackedFiles = 0;
+  let start = 0;
+  while (start < others.length) {
+    const end = others.indexOf('\0', start);
+    if (end < 0) break;
+    const path = others.slice(start, end);
+    start = end + 1;
+    untrackedFiles += 1;
+    if (files.length + skipped.length >= options.maxEntries) continue;
+    files.push({ path, oid: '', size: 0, tracking: 'untracked' });
+  }
+  await verifyWorkingSourceSnapshot(snapshot);
+  return {
+    files,
+    skipped,
+    untrackedFiles,
+    total: entries.length + untrackedFiles,
+    truncated: entries.length + untrackedFiles > options.maxEntries,
+  };
 };
 
-export type WorkingSourceRead = WorkingTreeRead & { state: 'matches_head' | 'modified' | 'added' };
+export type WorkingSourceRead = WorkingTreeRead & {
+  state: 'matches_head' | 'modified' | 'added' | 'untracked';
+};
 
 /** All bytes are from a bounded no-symlink descriptor read. No filters, scripts or Git writes. */
 export const readWorkingSource = async (
@@ -149,18 +183,38 @@ export const readWorkingSource = async (
   maxBytes: number,
 ): Promise<WorkingSourceRead> => {
   await verifyWorkingSourceSnapshot(snapshot);
-  const current = await runGitChecked(
-    ['ls-files', '--stage', '-z', '--cached', '--', `:(literal)${entry.path}`],
-    { cwd: snapshot.root, timeoutMs: readTimeoutMs, maxOutputBytes: 16 * 1024 },
-  );
-  const expected = ` ${entry.indexOid} 0\t${entry.path}\0`;
-  if (
-    !/^100(?:644|755) /.test(current) ||
-    !current.endsWith(expected) ||
-    current.split('\0').length !== 2
-  ) {
-    throw new Error('The tracked entry changed or is no longer eligible.');
-  }
+  const verifyMembership = async (): Promise<void> => {
+    const options = { cwd: snapshot.root, timeoutMs: readTimeoutMs, maxOutputBytes: 16 * 1024 };
+    const pathspec = `:(literal)${entry.path}`;
+    const current = await runGitChecked(
+      ['ls-files', '--stage', '-z', '--cached', '--', pathspec],
+      options,
+    );
+    if (entry.tracking === 'untracked') {
+      const others = await runGitChecked(
+        ['ls-files', '--others', '--exclude-standard', '-z', '--', pathspec],
+        options,
+      );
+      if (current !== '' || others !== `${entry.path}\0`) {
+        throw new Error('The untracked entry changed or is no longer eligible.');
+      }
+      return;
+    }
+    const expected = ` ${entry.indexOid} 0\t${entry.path}\0`;
+    const ignored = await runGitChecked(
+      ['ls-files', '--cached', '--ignored', '--exclude-standard', '-z', '--', pathspec],
+      options,
+    );
+    if (
+      !/^100(?:644|755) /.test(current) ||
+      !current.endsWith(expected) ||
+      current.split('\0').length !== 2 ||
+      ignored !== ''
+    ) {
+      throw new Error('The tracked entry changed or is no longer eligible.');
+    }
+  };
+  await verifyMembership();
   if (snapshot.directories === undefined)
     throw new SourceContextError('repository_unavailable', 'Missing directory identity.');
   const result = await readWorkingTreeFile(
@@ -170,6 +224,8 @@ export const readWorkingSource = async (
     snapshot.directories.root,
   );
   await verifyWorkingSourceSnapshot(snapshot);
+  await verifyMembership();
+  if (entry.tracking === 'untracked') return { ...result, state: 'untracked' };
   const baseline =
     entry.oid === ''
       ? (parseTree(
@@ -194,6 +250,8 @@ export const readWorkingSource = async (
 };
 
 export type SourceTree = {
+  /** Number of nonignored untracked paths discovered (before the catalog cap). */
+  untrackedFiles?: number;
   /** Regular files (modes 100644 and 100755), in Git's order. */
   files: SourceTreeEntry[];
   /** Symlinks, submodules and other non-regular entries; never read. */

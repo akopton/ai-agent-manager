@@ -520,9 +520,18 @@ export const createConversationTurnService = (
     }
     let prepared: PreparedRepositoryContext;
     try {
+      let managedRoot = options.worktreeRoot;
+      if (managedRoot !== '') {
+        try {
+          managedRoot = await realpath(managedRoot);
+        } catch (error) {
+          if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+        }
+      }
       prepared = await prepareRepositoryContext({
         repository: claim.repository,
         message: userMessage.content,
+        excludedRoots: [managedRoot],
       });
     } catch (error) {
       logger.error(`Conversation turn ${turn.id}: the repository could not be read.`, error);

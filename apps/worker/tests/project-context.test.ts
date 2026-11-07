@@ -32,6 +32,7 @@ import {
 } from '@ai-agent-manager/database';
 import { createRepository, git, snapshotTree } from './execution-fixtures.js';
 import {
+  fallbackRepositoryPlan,
   prepareRepositoryContext,
   retrieveRepositoryContext,
 } from '../src/conversations/repository-context.js';
@@ -181,7 +182,7 @@ for (const runtime of ['claude', 'codex'] as const) {
           '../outside.txt': 'not a valid repository-relative path',
           '/etc/passwd': 'not a valid repository-relative path',
           'src/link.ts': 'a symlink, submodule or other non-regular entry',
-          'src/missing.ts': 'not an eligible tracked file',
+          'src/missing.ts': 'not an eligible source file',
         },
       );
       assert.equal(record.limited, true);
@@ -610,7 +611,7 @@ test('a repository replaced at the same registered path requires renewed source 
   });
 });
 
-test('retrieval uses fresh working-tree search lines and refuses ignored, untracked, binary and oversized files', async () => {
+test('retrieval uses fresh working-tree search lines and refuses ignored, newly discovered after preparation, binary and oversized files', async () => {
   await withFixture(async (fixture) => {
     seedRepository(fixture);
     const { root, commonDir } = fixture.repository;
@@ -680,7 +681,7 @@ test('working-tree search and excerpt budgets stay bounded, including a very lon
     }
     write(root, 'long-line.ts', `${'a'.repeat(30000)}\n${'short\n'.repeat(200)}`);
     files.push({ path: 'long-line.ts' });
-    git(root, 'add', '.');
+    // Keep all search candidates untracked to exercise the shared C4.2 budgets.
     const prepared = await prepareRepositoryContext({
       repository: {
         localPath: root,
@@ -710,5 +711,133 @@ test('working-tree search and excerpt budgets stay bounded, including a very lon
     );
     assert.ok(result.record.omitted.some((item) => item.path === 'long-line.ts'));
     assert.ok(result.excerpts.length <= files.length + repositoryContextLimits.maxSearchFiles);
+  });
+});
+
+for (const runtime of ['claude', 'codex'] as const) {
+  test(`${runtime}: saved untracked source and documentation reach model selection and retain local provenance across turns`, async () => {
+    await withFixture(async (fixture) => {
+      seedRepository(fixture);
+      allowSourceSharing(fixture);
+      const { root } = fixture.repository;
+      write(root, 'test.ts', 'export const savedWithoutStaging = 1;\n');
+      write(root, 'docs/new.md', '# Saved documentation\n');
+      const before = snapshotTree(root);
+      const conversationId = fixture.conversation(runtime, { contextMode: 'project_aware' });
+      const request = { files: [{ path: 'test.ts' }, { path: 'docs/new.md' }], searches: [] };
+      fixture.fakes[runtime].setSequence([
+        planning(runtime, request),
+        reply[runtime]('The saved files are visible.'),
+        planning(runtime, request),
+        reply[runtime]('The saved edits are visible.'),
+        planning(runtime, request),
+        reply[runtime]('The file is now tracked.'),
+      ]);
+      const service = fixture.service();
+      await service.start();
+      try {
+        const first = fixture.send(conversationId, 'Analyze test.ts and docs/new.md.');
+        assert.equal(await fixture.waitForTurn(first.turnId, ['completed', 'failed']), 'completed');
+        const original = turnRecord(fixture, first.turnId);
+        assert.deepEqual(
+          original?.sources.map((source) => source.state),
+          ['untracked', 'untracked'],
+        );
+        const invocations = fixture.fakes[runtime].invocations();
+        assert.match(invocations[0]?.stdin ?? '', /test\.ts \[Untracked · Local\]/);
+        assert.match(invocations[1]?.stdin ?? '', /savedWithoutStaging = 1/);
+        assert.match(invocations[1]?.stdin ?? '', /state="untracked"/);
+        assert.deepEqual(snapshotTree(root), before);
+        write(root, 'test.ts', 'export const savedWithoutStaging = 2;\n');
+        const second = fixture.send(conversationId, 'Analyze test.ts again.');
+        assert.equal(
+          await fixture.waitForTurn(second.turnId, ['completed', 'failed']),
+          'completed',
+        );
+        assert.notEqual(
+          turnRecord(fixture, second.turnId)?.sources[0]?.contentHash,
+          original?.sources[0]?.contentHash,
+        );
+        git(root, 'add', 'test.ts');
+        const third = fixture.send(conversationId, 'Analyze test.ts after staging.');
+        assert.equal(await fixture.waitForTurn(third.turnId, ['completed', 'failed']), 'completed');
+        assert.equal(turnRecord(fixture, third.turnId)?.sources[0]?.state, 'added');
+        assert.deepEqual(turnRecord(fixture, first.turnId), original);
+        assert.equal(listProjectTasks(fixture.db, fixture.projectId).length, 0);
+      } finally {
+        await service.stop();
+      }
+    });
+  });
+}
+
+test('untracked path/type policy, ignored directories and fallback stay bounded without staging', async () => {
+  await withFixture(async (fixture) => {
+    const { root, commonDir } = fixture.repository;
+    write(root, 'test.ts', 'export const untrackedNeedle = true;\n');
+    write(root, 'docs/design.md', '# untrackedNeedle\n');
+    write(root, '.gitignore', 'ignored/\nignored.ts\n');
+    const excluded = [
+      'ignored.ts',
+      'ignored/child.ts',
+      '.env',
+      'credentials.json',
+      'private.key',
+      'cert.crt',
+      'node_modules/test.ts',
+      'dist/test.ts',
+      '.agent-worktrees/task/test.ts',
+      'custom-managed/task.ts',
+      'local.sqlite',
+      'unknown.risky',
+    ];
+    for (const path of excluded) write(root, path, 'untrackedNeedle private\n');
+    write(root, 'binary.ts', 'untrackedNeedle\0private');
+    write(root, 'oversized.ts', 'x'.repeat(repositoryContextLimits.maxFileBytes + 1));
+    symlinkSync(join(root, 'test.ts'), join(root, 'link.ts'));
+    // A nested managed linked worktree cannot be traversed even at a custom location.
+    git(root, 'worktree', 'add', '--detach', 'retained-task', 'HEAD');
+    write(root, 'retained-task/task.ts', 'untrackedNeedle private\n');
+    const before = snapshotTree(root);
+    const prepared = await prepareRepositoryContext({
+      repository: {
+        localPath: root,
+        gitCommonDir: commonDir,
+        previousCommit: null,
+        sourceIdentity: JSON.stringify({
+          root: `${statSync(root).dev}:${statSync(root).ino}`,
+          common: `${statSync(commonDir).dev}:${statSync(commonDir).ino}`,
+        }),
+      },
+      message: 'Analyze test.ts and untrackedNeedle',
+      excludedRoots: [join(root, 'custom-managed')],
+    });
+    for (const path of [...excluded, 'retained-task/task.ts'])
+      assert.ok(!prepared.eligible.has(path), path);
+    const plan = fallbackRepositoryPlan(
+      prepared,
+      'Analyze test.ts and untrackedNeedle',
+      'invalid model selection',
+    );
+    assert.deepEqual(plan.files, [{ path: 'test.ts' }]);
+    const result = await retrieveRepositoryContext(prepared, {
+      ...plan,
+      files: [...plan.files, { path: 'binary.ts' }, { path: 'oversized.ts' }, { path: 'link.ts' }],
+    });
+    assert.ok(result.excerpts.some((source) => source.path === 'docs/design.md'));
+    assert.ok(
+      result.excerpts
+        .filter((source) => ['test.ts', 'docs/design.md'].includes(source.path))
+        .every((source) => source.state === 'untracked'),
+    );
+    assert.ok(
+      result.record.rejected.some(
+        (source) => source.path === 'binary.ts' && source.reason.includes('binary'),
+      ),
+    );
+    assert.ok(result.record.rejected.some((source) => source.path === 'oversized.ts'));
+    assert.ok(result.record.rejected.some((source) => source.path === 'link.ts'));
+    assert.ok(!JSON.stringify(result.excerpts).includes('private'));
+    assert.deepEqual(snapshotTree(root), before);
   });
 });
