@@ -18,6 +18,7 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { ModelSelect } from '@/components/models/model-select';
 import { Input, NativeSelect } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { requestJson, type ClientError } from '@/lib/projects/api-client';
@@ -64,7 +65,7 @@ type ConversationSettingsFormProps = {
 
 /**
  * Title, runtime, model and language of a conversation. Creating or saving stores the settings
- * only; no agent is started.
+ * only; no agent is started. They apply to the next message sent to the AI.
  */
 export const ConversationSettingsForm = ({
   projectId,
@@ -220,26 +221,23 @@ export const ConversationSettingsForm = ({
 
         <div className="space-y-2">
           <Label htmlFor={`${fieldId}-model`}>Model</Label>
-          <Input
+          <ModelSelect
+            key={values.agentRuntime}
             id={`${fieldId}-model`}
-            name="modelId"
+            runtime={values.agentRuntime}
             value={values.modelId}
-            onChange={(event) => {
+            onChange={(modelId) => {
               setModelReset(false);
-              update('modelId', { ...values, modelId: event.target.value });
+              update('modelId', { ...values, modelId });
             }}
-            maxLength={200}
-            placeholder="Default"
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={fieldErrors.modelId !== undefined}
-            aria-describedby={describedBy('modelId', `${fieldId}-model-hint`)}
+            invalid={fieldErrors.modelId !== undefined}
+            describedBy={describedBy('modelId', modelReset ? `${fieldId}-model-hint` : undefined)}
           />
-          <p id={`${fieldId}-model-hint`} className="text-xs leading-5 text-muted-foreground">
-            {modelReset ? 'The model was reset to Default because the runtime changed. ' : null}
-            Leave empty for Default: the CLI uses its own configuration. An explicit identifier is
-            stored as entered and checked only when replies are enabled.
-          </p>
+          {modelReset ? (
+            <p id={`${fieldId}-model-hint`} className="text-xs leading-5 text-muted-foreground">
+              The model was reset to Default because the runtime changed.
+            </p>
+          ) : null}
           <FieldError id={`${fieldId}-modelId-error`} message={fieldErrors.modelId} />
         </div>
       </div>
@@ -286,7 +284,7 @@ export const ConversationSettingsForm = ({
         <Alert variant="success" role="status">
           <CheckCircle2 aria-hidden="true" />
           <AlertDescription>
-            <p>Settings saved. They apply to future replies; saved notes are unchanged.</p>
+            <p>Settings saved. They apply to the next reply; earlier messages are unchanged.</p>
           </AlertDescription>
         </Alert>
       ) : null}

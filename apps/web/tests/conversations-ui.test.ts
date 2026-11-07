@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Conversation, ConversationMessage } from '@ai-agent-manager/core';
+import type { ConversationTurnView } from '@/lib/conversations/contracts';
 // Test-only: client components call `useRouter`, which requires the App Router context.
 import {
   AppRouterContext,
@@ -13,7 +14,7 @@ import {
 } from 'next/dist/shared/lib/app-router-context.shared-runtime';
 import { ConversationHistory } from '@/components/conversations/conversation-history';
 import { ConversationList } from '@/components/conversations/conversation-list';
-import { NotesOnlyNotice } from '@/components/conversations/conversation-notice';
+import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { ConversationSettingsForm } from '@/components/conversations/conversation-settings-form';
 import { MessageComposer } from '@/components/conversations/message-composer';
 import {
@@ -24,10 +25,12 @@ import {
   validateConversationForm,
 } from '@/lib/conversations/form';
 import { describeMessageAuthor } from '@/lib/conversations/format';
+import { buildTranscript } from '@/lib/conversations/transcript';
 import { activeMainNavKey } from '@/lib/navigation';
 
-// C1 — AI Conversations UI: empty states, list, history, settings and composer render honestly
-// (notes are never presented as AI replies), and the navigation and form helpers behave.
+// AI Conversations UI (C1 + C2): notes are never presented as AI replies, replies render safe
+// Markdown with their runtime and model, every turn state (pending, generating, stopping, failed,
+// stopped, interrupted) is visible, and the model selector, navigation and form helpers behave.
 
 const projectId = '00000000-0000-4000-8000-00000000000a';
 const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -71,39 +74,172 @@ const message = (overrides: Partial<ConversationMessage> = {}): ConversationMess
   ...overrides,
 });
 
-test('the history empty state explains that AI replies arrive in C2', () => {
-  const html = render(createElement(ConversationHistory, { messages: [] }));
-  assert.match(html, /No notes yet/);
-  assert.match(html, /AI replies will be enabled in C2/);
-  assert.match(html, /nothing you write here is sent to Claude Code or Codex/);
+const ai = { enabled: true, reason: 'enabled' } as const;
+const aiOff = { enabled: false, reason: 'disabled' } as const;
+
+const turn = (overrides: Partial<ConversationTurnView> = {}): ConversationTurnView => ({
+  id: id(500),
+  status: 'completed',
+  active: false,
+  userMessageId: id(101),
+  assistantMessageId: id(102),
+  retryOfTurnId: null,
+  agentRuntime: 'claude',
+  requestedModelId: 'opus',
+  effectiveModelId: 'claude-opus-5-5',
+  languageMode: 'pl_technical_en',
+  cliVersion: '2.1.317',
+  errorCode: null,
+  errorMessage: null,
+  replyTruncated: false,
+  context: { includedMessages: 0, omittedMessages: 0, notesExcluded: 0 },
+  createdAt: 1_700_000_000_000,
+  startedAt: 1_700_000_000_100,
+  endedAt: 1_700_000_001_000,
+  stopRequestedAt: null,
+  ...overrides,
 });
 
-test('the history renders notes in the given order, labelled as notes, never as AI replies', () => {
-  const html = render(
+const history = (
+  messages: ConversationMessage[],
+  turns: ConversationTurnView[] = [],
+  status: { enabled: boolean; reason: 'enabled' | 'disabled' | 'stale' } = ai,
+) =>
+  render(
     createElement(ConversationHistory, {
-      messages: [
-        message({ id: id(101), sequence: 1, content: 'Alpha <script>alert(1)</script>' }),
-        message({ id: id(102), sequence: 2, content: 'Beta\n\n- item' }),
-      ],
+      projectId,
+      conversationId: id(1),
+      messages,
+      turns,
+      ai: status,
     }),
   );
+
+test('the history empty state explains that notes are never sent', () => {
+  const html = history([]);
+  assert.match(html, /No messages yet/);
+  assert.match(html, /Notes are never sent to Claude Code or Codex/);
+});
+
+test('notes are labelled as notes, escaped, and never shown as AI replies', () => {
+  const html = history([
+    message({ id: id(101), sequence: 1, content: 'Alpha <script>alert(1)</script>' }),
+    message({ id: id(102), sequence: 2, content: 'Beta\n\n- item' }),
+  ]);
   assert.ok(html.indexOf('Alpha') < html.indexOf('Beta'));
   assert.match(html, /<ol aria-label="Conversation history"/);
-  assert.equal(html.match(/Note · not sent to an AI/g)?.length, 2);
-  assert.doesNotMatch(html, /Assistant|AI reply/);
+  assert.equal(html.match(/Not sent to an AI/g)?.length, 2);
+  assert.doesNotMatch(html, /AI reply/);
   assert.doesNotMatch(html, /<script>/, 'content is escaped');
   assert.match(html, /whitespace-pre-wrap/);
 });
 
-test('describes future assistant messages distinctly from notes', () => {
-  assert.deepEqual(describeMessageAuthor({ role: 'user', kind: 'note' }), {
-    author: 'You',
-    detail: 'Note · not sent to an AI',
-  });
-  assert.equal(describeMessageAuthor({ role: 'assistant', kind: 'chat' }).author, 'Assistant');
+test('a completed exchange shows the sent message and a Markdown reply with its model', () => {
+  const html = history(
+    [
+      message({ id: id(101), kind: 'chat', content: 'Plan the API' }),
+      message({
+        id: id(102),
+        sequence: 2,
+        role: 'assistant',
+        kind: 'chat',
+        content:
+          '## Plan\n\n1. **Design** `schema`\n\n```ts\nconst x = 1;\n```\n\n<img src=x onerror=alert(1)>',
+      }),
+    ],
+    [turn()],
+  );
+  assert.match(html, /Sent to AI/);
+  assert.match(html, /aria-label="AI reply,/);
+  assert.match(
+    html,
+    /Claude Code · Opus \(latest\) \(opus\) → claude-opus-5-5 · Polish, technical English/,
+  );
+  assert.match(html, /<h4[^>]*>Plan<\/h4>/);
+  assert.match(html, /<strong[^>]*>Design<\/strong>/);
+  assert.match(html, /<code class="font-mono">const x = 1;<\/code>/);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(html, /role="status"/);
 });
 
-test('the list shows title, runtime, model, language and note count, linking to each page', () => {
+test('pending, generating, stopping, failed and interrupted turns are shown honestly', () => {
+  const sent = [message({ id: id(101), kind: 'chat', content: 'Hello' })];
+  const pending = history(sent, [
+    turn({ status: 'queued', active: true, assistantMessageId: null, startedAt: null }),
+  ]);
+  assert.match(pending, /Waiting for the worker…/);
+  assert.match(pending, />Stop</);
+  assert.doesNotMatch(pending, />Retry</);
+
+  const running = history(sent, [
+    turn({ status: 'running', active: true, assistantMessageId: null }),
+  ]);
+  assert.match(running, /Claude Code is writing a reply…/);
+  assert.match(running, />Stop</);
+
+  const stopping = history(sent, [
+    turn({ status: 'stopping', active: true, assistantMessageId: null }),
+  ]);
+  assert.match(stopping, /Stopping…/);
+  assert.doesNotMatch(stopping, />Stop</);
+
+  const failed = history(sent, [
+    turn({
+      status: 'failed',
+      assistantMessageId: null,
+      errorCode: 'cli_auth_required',
+      errorMessage: 'Claude Code is not signed in or its login expired.',
+    }),
+  ]);
+  assert.match(failed, /No reply/);
+  assert.match(failed, /not signed in/);
+  assert.match(failed, />Retry</);
+  assert.doesNotMatch(failed, /aria-label="AI reply/);
+
+  // Retry needs AI replies enabled.
+  const failedOff = history(
+    sent,
+    [turn({ status: 'failed', assistantMessageId: null, errorMessage: 'x' })],
+    aiOff,
+  );
+  assert.doesNotMatch(failedOff, />Retry</);
+
+  const interrupted = history(sent, [
+    turn({
+      status: 'interrupted',
+      assistantMessageId: null,
+      errorMessage: 'The worker restarted.',
+    }),
+  ]);
+  assert.match(interrupted, /Interrupted/);
+  assert.match(interrupted, />Retry</);
+});
+
+test('only the latest unanswered message offers Retry', () => {
+  const transcript = buildTranscript(
+    [
+      message({ id: id(101), kind: 'chat', content: 'First' }),
+      message({ id: id(103), sequence: 2, kind: 'note', content: 'Note' }),
+    ],
+    [turn({ status: 'failed', assistantMessageId: null })],
+    ai,
+  );
+  const sentEntry = transcript[0];
+  assert.equal(sentEntry?.kind, 'sent');
+  assert.equal(sentEntry?.kind === 'sent' ? sentEntry.state?.canRetry : undefined, false);
+});
+
+test('describes notes, sent messages and replies distinctly', () => {
+  assert.deepEqual(describeMessageAuthor({ role: 'user', kind: 'note' }), {
+    author: 'Note',
+    detail: 'Not sent to an AI',
+  });
+  assert.equal(describeMessageAuthor({ role: 'user', kind: 'chat' }).detail, 'Sent to AI');
+  assert.equal(describeMessageAuthor({ role: 'assistant', kind: 'chat' }).author, 'AI reply');
+});
+
+test('the list shows title, runtime, model, language and message count, linking to each page', () => {
   const html = render(
     createElement(ConversationList, {
       projectId,
@@ -125,15 +261,21 @@ test('the list shows title, runtime, model, language and note count, linking to 
   assert.match(html, new RegExp(`href="/projects/${projectId}/conversations/${id(1)}"`));
   assert.match(html, new RegExp(`href="/projects/${projectId}/conversations/${id(2)}"`));
   assert.match(html, /Claude Code · Default · Polish, technical English/);
-  assert.match(html, /Codex · gpt-example · English/);
-  assert.match(html, /2 notes/);
-  assert.match(html, /1 note</);
+  assert.match(html, /Codex · gpt-example \(custom\) · English/);
+  assert.match(html, /2 messages/);
+  assert.match(html, /1 message</);
 });
 
-test('the notice states that nothing is sent and no agent, task or Git operation starts', () => {
-  const html = render(createElement(NotesOnlyNotice));
-  assert.match(html, /AI replies are not enabled yet/);
-  assert.match(html, /no agent, task or Git operation is started/);
+test('the notice never claims isolation and points to the separate consent when off', () => {
+  const on = render(createElement(ConversationAiNotice, { ai }));
+  assert.match(on, /Planning conversation/);
+  assert.match(on, /not OS-enforced isolation/);
+  assert.match(on, /never create tasks, worktrees, commits or pushes/);
+  assert.doesNotMatch(on, /\bsandboxed\b|\bisolated\b|read-only conversation/i);
+  const off = render(createElement(ConversationAiNotice, { ai: aiOff }));
+  assert.match(off, /AI replies are off/);
+  assert.match(off, /href="\/settings"/);
+  assert.match(off, /Task execution consent does not enable conversations/);
 });
 
 test('the new conversation form defaults to Claude Code, Default model and pl_technical_en', () => {
@@ -141,7 +283,10 @@ test('the new conversation form defaults to Claude Code, Default model and pl_te
   assert.match(html, /Create conversation/);
   assert.match(html, /<option value="claude" selected="">Claude Code<\/option>/);
   assert.match(html, /<option value="codex">Codex<\/option>/);
-  assert.match(html, /placeholder="Default"/);
+  assert.match(html, /<option value="" selected="">Default \(recommended\)/);
+  assert.match(html, /<option value="opus">Opus \(latest\) · opus<\/option>/);
+  assert.doesNotMatch(html, /gpt-6/, 'only the selected runtime’s models are listed');
+  assert.match(html, /Custom model ID…/);
   assert.match(html, /<option value="pl_technical_en" selected="">Polish, technical English/);
   assert.match(html, /<option value="pl">Polish<\/option>/);
   assert.match(html, /<option value="en">English<\/option>/);
@@ -149,7 +294,7 @@ test('the new conversation form defaults to Claude Code, Default model and pl_te
   assert.match(html, new RegExp(`href="/projects/${projectId}/conversations"`));
 });
 
-test('the settings form shows the stored settings and starts disabled until changed', () => {
+test('the settings form shows stored settings, including a saved custom model ID', () => {
   const html = render(
     createElement(ConversationSettingsForm, {
       projectId,
@@ -162,21 +307,58 @@ test('the settings form shows the stored settings and starts disabled until chan
   );
   assert.match(html, /value="Auth redesign"/);
   assert.match(html, /<option value="codex" selected="">/);
+  assert.match(html, /<option value="__custom__" selected="">Custom model ID…/);
   assert.match(html, /value="gpt-example"/);
+  assert.match(html, /<option value="gpt-6.1-sol">GPT-6.1-Sol · gpt-6.1-sol<\/option>/);
   assert.match(html, /<option value="pl" selected="">/);
   assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Save settings/);
+
+  const catalog = render(
+    createElement(ConversationSettingsForm, {
+      projectId,
+      conversation: conversation({ modelId: 'sonnet' }),
+    }),
+  );
+  assert.match(catalog, /<option value="sonnet" selected="">/);
+  assert.doesNotMatch(catalog, /aria-label="Custom model ID"/);
 });
 
-test('the composer saves notes only and explains it, with an accessible label and counter', () => {
-  const html = render(createElement(MessageComposer, { projectId, conversationId: id(1) }));
-  assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>New note<\/label>/);
+const composer = (overrides: Partial<Parameters<typeof MessageComposer>[0]> = {}) =>
+  render(
+    createElement(MessageComposer, {
+      projectId,
+      conversationId: id(1),
+      aiEnabled: true,
+      turnActive: false,
+      target: 'Claude Code · Default · Polish, technical English',
+      ...overrides,
+    }),
+  );
+
+test('the composer sends to the AI by default and keeps notes clearly separate', () => {
+  const html = composer();
+  assert.match(html, /<label[^>]*for="([^"]+)"[^>]*>Message to the AI<\/label>/);
   const labelFor = /<label[^>]*for="([^"]+)"/.exec(html)?.[1];
   assert.ok(labelFor !== undefined);
   assert.match(html, new RegExp(`<textarea[^>]* id="${labelFor}"`));
-  assert.match(html, /It is not sent to Claude Code or Codex, and no reply is generated/);
+  assert.match(html, /role="radio" aria-checked="true"[^>]*>Send to AI/);
+  assert.match(html, /Save as note/);
+  assert.match(html, /Notes are not sent/);
   assert.match(html, /0 \/ 20,000 characters/);
-  assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Save note/);
-  assert.doesNotMatch(html, />Send</);
+  assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Send/);
+});
+
+test('with AI replies off the composer starts in note mode and links to Settings', () => {
+  const html = composer({ aiEnabled: false });
+  assert.match(html, />New note<\/label>/);
+  assert.match(html, /role="radio" aria-checked="true"[^>]*>Save as note/);
+  assert.match(html, /never sent to Claude Code or Codex/);
+});
+
+test('while a reply is pending the composer is blocked', () => {
+  const html = composer({ turnActive: true });
+  assert.match(html, /A reply is still pending/);
+  assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""/);
 });
 
 test('form helpers validate, reset the model on a runtime switch and send only changes', () => {
@@ -243,10 +425,17 @@ test('conversation code has no path to agents, Git, execution, workers or task c
     ...collect(join(webRoot, 'app/api/projects/[projectId]/conversations')),
     ...collect(join(webRoot, 'app/projects/[projectId]/conversations')),
     join(webRoot, 'app/conversations/page.tsx'),
+    join(webRoot, 'app/api/settings/conversations/route.ts'),
+    ...collect(join(webRoot, 'components/models')),
+    ...collect(join(webRoot, 'lib/models')),
     join(webRoot, '../../packages/database/src/conversations.ts'),
+    join(webRoot, '../../packages/database/src/conversation-turns.ts'),
     join(webRoot, '../../packages/core/src/conversation.ts'),
+    join(webRoot, '../../packages/core/src/conversation-turn.ts'),
+    join(webRoot, '../../packages/core/src/conversation-security.ts'),
+    join(webRoot, '../../packages/core/src/model-catalog.ts'),
   ];
-  assert.ok(files.length >= 15, `found ${files.length} files`);
+  assert.ok(files.length >= 30, `found ${files.length} files`);
   const forbidden = [
     /@ai-agent-manager\/(?:agents|git|orchestrator)/,
     /node:child_process/,

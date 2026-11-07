@@ -45,3 +45,20 @@ export {
   getRuntimeSecurityProfile,
   runtimeSecurityProfiles,
 } from './security-profiles.js';
+export {
+  conversationInvocationShape,
+  conversationSecurityProfiles,
+  getConversationSecurityProfile,
+} from './conversation-profiles.js';
+export {
+  findRejectedConversationArguments,
+  prepareConversationTurn,
+  startConversationTurn,
+  type ConversationInvocationPlan,
+  type ConversationLaunchRejectionCode,
+  type ConversationPreparation,
+  type ConversationPreparationErrorCode,
+  type ConversationTurnRequest,
+  type StartConversationTurnInput,
+  type StartConversationTurnResult,
+} from './conversation-launch.js';

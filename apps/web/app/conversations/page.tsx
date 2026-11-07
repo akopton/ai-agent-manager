@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { connection } from 'next/server';
 import { ChevronRight, FolderGit2, Plus } from 'lucide-react';
 
-import { NotesOnlyNotice } from '@/components/conversations/conversation-notice';
+import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { conversationsUrl } from '@/lib/conversations/format';
 import { formatTimestamp } from '@/lib/projects/format';
-import { listConversationOverview } from '@/lib/server/conversations';
+import { getConversationAiStatus, listConversationOverview } from '@/lib/server/conversations';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
 import { listProjects } from '@/lib/server/projects';
@@ -24,7 +24,10 @@ const ConversationsPage = async () => {
   await connection();
   const result = await loadForPage(() => {
     const db = getDatabase();
-    return listConversationOverview(db, listProjects(db));
+    return {
+      projects: listConversationOverview(db, listProjects(db)),
+      ai: getConversationAiStatus(db),
+    };
   });
 
   return (
@@ -41,7 +44,7 @@ const ConversationsPage = async () => {
 
       {!result.ok ? (
         <DatabaseNotReady message={result.message} />
-      ) : result.data.length === 0 ? (
+      ) : result.data.projects.length === 0 ? (
         <Card className="items-center px-6 py-12 text-center">
           <div className="flex size-12 items-center justify-center rounded-xl bg-muted">
             <FolderGit2 className="size-6 text-muted-foreground" aria-hidden="true" />
@@ -65,13 +68,13 @@ const ConversationsPage = async () => {
         </Card>
       ) : (
         <>
-          <NotesOnlyNotice />
+          <ConversationAiNotice ai={result.data.ai} />
           <section aria-labelledby="projects-title" className="space-y-3">
             <h2 id="projects-title" className="text-sm font-medium text-muted-foreground">
               Projects
             </h2>
             <ul className="divide-y overflow-hidden rounded-xl border bg-card">
-              {result.data.map(({ project, count, lastUpdatedAt }) => (
+              {result.data.projects.map(({ project, count, lastUpdatedAt }) => (
                 <li key={project.id}>
                   <Link
                     href={conversationsUrl(project.id)}

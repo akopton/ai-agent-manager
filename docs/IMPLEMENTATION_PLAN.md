@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.6 — AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
-**Date:** 2026-11-06 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.6 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.5  
+**Status:** Draft v0.7 — AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
+**Date:** 2026-11-07 (v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Based on:** [`SPEC.md`](./SPEC.md) v0.8 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.7  
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -252,7 +252,7 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 | Milestone | Outcome | Depends on |
 |---|---|---|
 | **C1 — AI Conversations Foundation** *(delivered 2026-11-06)* | Project-scoped conversations with runtime, model and language settings; durable, ordered history of operator notes; REST API and UI. No model runs. | M2, M3-01 |
-| **C2 — CLI-backed conversations** | Real replies from Claude Code or Codex in Conversation Mode: conversation gate and launch profiles, worker-owned turns, streaming, cancellation, restart handling, language-mode instructions. | C1, M1-02, M1-03 verification method, M4-03 (event log + SSE) |
+| **C2 — CLI-backed conversations** *(delivered 2026-11-07)* | Real replies from Claude Code or Codex in Conversation Mode: conversation gate and launch profiles, worker-owned turns, streaming, cancellation, restart handling, language-mode instructions. | C1, M1-02, M1-03 verification method, M4-03 (event log + SSE) |
 | **C3 — Task proposals to Backlog** | Structured task proposals from a conversation; edit, reject or accept each; accepted proposals create `Backlog` tasks with an origin reference. | C2, M3-02 |
 | **C4 — Project and task awareness** | Controlled, read-only context assembly: project instructions, task history and explicitly selected files, with a visible per-turn context manifest. | C2 |
 
@@ -277,14 +277,31 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 - Conversations are **project-scoped only**. `project_id` is `NOT NULL`; a global scope would need its own migration and decision.
 - A C1 message is an operator **note** (`role = user`, `kind = note`). It is stored only, never sent to a CLI, and never answered. No placeholder assistant message is created.
 - The default runtime is Claude Code, matching the task form; there is no stored runtime preference to inherit.
-- Model selection follows the task convention: free-text identifier or `Default` (`NULL`), shape-checked only, with no model catalog. Switching the runtime without choosing a model resets it to `Default`.
+- Model selection follows the task convention: free-text identifier or `Default` (`NULL`), shape-checked only, with no model catalog. Switching the runtime without choosing a model resets it to `Default`. *(Superseded in C2 by the provider-specific selector with a curated catalog and a custom ID option.)*
 - **Archive and delete are deferred.** Deletion needs the confirmation and origin-reference rules of `SPEC.md` §18.10, which only matter once proposals exist. A project with conversations cannot be disconnected (`project_has_dependents`), the same as with tasks.
 - Notes cannot be edited or deleted yet.
 - Markdown is stored as written and displayed as plain text; rendering is deferred.
 
 **Done when** *(met)*: conversations and notes survive a restart in deterministic order; cross-project access is refused; invalid, oversized and duplicate submissions are handled; and tests prove that no task, worker command, run, Git operation or repository change results.
 
-#### C2 — CLI-backed conversations
+#### C2 — CLI-backed conversations (delivered 2026-11-07)
+
+**Delivered scope** (details: `ARCHITECTURE.md` §15.6 "C2 implementation notes"):
+
+- Separate AI Conversations consent (versioned disclosure `2026-11-07.1`, `conversation_settings`, Settings card). Trusted Local execution consent and project trust do not enable it.
+- Conversation launch profiles `claude-conversation-no-tools` and `codex-conversation-read-only`, the fail-closed conversation gate (`authorizeConversationTurn`; Strict Isolated always denied) and a separate launch boundary (`startConversationTurn`) with its own authorization type and in-process provenance registry. Shared process supervision (`supervised-run.ts`, extracted unchanged from `startAgentExecution`).
+- Durable, worker-owned turns (`conversation_turns`, migration `0009`): queued → running → completed | failed | cancelled | interrupted (+ stopping); idempotent send and retry; one active turn per conversation; replies stored only for completed turns; Stop through process-group stop; 10-minute timeout; restart reconciliation to `interrupted` without signalling or relaunch; stale queued turns expire; one conversation slot per CLI, separate from execution slots.
+- Context: earlier completed exchanges within a 60,000-character budget, notes excluded, language instruction in its own prompt section, per-turn manifest.
+- UI: Send to AI / Save as note composer, message bubbles with safe Markdown rendering, turn states (waiting, generating, stopping, failed, stopped, interrupted) with Stop and Retry, runtime/model/language on every reply, auto-refresh while a turn runs, honest notice.
+- Provider-specific model selector for tasks and conversations (Default, curated catalog per runtime, custom ID), with server- and client-side provider validation that keeps stored custom IDs editable.
+- Tests with fake CLIs, disposable repositories and temporary databases only; static architecture checks that conversation code cannot reach execution authorizations, Git, tasks or publishing.
+
+**Not done in C2 (recorded limitations):** no authenticated real CLI turn and no adversarial verification of the conversation profiles (every control stays `unverified`); no token streaming or SSE (polling refresh); partial text of a stopped reply is not kept; no native session resume; Strict Isolated conversations unavailable; project instructions, task history and files are not sent (C4); no summaries.
+
+**Manual verification (operator):** see the C2 browser test plan in the hand-off report; record its result here when run.
+
+**Original work package:**
+
 
 - Investigate Conversation Mode per CLI and installed version:
   - streaming format;
@@ -337,8 +354,8 @@ Use this file as the high-level milestone plan. When implementation starts, trac
 
 Listed in `SPEC.md` §18.12 and `ARCHITECTURE.md` §15.11. Resolve each with a documented decision before building the dependent work:
 
-- per-CLI conversation capabilities and enforceable no-tool profiles (C2);
-- capacity sharing with the execution slots (C2);
+- per-CLI conversation capabilities and enforceable no-tool profiles (C2: profiles defined and parse-checked; adversarial verification still open);
+- capacity sharing with the execution slots (C2: decided, separate conversation slot per CLI);
 - summary and context budgeting (C4);
 - project disconnect behavior for conversations (C1 refuses disconnect while conversations exist; a decision flow is still open);
 - web search, only if Global AI is scheduled.
@@ -429,7 +446,7 @@ The existing fail-closed gate becomes **Strict Isolated Mode**. It stays unchang
    - `securityMode` and `processContainment` appear in events and results.
 6. **Run controls in Trusted Local Mode.** Timeout, output limit, stop and process-group cleanup work (fake CLIs). The escaped-descendant limitation stays reported (T1–T3 follow-up).
 7. **Git integrity check.** It detects an agent commit in the task worktree, a push to a local bare remote (remote-tracking or remote ref), a common config or hooks change, a main checkout change, and another worktree's HEAD change. It reports no false positive for ordinary file edits inside the task worktree.
-8. **Architecture checks.** Conversation code cannot obtain or use an execution authorization. *(C1, 2026-11-06: a static import check in `apps/web/tests/conversations-ui.test.ts` keeps the conversation modules free of the agents, Git, orchestrator, execution, worker-command and task-command modules. C2 must extend it to the worker-side conversation code.)*
+8. **Architecture checks.** Conversation code cannot obtain or use an execution authorization. *(C1, 2026-11-06: a static import check in `apps/web/tests/conversations-ui.test.ts` keeps the conversation modules free of the agents, Git, orchestrator, execution, worker-command and task-command modules. C2, 2026-11-07: extended by `apps/worker/tests/conversation-boundaries.test.ts` to the worker, gate, launch and persistence conversation code; the separate authorization types are rejected by the other launch boundary in tests.)*
 
 **Exit criteria.**
 

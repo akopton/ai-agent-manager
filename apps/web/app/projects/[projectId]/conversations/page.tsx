@@ -5,12 +5,12 @@ import { connection } from 'next/server';
 import { ArrowLeft, MessagesSquare, Plus } from 'lucide-react';
 
 import { ConversationList } from '@/components/conversations/conversation-list';
-import { NotesOnlyNotice } from '@/components/conversations/conversation-notice';
+import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { newConversationUrl } from '@/lib/conversations/format';
-import { getProjectConversations } from '@/lib/server/conversations';
+import { getConversationAiStatus, getProjectConversations } from '@/lib/server/conversations';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
 
@@ -28,7 +28,11 @@ const NewConversationButton = ({ projectId }: { projectId: string }) => (
 const ProjectConversationsPage = async ({ params }: { params: Promise<{ projectId: string }> }) => {
   await connection();
   const { projectId } = await params;
-  const result = await loadForPage(() => getProjectConversations(getDatabase(), projectId));
+  const result = await loadForPage(() => {
+    const db = getDatabase();
+    const data = getProjectConversations(db, projectId);
+    return data === undefined ? undefined : { ...data, ai: getConversationAiStatus(db) };
+  });
 
   if (!result.ok) {
     return (
@@ -47,7 +51,7 @@ const ProjectConversationsPage = async ({ params }: { params: Promise<{ projectI
     notFound();
   }
 
-  const { project, conversations } = result.data;
+  const { project, conversations, ai } = result.data;
   return (
     <>
       <section aria-labelledby="page-title" className="space-y-3">
@@ -70,7 +74,7 @@ const ProjectConversationsPage = async ({ params }: { params: Promise<{ projectI
         </div>
       </section>
 
-      <NotesOnlyNotice />
+      <ConversationAiNotice ai={ai} />
 
       {conversations.length === 0 ? (
         <Card className="items-center px-6 py-12 text-center">
@@ -82,8 +86,8 @@ const ProjectConversationsPage = async ({ params }: { params: Promise<{ projectI
               <h2 className="text-lg font-semibold">No conversations yet</h2>
             </CardTitle>
             <CardDescription className="leading-6">
-              Start a conversation for a topic such as a redesign or a test strategy. For now it
-              collects your notes; AI replies will be enabled in C2.
+              Start a conversation for a topic such as a redesign or a test strategy, and plan it
+              with Claude Code or Codex. Notes you save there stay local.
             </CardDescription>
           </CardHeader>
           <CardContent>

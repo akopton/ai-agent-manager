@@ -1,7 +1,7 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.7 — AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
-**Date:** 2026-11-06 (v0.5: 2026-11-04, v0.3: 2026-11-03)  
+**Status:** Draft v0.8 — AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)  
+**Date:** 2026-11-07 (v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
 **Product type:** Local-first web application for orchestrating coding agents  
 **Audience:** Single user (the application owner)
 
@@ -457,12 +457,12 @@ Nothing in this section changes the existing requirements for Kanban, scheduling
 
 The "no live conversational input while a task runs" exclusion (§2) still applies. AI Conversations are not a channel into a running task.
 
-**Delivery status (2026-11-06).** The workstream is planned as C1–C4 (`IMPLEMENTATION_PLAN.md` §8):
+**Delivery status (2026-11-07).** The workstream is planned as C1–C4 (`IMPLEMENTATION_PLAN.md` §8):
 
 | Milestone | Delivers |
 |---|---|
 | **C1** *(delivered)* | Project conversations with runtime, model and language settings, a durable history and a UI. Persistence and UI only. |
-| **C2** | Real CLI-backed conversations (Conversation Mode). |
+| **C2** *(delivered)* | Real CLI-backed planning conversations (Conversation Mode) in Trusted Local Mode with a separate consent. |
 | **C3** | Task proposals and their approval into Backlog (§18.8). |
 | **C4** | Deeper project and task awareness (context assembly, §18.6, §18.9). |
 
@@ -476,6 +476,17 @@ Global AI (§18.5) and architecture decisions (§18.7) remain specified but are 
 - The UI labels notes as notes and states that AI replies arrive in C2.
 - Nothing in C1 starts an agent, creates a task or worker command, or runs a Git operation.
 - Archive, delete and note editing are deferred. A project with conversations cannot be disconnected, as with tasks (§4.1).
+
+**C2 behavior.**
+
+- The composer offers **Send to AI** and **Save as note**. A sent message is a `chat` message; a note stays a note and is still never sent to a CLI.
+- Sending stores the message and a reply request (a **turn**) and returns immediately. The worker runs Claude Code or Codex and stores the reply. The page shows the turn as waiting, generating, stopping, answered, failed, stopped or interrupted, and refreshes itself while a turn is active.
+- A reply is stored **only** when the CLI completed and produced text. A failed, stopped, timed-out or interrupted turn stores no reply and shows an actionable reason (CLI missing, not signed in, model rejected, timeout, …). Nothing is retried automatically; **Retry** asks again for the latest unanswered message.
+- At most one turn per conversation is active. While it is, new messages and notes are refused, so a reply always directly follows its message.
+- Each turn snapshots the runtime, model and language; changing the settings affects later turns only. Every reply shows the runtime, the requested model, the model the CLI reported (Claude Code only) and the language.
+- Replies are rendered as Markdown (code blocks, lists, headings, emphasis, links); nothing in a reply is executed or acted on.
+- AI replies need a **separate AI Conversations acceptance** in Settings (§18.2). Trusted Local execution consent and project trust do not enable conversations, and the conversation acceptance enables nothing else. Strict Isolated conversations are refused (fail-closed).
+- Conversations still never create, queue or start tasks, create worktrees, run Git operations, commit, push or publish. Task proposals (C3) and project context (C4) are not part of C2.
 
 ### 18.2 Execution Mode and Conversation Mode
 
@@ -523,7 +534,7 @@ Both modes may share adapter infrastructure (CLI discovery, process execution, m
   | `en` | Discussion and generated text in English. |
 
   The user can change it at any time; it applies to future replies. C1 stores the mode; C2 turns it into CLI instructions. The application UI itself stays in English.
-- Model choices are not a fixed catalog. `Default` defers to the CLI; an explicit identifier is stored as entered and checked by the CLI when a reply is requested (C2). Switching the runtime without choosing a model resets the model to `Default`, as for tasks.
+- The model is chosen from a **provider-specific selector** (C2, shared by tasks and conversations): `Default` first and recommended, a small, versioned catalog of models and aliases for the selected runtime only, and **Custom model ID** for anything else. The stored value is the exact CLI identifier. The catalog is curated, not discovered, and it does not state what the signed-in account may use: the CLI decides when a run or turn starts, and an unavailable model fails visibly without fallback. A model listed for the other runtime is refused for this one; custom identifiers are checked for shape only. Saved custom identifiers stay as they are and are shown as custom. Switching the runtime resets the model to `Default`, as before.
 - Each assistant message records the requested runtime and model, and the effective model only when the CLI reports it trustworthily.
 - Claude Code and Codex are **not assumed** to offer identical streaming, session persistence, model switching, context limits or security controls. These are capabilities to verify per CLI (§18.12).
 
@@ -586,7 +597,7 @@ Conversation → Proposed Plan → Task Proposals → User Approval → Project 
 - **Permanent conversation history is separate from the context sent to a CLI.** The context for a turn is assembled per message, from a selection of history, summaries and project knowledge, and may be much smaller than the full history.
 - Conversations support summaries, so long histories can be condensed for future context while the full history stays available to the user.
 - Changing the agent runtime does **not** transfer native CLI sessions between Claude Code and Codex. The new runtime receives context assembled by AI Agent Manager from the stored history.
-- Responses stream to the UI. The user can cancel a response; a cancelled or failed response is stored with that status and never silently lost or presented as complete.
+- Responses stream to the UI. The user can cancel a response; a cancelled or failed response is stored with that status and never silently lost or presented as complete. *(C2: the turn status is stored and shown, and the page refreshes while a turn runs, but the reply text appears only when it is complete; token streaming and keeping partial text of a cancelled reply are deferred. A cancelled or failed turn stores no reply text at all.)*
 - Credentials, tokens and secrets are not stored. Content the user deliberately sends to a conversation is stored as conversation history.
 - Project data stays scoped to its project unless the user explicitly authorizes otherwise.
 

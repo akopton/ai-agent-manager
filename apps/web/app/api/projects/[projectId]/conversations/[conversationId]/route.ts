@@ -11,8 +11,8 @@ import { getDatabase } from '@/lib/server/database';
 type RouteContext = { params: Promise<{ projectId: string; conversationId: string }> };
 
 /**
- * The conversation with its full history. The history is the operator's stored text, so the
- * route also refuses requests a browser marks as cross-origin.
+ * The conversation with its full history and reply requests (turns). The history is stored
+ * conversation text, so the route also refuses requests a browser marks as cross-origin.
  */
 export const GET = async (request: Request, { params }: RouteContext): Promise<Response> => {
   const rejected = guardContentRead(request);
@@ -21,12 +21,12 @@ export const GET = async (request: Request, { params }: RouteContext): Promise<R
   }
   try {
     const { projectId, conversationId } = await params;
-    const { conversation, messages } = getConversationDetail(
+    const { conversation, messages, turns, ai } = getConversationDetail(
       getDatabase(),
       projectId,
       conversationId,
     );
-    return jsonResponse({ conversation, messages });
+    return jsonResponse({ conversation, messages, turns, ai });
   } catch (error) {
     return handleRouteError(error);
   }

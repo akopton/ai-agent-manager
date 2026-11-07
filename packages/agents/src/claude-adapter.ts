@@ -34,7 +34,16 @@ const definition: CliDefinition = {
     '--output-format',
     '--verbose',
   ],
-  optionalOptions: ['--model', '--resume', '--session-id'],
+  // Conversation Mode (C2) options are recorded so `prepareConversationTurn` can require them.
+  optionalOptions: [
+    '--model',
+    '--resume',
+    '--session-id',
+    '--tools',
+    '--disable-slash-commands',
+    '--no-session-persistence',
+    '--safe-mode',
+  ],
   // Location of Claude Code's own configuration and login; never API keys.
   environmentNames: ['CLAUDE_CONFIG_DIR'],
 };
@@ -189,7 +198,12 @@ export const claudeAdapterSpecification: AdapterSpecification = {
   capabilities: (installation) => ({
     runtime: 'claude',
     executionMode: true,
-    conversationMode: 'not_implemented',
+    conversationMode: [
+      '--tools',
+      '--disable-slash-commands',
+      '--no-session-persistence',
+      '--safe-mode',
+    ].every((option) => installation.detectedOptions.includes(option)),
     structuredEvents: true,
     explicitModelSelection: installation.detectedOptions.includes('--model'),
     sessionIdReporting: true,

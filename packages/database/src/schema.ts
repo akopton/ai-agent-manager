@@ -5,6 +5,8 @@ import {
   conversationLanguageModes,
   conversationMessageKinds,
   conversationMessageRoles,
+  conversationTurnStatuses,
+  activeConversationTurnStatuses,
   executionSecurityModes,
   gitIntegrityResultStatuses,
   gitOperationKinds,
@@ -666,6 +668,104 @@ export const conversationMessages = sqliteTable(
   ],
 );
 
+/**
+ * AI Conversations consent (C2, single row `id = 1`). Separate from `security_settings`: accepting
+ * the Trusted Local execution disclosure never enables conversations, and this acceptance never
+ * enables task execution. Disabling clears the acceptance.
+ */
+export const conversationSettings = sqliteTable(
+  'conversation_settings',
+  {
+    id: integer('id').primaryKey(),
+    enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+    disclosureVersion: text('disclosure_version'),
+    acceptedAt: integer('accepted_at'),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    check('conversation_settings_singleton_check', sql`${table.id} = 1`),
+    check('conversation_settings_enabled_check', sql`${table.enabled} IN (0, 1)`),
+    check(
+      'conversation_settings_acceptance_check',
+      sql`${table.enabled} = 0 OR (${table.disclosureVersion} IS NOT NULL AND ${table.acceptedAt} IS NOT NULL)`,
+    ),
+  ],
+);
+
+/**
+ * CLI-backed conversation turns (C2). One row per request for an AI reply to one user `chat`
+ * message. The runtime, model and language are snapshotted when the turn is queued. At most one
+ * active (`queued`, `running`, `stopping`) turn per conversation. `assistant_message_id` is set only
+ * by a completed turn; failed, cancelled and interrupted turns never point to a reply. A retry is
+ * a new row for the same user message (`retry_of_turn_id`). Rows are never deleted.
+ */
+export const conversationTurns = sqliteTable(
+  'conversation_turns',
+  {
+    id: text('id').primaryKey(),
+    conversationId: text('conversation_id')
+      .notNull()
+      .references(() => conversations.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    userMessageId: text('user_message_id')
+      .notNull()
+      .references(() => conversationMessages.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    assistantMessageId: text('assistant_message_id')
+      .unique()
+      .references(() => conversationMessages.id, { onDelete: 'restrict', onUpdate: 'restrict' }),
+    retryOfTurnId: text('retry_of_turn_id'),
+    /** Client request ID of the send or retry; deduplicates repeated submissions. */
+    requestId: text('request_id').notNull().unique(),
+    status: text('status', { enum: conversationTurnStatuses }).notNull(),
+    agentRuntime: text('agent_runtime', { enum: agentRuntimes }).notNull(),
+    requestedModelId: text('requested_model_id'),
+    /** Only when the CLI reported it (Claude Code `init` event); never inferred. */
+    effectiveModelId: text('effective_model_id'),
+    languageMode: text('language_mode', { enum: conversationLanguageModes }).notNull(),
+    securityMode: text('security_mode', { enum: executionSecurityModes }),
+    disclosureVersion: text('disclosure_version'),
+    launchProfileId: text('launch_profile_id'),
+    cliVersion: text('cli_version'),
+    /** What was sent (history sequences, budget, language); never the prompt itself. */
+    contextManifestJson: text('context_manifest_json'),
+    workerInstanceId: text('worker_instance_id'),
+    pid: integer('pid'),
+    stopRequestedAt: integer('stop_requested_at'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    exitCode: integer('exit_code'),
+    signal: text('signal'),
+    replyTruncated: integer('reply_truncated', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+    claimedAt: integer('claimed_at'),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    index('conversation_turns_conversation_created_idx').on(table.conversationId, table.createdAt),
+    index('conversation_turns_status_created_idx').on(table.status, table.createdAt),
+    uniqueIndex('conversation_turns_one_active_per_conversation_idx')
+      .on(table.conversationId)
+      .where(sql`status IN (${sqlList(activeConversationTurnStatuses)})`),
+    check(
+      'conversation_turns_status_check',
+      sql`${table.status} IN (${sqlList(conversationTurnStatuses)})`,
+    ),
+    check(
+      'conversation_turns_agent_runtime_check',
+      sql`${table.agentRuntime} IN (${sqlList(agentRuntimes)})`,
+    ),
+    check(
+      'conversation_turns_language_mode_check',
+      sql`${table.languageMode} IN (${sqlList(conversationLanguageModes)})`,
+    ),
+    check(
+      'conversation_turns_reply_check',
+      sql`${table.assistantMessageId} IS NULL OR ${table.status} = 'completed'`,
+    ),
+  ],
+);
+
 export const schema = {
   projects,
   tasks,
@@ -682,4 +782,6 @@ export const schema = {
   workspaceCleanups,
   conversations,
   conversationMessages,
+  conversationSettings,
+  conversationTurns,
 };

@@ -77,8 +77,12 @@ export type AgentCapabilities = {
   runtime: AgentRuntime;
   /** Execution Mode: one non-interactive task run in a verified worktree. */
   executionMode: boolean;
-  /** Conversation Mode is a separate future contract (AI Conversations, C1). */
-  conversationMode: 'not_implemented';
+  /**
+   * Conversation Mode (C2): the CLI lists every option of the conversation launch profile. A
+   * separate contract (`prepareConversationTurn` / `startConversationTurn`); says nothing about
+   * security.
+   */
+  conversationMode: boolean;
   /** The CLI emits machine-readable events that the adapter parses. */
   structuredEvents: boolean;
   /** An explicit model can be passed (`--model`). `null` (Default) is always supported. */
@@ -305,8 +309,8 @@ export type AgentHandle = {
  * Adapter for one CLI runtime. Adapters are pure description and parsing; process execution goes
  * through `startAgentExecution`, which requires a Strict Isolated or Trusted Local authorization.
  *
- * Conversation Mode will be a separate, smaller contract reusing `detect` and the parser; it is
- * deliberately not part of this type.
+ * Conversation Mode is a separate contract (`conversation-launch.ts`) that reuses `detect`, the
+ * parser and the environment allow list; it is deliberately not part of this type.
  */
 export type AgentAdapter = {
   readonly runtime: AgentRuntime;

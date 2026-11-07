@@ -1,3 +1,4 @@
+import { modelValueProblem } from '@/lib/models/model-selection';
 import {
   taskPriorityDefault,
   type AgentRuntime,
@@ -111,10 +112,20 @@ const validate = (values: TaskFormValues): Validated => {
 export type CreateTaskFormResult =
   { ok: true; request: CreateProjectTaskData } | { ok: false; fields: TaskFieldErrors };
 
+/** The model must fit the selected runtime (same rule as the server). */
+const modelFields = (data: CreateProjectTaskData): TaskFieldErrors | null => {
+  const problem = modelValueProblem(data.agentRuntime, data.modelId ?? '');
+  return problem === null ? null : { modelId: problem };
+};
+
 /** Validates the form for a new task. */
 export const buildCreateTaskRequest = (values: TaskFormValues): CreateTaskFormResult => {
   const result = validate(values);
-  return result.ok ? { ok: true, request: result.data } : result;
+  if (!result.ok) {
+    return result;
+  }
+  const fields = modelFields(result.data);
+  return fields === null ? { ok: true, request: result.data } : { ok: false, fields };
 };
 
 export type TaskUpdateResult =
@@ -149,6 +160,13 @@ export const buildTaskUpdate = (
     return result;
   }
   const { data } = result;
+  // Checked only when the runtime or model changes, so a stored custom ID stays editable.
+  if (data.agentRuntime !== task.agentRuntime || data.modelId !== task.modelId) {
+    const fields = modelFields(data);
+    if (fields !== null) {
+      return { ok: false, fields };
+    }
+  }
   const update: UpdateTaskInput = {
     ...(data.title === task.title ? {} : { title: data.title }),
     ...(data.prompt === task.prompt ? {} : { prompt: data.prompt }),

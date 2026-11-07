@@ -21,15 +21,16 @@ export const describeModel = (modelId: string | null): string => modelId ?? 'Def
 export const describeLanguageMode = (mode: ConversationLanguageMode): string =>
   conversationLanguageModeLabels[mode];
 
-/** The author label of a message. C1 stores only operator notes. */
+/** The author label of a message: notes stay local, chat messages were sent to the AI. */
 export const describeMessageAuthor = (message: Pick<ConversationMessage, 'role' | 'kind'>) => {
   if (message.role === 'assistant') {
-    return { author: 'Assistant', detail: 'AI reply' };
+    return { author: 'AI reply', detail: 'From the selected CLI' };
   }
   return message.kind === 'note'
-    ? { author: 'You', detail: 'Note · not sent to an AI' }
-    : { author: 'You', detail: 'Message' };
+    ? { author: 'Note', detail: 'Not sent to an AI' }
+    : { author: 'You', detail: 'Sent to AI' };
 };
 
+/** Messages, notes and replies together. */
 export const formatMessageCount = (count: number): string =>
-  count === 1 ? '1 note' : `${count.toLocaleString('en')} notes`;
+  count === 1 ? '1 message' : `${count.toLocaleString('en')} messages`;

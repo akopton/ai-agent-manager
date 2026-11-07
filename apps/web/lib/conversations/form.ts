@@ -6,6 +6,7 @@ import {
   type ConversationLanguageMode,
   type UpdateConversationInput,
 } from '@ai-agent-manager/core';
+import { modelValueProblem } from '@/lib/models/model-selection';
 import {
   createProjectConversationRequestSchema,
   type CreateProjectConversationData,
@@ -70,8 +71,7 @@ type Validated =
   | { ok: true; request: CreateProjectConversationData }
   | { ok: false; fields: ConversationFieldErrors };
 
-/** Validates the form; on success `request` holds the normalized values. */
-export const validateConversationForm = (values: ConversationFormValues): Validated => {
+const parseConversationForm = (values: ConversationFormValues): Validated => {
   const parsed = createProjectConversationRequestSchema.safeParse({
     title: values.title,
     agentRuntime: values.agentRuntime,
@@ -91,6 +91,18 @@ export const validateConversationForm = (values: ConversationFormValues): Valida
   return { ok: false, fields };
 };
 
+/** The model must fit the selected runtime (same rule as the server). */
+const modelFields = (request: CreateProjectConversationData): Validated => {
+  const problem = modelValueProblem(request.agentRuntime, request.modelId ?? '');
+  return problem === null ? { ok: true, request } : { ok: false, fields: { modelId: problem } };
+};
+
+/** Validates the form; on success `request` holds the normalized values. */
+export const validateConversationForm = (values: ConversationFormValues): Validated => {
+  const result = parseConversationForm(values);
+  return result.ok ? modelFields(result.request) : result;
+};
+
 export type ConversationUpdateResult =
   | { ok: true; update: UpdateConversationInput | null }
   | { ok: false; fields: ConversationFieldErrors };
@@ -103,7 +115,16 @@ export const buildConversationUpdate = (
   conversation: Conversation,
   values: ConversationFormValues,
 ): ConversationUpdateResult => {
-  const result = validateConversationForm(values);
+  const parsed = parseConversationForm(values);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  // Checked only when the runtime or model changes, so a stored custom ID stays editable.
+  const result =
+    parsed.request.agentRuntime !== conversation.agentRuntime ||
+    parsed.request.modelId !== conversation.modelId
+      ? modelFields(parsed.request)
+      : parsed;
   if (!result.ok) {
     return result;
   }

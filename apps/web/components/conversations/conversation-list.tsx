@@ -5,9 +5,9 @@ import type { ConversationSummary } from '@/lib/conversations/contracts';
 import {
   conversationUrl,
   describeLanguageMode,
-  describeModel,
   formatMessageCount,
 } from '@/lib/conversations/format';
+import { describeModelChoice } from '@/lib/models/model-selection';
 import { formatTimestamp } from '@/lib/projects/format';
 import { agentRuntimeLabels } from '@/lib/tasks/board';
 
@@ -30,7 +30,7 @@ export const ConversationList = ({
             <p className="truncate text-sm font-medium">{conversation.title}</p>
             <p className="text-xs leading-5 text-muted-foreground">
               {agentRuntimeLabels[conversation.agentRuntime]} ·{' '}
-              {describeModel(conversation.modelId)} ·{' '}
+              {describeModelChoice(conversation.agentRuntime, conversation.modelId)} ·{' '}
               {describeLanguageMode(conversation.languageMode)}
             </p>
           </div>

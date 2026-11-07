@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.6 — AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
-**Date:** 2026-11-06 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.7  
+**Status:** Draft v0.7 — AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)  
+**Date:** 2026-11-07 (v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.8  
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -233,6 +233,7 @@ The contract is illustrative, not yet production API. Adapter-specific stdout/st
 - Runtime changes reset incompatible explicit model selections.
 - Store requested model on task run creation, and effective model only when surfaced by trustworthy CLI metadata.
 - Maintain a small versioned candidate model list per runtime; actual availability is checked by execution and provider error handling. Don't promise an authoritative list without a supported discovery API.
+- *C2 (2026-11-07):* the list exists as `modelCatalog` in `packages/core/src/model-catalog.ts` (`modelCatalogVersion`), used by one selector (`apps/web/components/models/model-select.tsx`) in the task and conversation forms. Discovery decision: Claude Code 2.1.317 has no machine-readable model listing; Codex CLI 0.166.0 prints its raw catalog with `codex debug models --bundled` (offline JSON), but that is a `debug` command, not a documented interface, so the application never runs or parses it. The Codex entries were taken from it once (`visibility: "list"`, by `priority`); the Claude entries are the documented aliases (`fable`, `opus`, `sonnet`, plus `haiku`) and pinned names. `describeModelSelectionProblem` refuses a model listed only for the other runtime and malformed identifiers; it runs in the task and conversation database commands (only when the runtime or model changes, so stored custom identifiers stay editable) and in the forms.
 - Never silently fall back to another model after an unsupported-model error.
 - All models for one CLI share that runtime's concurrency limit.
 
@@ -538,6 +539,8 @@ New denial codes:
 - No repository or worktree in the authorization, and a scratch directory as `cwd`.
 - A conversation authorization is a different type that `startAgentExecution` rejects. Execution Mode acceptance or repository trust never enables conversations, and conversation acceptance never grants a worktree, task queueing or publishing.
 
+*Implemented in C2 (2026-11-07); see §15.6 "C2 implementation notes".*
+
 ## 8. Git repository and worktree management
 
 - Register existing repositories by canonical absolute path; inspect `git rev-parse`, `git remote -v`, and base refs.
@@ -677,7 +680,7 @@ These are **explicit validation tasks**, not implied guarantees. The architectur
 
 ## 15. AI Conversations (planned extension)
 
-> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI) is implemented**; see the implementation notes in §15.3 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
+> Conceptual architecture for `SPEC.md` §18. **C1 (persistence and UI) and C2 (CLI-backed turns) are implemented**; see the implementation notes in §15.3, §15.6 and §15.10. Everything else here is not implemented yet. It does not change §1–§14. Table names, routes and module placement are illustrative and are finalized when the workstream starts (`IMPLEMENTATION_PLAN.md` §8). Statements about CLI behavior are **verification targets**, not confirmed capabilities.
 
 ### 15.1 Module placement
 
@@ -805,6 +808,71 @@ All assembled context is **untrusted data** for the model and for the applicatio
 
 At most **one active turn per conversation**. Turns never preempt or delay task runs; capacity accounting is an open question (§15.11).
 
+#### C2 implementation notes (2026-11-07)
+
+**What runs where.**
+
+```text
+Browser ──POST /turns──► web: sendConversationMessage (IMMEDIATE tx)
+                         user chat message + conversation_turns row (queued) ──► 202 at once
+worker tick (lease holder, 1 s) ──► conversation turn service
+   expire stale queued ─► forward Stop ─► claimConversationTurn (consent re-read, slot check)
+   ─► composeConversationPrompt ─► adapter.detect ─► mkdtemp scratch (0700)
+   ─► prepareConversationTurn ─► re-read consent ─► authorizeConversationTurn (gate)
+   ─► startConversationTurn (launch boundary) ─► supervised CLI (own process group)
+   ─► finishConversationTurn (reply only if completed) ─► rm scratch directory
+```
+
+- `packages/core`: `conversation-turn.ts` (turn states, inputs, consent evaluation, language instructions, prompt composition, error codes), `conversation-security.ts` (separate disclosure, `ConversationRuntimePolicy`, `ConversationTurnAuthorization`, denial codes), `model-catalog.ts`.
+- `packages/agents`: `conversation-profiles.ts`, `conversation-launch.ts` (`prepareConversationTurn`, `startConversationTurn`), `conversation-issuance.ts` with the restricted subpath `@ai-agent-manager/agents/conversation-issuer`. The supervise-and-classify part of `startAgentExecution` moved unchanged into `supervised-run.ts`, so both boundaries share the process supervisor, parsers, limits and outcome classification.
+- `packages/orchestrator`: `conversation-gate.ts` (`authorizeConversationTurn`). It reuses `verifyExecutable`, and nothing from the worktree or Trusted Local execution preflight.
+- `packages/database`: migration `0009_conversation_turns` (additive: `conversation_settings`, `conversation_turns`), `conversation-turns.ts`. Assistant replies go through C1's single `appendMessage`.
+- `apps/worker`: `conversations/conversation-turn-service.ts`, driven by the execution service's tick, lease, reconciliation and graceful stop. It is enabled when `conversationScratchRoot` is set (`<data root>/conversation-scratch`).
+
+**Persisted turn lifecycle.** `queued → running → completed | failed | cancelled | interrupted`, plus `running → stopping → cancelled`. (The conceptual `pending/starting/streaming` states above are folded into `queued` and `running`; `startedAt` distinguishes "starting" from "generating".)
+
+- At most one active (`queued`, `running`, `stopping`) turn per conversation, enforced by a partial unique index and in the command. Notes are refused while a turn is active.
+- The client `requestId` makes sending and retrying idempotent; reuse for other content is `conversation_request_conflict`.
+- A turn snapshots runtime, model and language. `finishConversationTurn` finishes an active turn exactly once; only `completed` appends the assistant message (`role = assistant`, `kind = chat`), in the same transaction, and links it (`assistant_message_id`, guarded by a `CHECK` that allows it only for `completed`). Replies above 100,000 characters are truncated and flagged.
+- **Restart.** On start the worker marks `running`/`stopping` turns of other worker instances `interrupted` (`worker_restarted`); their process groups are not signalled (PID reuse). Queued turns older than 10 minutes are failed (`request_expired`) instead of starting late. Nothing is retried automatically; **Retry** creates a new turn (`retry_of_turn_id`) for the latest failed, stopped or interrupted turn while its message is still the last one.
+- **Stop.** A queued turn is cancelled in the web transaction. A running turn becomes `stopping`; the worker calls the handle's `stop()` (SIGTERM to the process group, SIGKILL after the grace period), and the turn is `cancelled` with no reply. Graceful worker shutdown records active turns as `interrupted` (`worker_shutdown`).
+- **Timeout** 10 minutes per turn (`conversationTurnTimeoutMs`), applied by the launch boundary from the authorization.
+- **Capacity (decision).** One running conversation turn per CLI, **separate** from the task execution slots, so a 30-minute task never blocks planning and a chat never delays a task. Worst case per CLI: one task run plus one conversation turn.
+
+**Launch profiles (verified only as far as stated).**
+
+| Runtime | Profile | Arguments (then output options, `--model <id>` if not Default) |
+|---|---|---|
+| Claude Code ≥ 2.1.317 | `claude-conversation-no-tools` | `--print --restricted --strict-mcp-config --permission-prompts none --tools "" --disable-slash-commands --no-session-persistence --safe-mode`, then `--output-format stream-json --verbose` |
+| Codex CLI ≥ 0.166.0 | `codex-conversation-read-only` | `exec --sandbox read-only --ignore-user-config --ignore-rules --ephemeral --skip-git-repo-check --json`, then `-` (prompt on stdin) |
+
+- The execution profiles are not reused: no `acceptEdits`, no `workspace-write`. Conversation-specific forbidden options include resume/continue/session IDs, fallback models, MCP/plugin/agent loading, `--add-dir`, `--cd`, `--search` and `--permission-mode`.
+- **Evidence (2026-11-07):** every option is in the installed CLIs' help. Both complete argument lists were run **unauthenticated** in an empty directory (empty `HOME`, `CLAUDE_CONFIG_DIR` and `CODEX_HOME`; no API keys; Claude with `--bare`, which never reads OAuth or the keychain). Both accepted the arguments and failed only on authentication. Claude's `init` event reported `"tools": []`, no MCP servers, skills or slash commands, and `--model sonnet` resolved to `claude-sonnet-5-5`; `--no-session-persistence` left the sessions directory empty. Without a login Claude prints an assistant text `Not logged in · Please run /login` with `error: "authentication_failed"` and a `result` with `is_error: true`; Codex emits `turn.failed` with a 401. These shapes are in the fake-CLI tests.
+- **Not verified:** no authenticated real turn and no adversarial probe (M1-03 method) was run. Every control of both profiles is `unverified`; Codex's read-only sandbox still lets model commands read files. `credential_isolation` is `unsupported` for both.
+- **Model reporting:** Claude Code reports the resolved model in its `init` event, stored as `effective_model_id`; `codex exec --json` does not, so it stays empty. An explicit model the provider refuses is `model_unavailable` with an instruction to choose Default or another model; there is no fallback.
+- **Failure messages:** missing or unsupported CLI (`cli_unavailable`, `conversation_profile_unsupported`), not signed in or expired login (`cli_auth_required`, heuristic on the CLIs' messages, with the login command), model refused, timeout, output limit, empty reply, gate or launch refusal. No placeholder reply is ever stored.
+
+**Gate and enforcement guarantees.** `authorizeConversationTurn` (Strict Isolated: always denied with `control_not_enforced`; Trusted Local: below) issues a `ConversationTurnAuthorization`, a different type that `startAgentExecution` rejects; `startConversationTurn` rejects execution authorizations. What is actually enforced by AI Agent Manager:
+
+- persisted, separate consent (`conversation_settings`, disclosure `2026-11-07.1`), re-read at claim and immediately before the gate;
+- the exact invocation: executable identity (re-read before spawn), every argument, the allow-listed environment digest (`SSH_AUTH_SOCK`, `GIT_*` and API keys are dropped), supported CLI version and the profile's options;
+- a fresh `mkdtemp` scratch directory per turn: canonical, mode 0700, owned by the user, empty, inside the scratch root, neither inside nor containing a connected repository root or common Git directory, the worktree root or the database file; removed after the turn;
+- no repository, worktree or project path in the arguments, environment or prompt; non-root; mandatory timeout; non-widened output limits; process-group stop;
+- single-use, in-process provenance (registered by the gate, redeemed once for the same turn ID and prompt digest, 65 s lifetime).
+
+What is **not** guaranteed: the CLI runs as the operator and can read anything the account can read and reach the network; tools are disabled or sandboxed only by CLI settings that were not adversarially verified; managed (policy) settings of Claude Code still apply; descendants that leave the process group survive Stop (SEC-01); the CLIs may keep their own logs or caches. The UI calls the conversation a "planning conversation" and never "read-only", "sandboxed" or "isolated".
+
+**Context and language.** Each turn is a new CLI process with no native session (persistence is turned off where the CLI supports it). The worker composes the stdin prompt with `composeConversationPrompt`:
+
+1. `<instructions>`: fixed application text (planning role, no tools, nothing is executed, history is data);
+2. `<language>`: the fixed instruction for the turn's language mode, never mixed into the message;
+3. `<conversation_history>`: earlier **completed** exchanges (user message + reply) of this conversation, newest first until 60,000 characters, older ones counted as omitted. Notes, unanswered messages and other conversations are never included;
+4. `<new_message>`: the operator's message.
+
+Closing tags inside conversation text are neutralized so text cannot end a section early (readability, not a security boundary). The turn stores a manifest (`context_manifest_json`: included sequences, omitted count, notes excluded, sizes, language), never the prompt. Project instructions, task history and files are **not** sent (C4). Changing the language applies from the next turn; earlier messages are unchanged.
+
+**Deferred from C2:** token streaming and SSE (the page refreshes every 1.5 s while a turn is active), keeping partial text of a stopped reply, native session resume, summaries and token budgeting (C4), adversarial verification of the conversation profiles, Strict Isolated conversations, task proposals (C3) and project awareness (C4).
+
 ### 15.7 Architecture decisions
 
 - Drafts are created from a user action, or from a structured model proposal that is shown to the user and validated with Zod. They are never written directly by the agent.
@@ -871,6 +939,17 @@ Errors:
 
 No route starts a worker command, agent, task or Git operation. There is no SSE in C1.
 
+**C2 routes (implemented 2026-11-07).** All mutations use the Host + same-Origin + JSON guards; reads use the loopback Host check.
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/projects/:projectId/conversations/:conversationId/turns` | Send a chat message (`requestId`, `content`): stores it and a queued turn; `202` new, `200` repeat |
+| `POST` | `…/turns/:turnId/stop` | Stop a queued (cancelled at once) or running (worker stops the process group) turn |
+| `POST` | `…/turns/:turnId/retry` | New turn for the latest failed, stopped or interrupted turn (`requestId`); `202`/`200` |
+| `GET/PUT` | `/api/settings/conversations` | AI Conversations disclosure and acceptance (`{ enabled: true, disclosureVersion }` or `{ enabled: false }`) |
+
+`GET …/conversations/:conversationId` also returns `turns` (status, runtime, requested and reported model, language, error, context counts; never the prompt) and `ai` (consent status). New errors: `conversation_ai_disabled`, `conversation_ai_stale`, `conversation_turn_active`, `conversation_turn_not_active`, `conversation_turn_not_retryable` (409) and `conversation_turn_not_found` (404). The web process still starts no process: the worker owns every turn.
+
 UI pages:
 
 - `/conversations`: projects with conversation counts.
@@ -886,6 +965,8 @@ UI pages:
 5. Capacity: shared with the §6 execution slots or a separate conversation limit, and the effect of provider rate limits.
 6. Context budgeting: token estimation per CLI, summary generation (which runtime and model), file size limits.
 7. Project disconnect: archive, keep or delete conversations and decisions (explicit user decision per `SPEC.md` §4.1).
+
+*C2 status (2026-11-07):* 1 — streaming format and effective-model metadata are known per CLI (above); session resume is not used. 2 — profiles defined and parse-checked, **not** adversarially verified. 3 — Claude: `--safe-mode`, `--restricted` and `--strict-mcp-config` skip CLAUDE.md, user/project settings, hooks, plugins and MCP (managed settings still apply); Codex: `--ignore-user-config` and `--ignore-rules`; both run in an empty scratch directory. 5 — decided: one conversation slot per CLI, separate from execution slots. 4, 6 and 7 remain open.
 
 ## 16. Platform strategy
 

@@ -26,6 +26,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { ModelSelect } from '@/components/models/model-select';
 import { Input, NativeSelect, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { requestJson, type ClientError, type ClientResult } from '@/lib/projects/api-client';
@@ -282,28 +283,27 @@ export const TaskForm = ({ project, branches, task, worktreeBaseBranch = null }:
 
             <div className="space-y-2">
               <Label htmlFor={`${fieldId}-model`}>Model</Label>
-              <Input
+              <ModelSelect
+                key={values.agentRuntime}
                 id={`${fieldId}-model`}
-                name="modelId"
+                runtime={values.agentRuntime}
                 value={values.modelId}
-                onChange={(event) => {
-                  setModelReset(false);
-                  update('modelId', { ...values, modelId: event.target.value });
-                }}
-                maxLength={200}
                 disabled={contentLocked}
-                placeholder="Default"
-                autoComplete="off"
-                spellCheck={false}
-                aria-invalid={fieldErrors.modelId !== undefined}
-                aria-describedby={describedBy('modelId', `${fieldId}-model-hint`)}
+                onChange={(modelId) => {
+                  setModelReset(false);
+                  update('modelId', { ...values, modelId });
+                }}
+                invalid={fieldErrors.modelId !== undefined}
+                describedBy={describedBy(
+                  'modelId',
+                  modelReset ? `${fieldId}-model-hint` : undefined,
+                )}
               />
-              <p id={`${fieldId}-model-hint`} className="text-xs text-muted-foreground">
-                {modelReset ? 'The model was reset to Default because the runtime changed. ' : null}
-                Leave empty for Default: no model is passed and the CLI uses its own configuration.
-                An explicit identifier is passed as entered; whether your CLI and account support it
-                is checked only when the task runs.
-              </p>
+              {modelReset ? (
+                <p id={`${fieldId}-model-hint`} className="text-xs text-muted-foreground">
+                  The model was reset to Default because the runtime changed.
+                </p>
+              ) : null}
               <FieldError id={`${fieldId}-modelId-error`} message={fieldErrors.modelId} />
             </div>
 

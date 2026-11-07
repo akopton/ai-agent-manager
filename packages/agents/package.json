@@ -20,6 +20,11 @@
       "@ai-agent-manager/source": "./src/trusted-local-issuer.ts",
       "types": "./dist/trusted-local-issuer.d.ts",
       "import": "./dist/trusted-local-issuer.js"
+    },
+    "./conversation-issuer": {
+      "@ai-agent-manager/source": "./src/conversation-issuer.ts",
+      "types": "./dist/conversation-issuer.d.ts",
+      "import": "./dist/conversation-issuer.js"
     }
   },
   "scripts": {

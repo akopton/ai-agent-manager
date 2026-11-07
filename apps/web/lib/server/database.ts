@@ -18,6 +18,8 @@ const requiredTables = [
   'workspace_cleanups',
   'conversations',
   'conversation_messages',
+  'conversation_settings',
+  'conversation_turns',
 ] as const;
 
 export class DatabaseNotReadyError extends Error {

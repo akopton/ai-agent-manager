@@ -460,14 +460,14 @@ test('adds the conversation tables additively to a database migrated before C1',
   const directory = mkdtempSync(join(tmpdir(), 'ai-agent-manager-conversations-upgrade-'));
   const migrations = mkdtempSync(join(tmpdir(), 'ai-agent-manager-conversations-migrations-'));
   try {
-    // Replay only the migrations that existed before C1, then upgrade.
+    // Replay only the migrations that existed before C1 (later ones depend on it), then upgrade.
     const source = fileURLToPath(new URL('../migrations/', import.meta.url));
     cpSync(source, migrations, { recursive: true });
     const journalPath = join(migrations, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
       entries: { tag: string }[];
     };
-    journal.entries = journal.entries.filter(({ tag }) => tag !== '0008_conversations');
+    journal.entries = journal.entries.filter(({ tag }) => tag < '0008_conversations');
     writeFileSync(journalPath, JSON.stringify(journal));
     assert.ok(readdirSync(migrations).includes('0008_conversations.sql'));
 

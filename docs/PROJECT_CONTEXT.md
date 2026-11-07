@@ -1,7 +1,7 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.4 — SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
-**Date:** 2026-11-04 (v0.1: 2026-11-03)  
+**Status:** Context snapshot v0.5 — AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
+**Date:** 2026-11-07 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
 **Related documents:** [`SPEC.md`](./SPEC.md) v0.5, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.4, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.4
 
 ## 1. Why this project exists
@@ -150,7 +150,7 @@ C1 decisions:
 - **Scope:** conversations are project-scoped only.
 - **Language modes:** `pl_technical_en` (default), `pl` and `en`.
 - **Messages:** C1 stores operator **notes** only. Notes are never sent to a CLI, and no placeholder AI reply is shown.
-- **Runtime and model:** the default runtime is Claude Code, following the task form. The model follows the task convention (`Default` or a free-text identifier, no catalog).
+- **Runtime and model:** the default runtime is Claude Code, following the task form. The model follows the task convention (`Default` or a free-text identifier, no catalog). *(Changed in C2: provider-specific selector with a curated catalog.)*
 - **Deferred:** archive and delete.
 
 Chat stays separate from task execution: a conversation can never queue, start, review or publish a task. The only planned link is C3's explicit approval of a proposal into Backlog.
@@ -163,3 +163,12 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - whether conversations share the per-CLI execution capacity;
 - context budgeting;
 - conversation and decision handling on project disconnect.
+
+**C2 decisions (2026-11-07):**
+
+- **Consent:** a separate AI Conversations opt-in with its own versioned disclosure. Neither Trusted Local execution consent nor project trust enables conversations, and the conversation acceptance enables nothing else. Strict Isolated conversations stay fail-closed.
+- **Launch profiles:** Claude Code with all tools disabled, no session persistence and safe mode; Codex `exec` with the read-only sandbox and ephemeral sessions. Both run in a fresh, empty, private scratch directory per turn and receive no repository path. Every option was parse-checked against the installed CLIs **without authentication**; nothing was adversarially verified, so the product never calls conversations read-only or isolated.
+- **Turns:** worker-owned and durable; replies only from completed CLI runs; no automatic retry; restart marks unfinished turns interrupted; one active turn per conversation; one conversation slot per CLI, separate from task execution slots.
+- **Context:** each turn is a new CLI process; earlier completed exchanges are resent within a 60,000-character budget; notes are never sent; the language instruction is its own prompt section. Project knowledge stays in C4.
+- **Model selection:** curated per-runtime catalog plus custom IDs, shared by tasks and conversations. `codex debug models --bundled` exists but is a debug command, so it informs the catalog and is not run by the application.
+- **Deferred:** token streaming/SSE, partial replies on Stop, native session resume, summaries, adversarial profile verification, C3 task proposals, C4 project awareness.

@@ -1,5 +1,6 @@
 import {
   createTaskInputSchema,
+  describeModelSelectionProblem,
   isTaskUpdateAllowed,
   resolveTaskTransition,
   resolveTaskUpdate,
@@ -57,6 +58,10 @@ const runOutcomeActions: readonly TaskAction[] = [
   'mark_done',
 ];
 
+/** A model that does not fit the selected runtime, reported on the `modelId` field. */
+const invalidModel = (message: string): TaskError =>
+  new TaskError('invalid_task_input', message, { issues: [{ path: 'modelId', message }] });
+
 const archivedError = (): TaskError =>
   new TaskError('task_archived', 'The task is archived. Restore it before changing it.');
 
@@ -77,6 +82,10 @@ export const createTask = (
     throw invalidInput(parsed.error);
   }
   const data = parsed.data;
+  const modelProblem = describeModelSelectionProblem(data.agentRuntime, data.modelId);
+  if (modelProblem !== null) {
+    throw invalidModel(modelProblem);
+  }
 
   return db.transaction(
     (tx) => {
@@ -194,6 +203,16 @@ export const updateTask = (
         );
       }
       const changes = resolveTaskUpdate(current, parsed.data);
+      if (changes.agentRuntime !== undefined || changes.modelId !== undefined) {
+        // Checked only when the runtime or model changes, so a stored custom ID stays editable.
+        const problem = describeModelSelectionProblem(
+          changes.agentRuntime ?? current.agentRuntime,
+          changes.modelId === undefined ? current.modelId : changes.modelId,
+        );
+        if (problem !== null) {
+          throw invalidModel(problem);
+        }
+      }
       const updated = tx
         .update(tasks)
         .set({

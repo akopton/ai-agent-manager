@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { WorkerState } from '@ai-agent-manager/core';
 import {
   createDatabase,
@@ -35,6 +36,10 @@ const executionTables = [
   'publications',
   'git_operations',
   'workspace_cleanups',
+  'conversations',
+  'conversation_messages',
+  'conversation_settings',
+  'conversation_turns',
 ] as const;
 
 const databaseMigrateCommand = 'pnpm --filter @ai-agent-manager/database db:migrate';
@@ -117,6 +122,12 @@ export const createWorker = ({
       return;
     }
     const service = createExecutionService({
+      ...(paths === undefined
+        ? {}
+        : {
+            conversationScratchRoot: join(paths.dataRoot, 'conversation-scratch'),
+            databasePath: paths.databasePath,
+          }),
       ...executionOptions,
       db: connection.db,
       logger,
@@ -126,6 +137,9 @@ export const createWorker = ({
     execution = service;
     logger.info(
       'Task execution is available for explicit operator start requests (Trusted Local Mode only; no automatic queue processing).',
+    );
+    logger.info(
+      'AI conversation replies are processed for sent chat messages when AI Conversations are enabled in Settings.',
     );
   };
 

@@ -21,7 +21,7 @@ export const conversationMessageIdSchema = z.uuid();
  * - `pl`: discussion and generated text in Polish.
  * - `en`: discussion and generated text in English.
  *
- * C1 only stores the choice. C2 turns it into instructions for the CLI.
+ * C2 sends the matching instruction (`conversationLanguageInstructions`) with every turn.
  */
 export const conversationLanguageModes = ['pl_technical_en', 'pl', 'en'] as const;
 
@@ -86,10 +86,7 @@ export const conversationMessageContentSchema = z
       }),
   );
 
-/**
- * Who wrote a message. `assistant` is reserved for C2 replies produced by a CLI; no C1 command
- * writes it.
- */
+/** Who wrote a message. `assistant` messages are replies stored by a completed C2 turn. */
 export const conversationMessageRoles = ['user', 'assistant'] as const;
 
 export const conversationMessageRoleSchema = z.enum(conversationMessageRoles);
@@ -99,8 +96,8 @@ export type ConversationMessageRole = z.infer<typeof conversationMessageRoleSche
 /**
  * How a message entered the history:
  *
- * - `note`: written by the operator and stored only. It was never sent to an agent (C1).
- * - `chat`: part of a CLI-backed exchange. Reserved for C2; no C1 command writes it.
+ * - `note`: written by the operator and stored only. It is never sent to an agent (C1).
+ * - `chat`: part of a CLI-backed exchange (C2): a message sent to the AI, or its reply.
  */
 export const conversationMessageKinds = ['note', 'chat'] as const;
 
@@ -214,6 +211,18 @@ export const conversationErrorCodes = [
   'conversation_changed',
   /** A request ID was reused for a different message or conversation. */
   'conversation_request_conflict',
+  // C2 — CLI-backed turns.
+  /** The conversation already has a queued or running turn. */
+  'conversation_turn_active',
+  /** AI replies are off: the AI Conversations disclosure has not been accepted. */
+  'conversation_ai_disabled',
+  /** The accepted AI Conversations disclosure is older than the current one. */
+  'conversation_ai_stale',
+  'conversation_turn_not_found',
+  /** Stop was requested for a turn that already finished. */
+  'conversation_turn_not_active',
+  /** Only the latest failed, stopped or interrupted turn can be retried. */
+  'conversation_turn_not_retryable',
 ] as const;
 
 export const conversationErrorCodeSchema = z.enum(conversationErrorCodes);

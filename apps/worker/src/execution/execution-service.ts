@@ -19,6 +19,10 @@ import {
   verifyGitIntegrity,
 } from '@ai-agent-manager/git';
 import {
+  createConversationTurnService,
+  type ConversationTurnService,
+} from '../conversations/conversation-turn-service.js';
+import {
   createPublicationService,
   type PublicationGit,
 } from '../publication/publication-service.js';
@@ -51,6 +55,15 @@ export type ExecutionServiceOptions = Omit<RunExecutorOptions, 'workerInstanceId
   cleanupGit?: Partial<WorkspaceCleanupGit>;
   /** @internal Tests only: replaces the process-group probe used before a recovered attempt. */
   probeProcessGroup?: (pid: number) => boolean;
+  /**
+   * Root of per-turn conversation scratch directories (C2). AI conversation turns are processed
+   * only when it is set; the worker sets it to `<data root>/conversation-scratch`.
+   */
+  conversationScratchRoot?: string;
+  /** The SQLite file, protected from overlapping scratch directories. */
+  databasePath?: string;
+  /** @internal Tests only: conversation turn timeout. */
+  conversationTurnTimeoutMs?: number;
 };
 
 export type ExecutionService = {
@@ -65,6 +78,8 @@ export type ExecutionService = {
   publicationsIdle: () => Promise<void>;
   /** Resolves when no worktree cleanup is running; exposed for tests. */
   cleanupsIdle: () => Promise<void>;
+  /** Resolves when no conversation turn is running; exposed for tests. */
+  conversationsIdle: () => Promise<void>;
   readonly activeRunCount: number;
 };
 
@@ -99,6 +114,25 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     now,
     git: options.cleanupGit,
   });
+  const conversations: ConversationTurnService | null =
+    options.conversationScratchRoot === undefined
+      ? null
+      : createConversationTurnService({
+          db,
+          logger,
+          workerInstanceId,
+          scratchRoot: options.conversationScratchRoot,
+          worktreeRoot: options.worktreeRoot,
+          ...(options.databasePath === undefined ? {} : { databasePath: options.databasePath }),
+          now,
+          ...(options.conversationTurnTimeoutMs === undefined
+            ? {}
+            : { turnTimeoutMs: options.conversationTurnTimeoutMs }),
+          ...(options.detectionOptions === undefined
+            ? {}
+            : { detectionOptions: options.detectionOptions }),
+          ...(options.limits === undefined ? {} : { limits: options.limits }),
+        });
   let timer: NodeJS.Timeout | undefined;
   let ticking = false;
   let accepting = false;
@@ -196,6 +230,8 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
       publications.poll();
       // Remove local worktree (TM-02): operator-confirmed requests only, one at a time.
       cleanups.poll();
+      // AI conversation turns (C2): operator-sent messages only; never tasks or Git.
+      conversations?.poll();
     } catch (error) {
       logger.error('Execution polling failed.', error);
     } finally {
@@ -219,6 +255,7 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     await reconcile();
     await publications.reconcile();
     await cleanups.reconcile();
+    conversations?.reconcile();
     accepting = true;
     timer = setInterval(() => void tick(), pollIntervalMs);
     timer.unref();
@@ -229,6 +266,7 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     if (timer !== undefined) clearInterval(timer);
     timer = undefined;
     await executor.stopAll('shutdown');
+    await conversations?.stopAll('shutdown');
     // A running publication finishes its current Git command sequence (bounded by Git timeouts)
     // before the lease is released; it is never abandoned mid-mutation by a graceful stop.
     await publications.idle();
@@ -243,6 +281,9 @@ export const createExecutionService = (options: ExecutionServiceOptions): Execut
     tick,
     publicationsIdle: publications.idle,
     cleanupsIdle: cleanups.idle,
+    conversationsIdle: async () => {
+      await conversations?.idle();
+    },
     get activeRunCount() {
       return executor.activeCount;
     },

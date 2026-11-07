@@ -22,12 +22,17 @@ const trustedLocalIssuerImport = {
   name: '@ai-agent-manager/agents/trusted-local-issuer',
   message: 'Only the orchestrator Trusted Local gate may register Trusted Local authorizations.',
 };
+const conversationIssuerImport = {
+  name: '@ai-agent-manager/agents/conversation-issuer',
+  message: 'Only the orchestrator conversation gate may register conversation turn authorizations.',
+};
 // Reaching into another package's sources bypasses its entry points (and the restrictions above).
 const agentsInternals = {
   group: ['**/agents/src/**', '**/agents/dist/**'],
   message: 'Import @ai-agent-manager/agents through its package entry points.',
 };
 const trustedLocalGateFile = 'packages/orchestrator/src/trusted-local-gate.ts';
+const conversationGateFile = 'packages/orchestrator/src/conversation-gate.ts';
 
 const webRequire = createRequire(new URL('./apps/web/package.json', import.meta.url));
 
@@ -89,11 +94,14 @@ export default defineConfig([
     // Production code launches agents only through `startAgentExecution`. The Trusted Local issuer
     // belongs to the orchestrator's Trusted Local gate alone.
     files: ['**/*.{js,mjs,cjs,ts,tsx,mts,cts}'],
-    ignores: ['packages/cli-diagnostics/**', trustedLocalGateFile],
+    ignores: ['packages/cli-diagnostics/**', trustedLocalGateFile, conversationGateFile],
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [...diagnosticsImports, trustedLocalIssuerImport], patterns: [agentsInternals] },
+        {
+          paths: [...diagnosticsImports, trustedLocalIssuerImport, conversationIssuerImport],
+          patterns: [agentsInternals],
+        },
       ],
     },
   },
@@ -102,7 +110,10 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: [trustedLocalIssuerImport], patterns: [agentsInternals] },
+        {
+          paths: [trustedLocalIssuerImport, conversationIssuerImport],
+          patterns: [agentsInternals],
+        },
       ],
     },
   },
@@ -114,7 +125,7 @@ export default defineConfig([
       'no-restricted-imports': [
         'error',
         {
-          paths: [...diagnosticsImports, trustedLocalIssuerImport],
+          paths: [...diagnosticsImports, trustedLocalIssuerImport, conversationIssuerImport],
           patterns: [
             agentsInternals,
             {
@@ -143,7 +154,17 @@ export default defineConfig([
     rules: {
       'no-restricted-imports': [
         'error',
-        { paths: diagnosticsImports, patterns: [agentsInternals] },
+        { paths: [...diagnosticsImports, conversationIssuerImport], patterns: [agentsInternals] },
+      ],
+    },
+  },
+  {
+    // The conversation gate alone registers conversation turn authorizations (C2).
+    files: [conversationGateFile],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        { paths: [...diagnosticsImports, trustedLocalIssuerImport], patterns: [agentsInternals] },
       ],
     },
   },

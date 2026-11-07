@@ -1,9 +1,11 @@
 import {
+  activeConversationTurnStatuses,
   addConversationNoteInputSchema,
   ConversationError,
   conversationIdSchema,
   conversationMessageIdSchema,
   createConversationInputSchema,
+  describeModelSelectionProblem,
   projectIdSchema,
   resolveConversationUpdate,
   updateConversationInputSchema,
@@ -13,25 +15,31 @@ import {
   type CreateConversationInput,
   type UpdateConversationInput,
 } from '@ai-agent-manager/core';
-import { and, asc, count, desc, eq, max } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, max } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
-import { conversationMessages, conversations, projects } from './schema.js';
+import { conversationMessages, conversations, conversationTurns, projects } from './schema.js';
 
-// C1 — AI Conversations persistence. Every read and command is scoped by the project ID as well
+// AI Conversations persistence (C1; C2 turns live in `conversation-turns.ts`). Every read and command is scoped by the project ID as well
 // as the conversation ID, so a conversation of another project is reported as missing and its
 // messages are never returned. Each command runs in one IMMEDIATE transaction. Nothing here
-// launches an agent, writes a worker command, touches a task or calls Git: C1 only stores
-// settings and operator notes.
+// launches an agent, writes a worker command, touches a task or calls Git.
 
 type Database = DatabaseConnection['db'];
-type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+/** @internal Shared with `conversation-turns.ts`. */
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
 
 export type ConversationRecord = typeof conversations.$inferSelect;
 export type ConversationMessageRecord = typeof conversationMessages.$inferSelect;
 export type ConversationSummaryRecord = ConversationRecord & { messageCount: number };
 
 const immediate = { behavior: 'immediate' } as const;
+
+/** A model that does not fit the selected runtime, reported on the `modelId` field. */
+const invalidModel = (message: string): ConversationError =>
+  new ConversationError('invalid_conversation_input', message, {
+    issues: [{ path: 'modelId', message }],
+  });
 
 const invalidInput = (error: z.ZodError): ConversationError =>
   new ConversationError(
@@ -40,16 +48,40 @@ const invalidInput = (error: z.ZodError): ConversationError =>
     { issues: error.issues.map(({ path, message }) => ({ path: path.join('.'), message })) },
   );
 
+/** @internal Shared with `conversation-turns.ts`. */
+export const hasActiveTurn = (db: Database | Transaction, conversationId: string): boolean =>
+  db
+    .select({ id: conversationTurns.id })
+    .from(conversationTurns)
+    .where(
+      and(
+        eq(conversationTurns.conversationId, conversationId),
+        inArray(conversationTurns.status, [...activeConversationTurnStatuses]),
+      ),
+    )
+    .get() !== undefined;
+
+/** @internal Shared with `conversation-turns.ts`. */
+export const activeTurnError = (): ConversationError =>
+  new ConversationError(
+    'conversation_turn_active',
+    'A reply is still pending in this conversation. Wait for it or stop it first.',
+  );
+
 const conversationNotFound = (): ConversationError =>
   new ConversationError('conversation_not_found', 'The conversation does not exist.');
 
 const projectNotFound = (): ConversationError =>
   new ConversationError('project_not_found', 'The project does not exist.');
 
-type Scope = { projectId: string; conversationId: string };
+export type Scope = { projectId: string; conversationId: string };
 
-/** Parses both IDs; a malformed ID cannot name an existing row, so it is reported as missing. */
-const parseScope = ({ projectId, conversationId }: Scope): Scope => {
+/**
+ * Parses both IDs; a malformed ID cannot name an existing row, so it is reported as missing.
+ *
+ * @internal Shared with `conversation-turns.ts`.
+ */
+export const parseScope = ({ projectId, conversationId }: Scope): Scope => {
   const project = projectIdSchema.safeParse(projectId);
   const conversation = conversationIdSchema.safeParse(conversationId);
   if (!project.success || !conversation.success) {
@@ -58,7 +90,8 @@ const parseScope = ({ projectId, conversationId }: Scope): Scope => {
   return { projectId: project.data, conversationId: conversation.data };
 };
 
-const findScoped = (
+/** @internal Shared with `conversation-turns.ts`. */
+export const findScoped = (
   db: Database | Transaction,
   { projectId, conversationId }: Scope,
 ): ConversationRecord | undefined =>
@@ -85,6 +118,10 @@ export const createConversation = (
     throw invalidInput(parsed.error);
   }
   const data = parsed.data;
+  const modelProblem = describeModelSelectionProblem(data.agentRuntime, data.modelId);
+  if (modelProblem !== null) {
+    throw invalidModel(modelProblem);
+  }
 
   return db.transaction((tx) => {
     const project = tx
@@ -220,6 +257,16 @@ export const updateConversation = (
       );
     }
     const changes = resolveConversationUpdate(current, parsed.data);
+    if (changes.agentRuntime !== undefined || changes.modelId !== undefined) {
+      // Checked only when the runtime or model changes, so a stored custom ID stays editable.
+      const problem = describeModelSelectionProblem(
+        changes.agentRuntime ?? current.agentRuntime,
+        changes.modelId === undefined ? current.modelId : changes.modelId,
+      );
+      if (problem !== null) {
+        throw invalidModel(problem);
+      }
+    }
     const updated = tx
       .update(conversations)
       .set({
@@ -243,7 +290,7 @@ export const updateConversation = (
   }, immediate);
 };
 
-type NewMessage = {
+export type NewMessage = {
   id: string;
   role: ConversationMessageRole;
   kind: ConversationMessageKind;
@@ -255,10 +302,12 @@ type NewMessage = {
 /**
  * The single place that appends to a history: allocates the next `sequence` of the conversation
  * and touches its activity timestamps. Must run inside the caller's IMMEDIATE transaction, which
- * has already verified the conversation's project. C1 calls it only for operator notes; C2 adds
- * CLI-backed `chat` messages through the same function, so both share one ordering.
+ * has already verified the conversation's project. Notes (C1) and CLI-backed `chat` messages (C2)
+ * both go through it, so they share one ordering.
+ *
+ * @internal Shared with `conversation-turns.ts`; not exported from the package.
  */
-const appendMessage = (
+export const appendMessage = (
   tx: Transaction,
   conversation: ConversationRecord,
   message: NewMessage,
@@ -339,6 +388,10 @@ export const addConversationNote = (
         );
       }
       return { message: existing, created: false };
+    }
+    // A note between a sent message and its reply would split the exchange (C2).
+    if (hasActiveTurn(tx, conversation.id)) {
+      throw activeTurnError();
     }
     const message = appendMessage(tx, conversation, {
       id: parsedId.data,

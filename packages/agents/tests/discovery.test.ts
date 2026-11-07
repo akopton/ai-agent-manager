@@ -81,7 +81,8 @@ test('discovers Claude Code on the search path and records its version and optio
     const capabilities = claudeAdapter.capabilities(installation);
     assert.equal(capabilities.explicitModelSelection, true);
     assert.equal(capabilities.reportedModelMetadata, true);
-    assert.equal(capabilities.conversationMode, 'not_implemented');
+    // The minimal help above lacks the conversation profile's options.
+    assert.equal(capabilities.conversationMode, false);
     assert.equal(capabilities.sessionResume.status, 'unverified');
   });
 });

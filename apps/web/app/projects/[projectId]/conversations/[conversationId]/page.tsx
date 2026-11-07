@@ -4,14 +4,17 @@ import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { ArrowLeft } from 'lucide-react';
 
+import { ConversationAutoRefresh } from '@/components/conversations/conversation-auto-refresh';
 import { ConversationHistory } from '@/components/conversations/conversation-history';
-import { NotesOnlyNotice } from '@/components/conversations/conversation-notice';
+import { ConversationAiNotice } from '@/components/conversations/conversation-notice';
 import { ConversationSettingsForm } from '@/components/conversations/conversation-settings-form';
 import { MessageComposer } from '@/components/conversations/message-composer';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { conversationsUrl, describeLanguageMode, describeModel } from '@/lib/conversations/format';
+import { conversationsUrl, describeLanguageMode } from '@/lib/conversations/format';
+import { hasActiveTurn } from '@/lib/conversations/transcript';
+import { describeModelChoice } from '@/lib/models/model-selection';
 import { findConversationDetail } from '@/lib/server/conversations';
 import { getDatabase } from '@/lib/server/database';
 import { loadForPage } from '@/lib/server/load';
@@ -37,9 +40,12 @@ const ConversationPage = async ({
     notFound();
   }
 
-  const { project, conversation, messages } = result.data;
+  const { project, conversation, messages, turns, ai } = result.data;
+  const active = hasActiveTurn(turns);
+  const model = describeModelChoice(conversation.agentRuntime, conversation.modelId);
   return (
     <>
+      <ConversationAutoRefresh active={active} />
       <section aria-labelledby="page-title" className="space-y-3">
         <Button asChild variant="ghost" size="sm" className="-ml-2.5">
           <Link href={conversationsUrl(project.id)}>
@@ -57,7 +63,7 @@ const ConversationPage = async ({
           </div>
           <div className="flex min-w-0 gap-2">
             <dt className="text-muted-foreground">Model</dt>
-            <dd className="font-medium break-all">{describeModel(conversation.modelId)}</dd>
+            <dd className="font-medium break-all">{model}</dd>
           </div>
           <div className="flex gap-2">
             <dt className="text-muted-foreground">Language</dt>
@@ -66,17 +72,29 @@ const ConversationPage = async ({
         </dl>
       </section>
 
-      <NotesOnlyNotice />
+      <ConversationAiNotice ai={ai} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <section aria-labelledby="history-title" className="min-w-0 space-y-4">
           <h2 id="history-title" className="sr-only">
             History
           </h2>
-          <ConversationHistory messages={messages} />
+          <ConversationHistory
+            projectId={project.id}
+            conversationId={conversation.id}
+            messages={messages}
+            turns={turns}
+            ai={ai}
+          />
           <Card>
             <CardContent>
-              <MessageComposer projectId={project.id} conversationId={conversation.id} />
+              <MessageComposer
+                projectId={project.id}
+                conversationId={conversation.id}
+                aiEnabled={ai.enabled}
+                turnActive={active}
+                target={`${agentRuntimeLabels[conversation.agentRuntime]} · ${model} · ${describeLanguageMode(conversation.languageMode)}`}
+              />
             </CardContent>
           </Card>
         </section>
@@ -87,7 +105,8 @@ const ConversationPage = async ({
               <h2>Settings</h2>
             </CardTitle>
             <CardDescription>
-              Used for future replies. Changing them never alters saved notes.
+              Used for the next message sent to the AI. Earlier messages and replies keep the
+              settings that produced them.
             </CardDescription>
           </CardHeader>
           <CardContent>

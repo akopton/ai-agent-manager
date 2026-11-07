@@ -25,7 +25,8 @@ const definition: CliDefinition = {
   helpArguments: ['exec', '--help'],
   // The profile already contains `--json`; no further output options are needed.
   requiredOptions: securityProfile.launchArguments.filter((argument) => argument.startsWith('--')),
-  optionalOptions: ['--model'],
+  // Conversation Mode (C2) options are recorded so `prepareConversationTurn` can require them.
+  optionalOptions: ['--model', '--ephemeral', '--skip-git-repo-check'],
   // Location of Codex's own configuration and login; never API keys.
   environmentNames: ['CODEX_HOME'],
 };
@@ -210,7 +211,9 @@ export const codexAdapterSpecification: AdapterSpecification = {
   capabilities: (installation) => ({
     runtime: 'codex',
     executionMode: true,
-    conversationMode: 'not_implemented',
+    conversationMode: ['--ephemeral', '--skip-git-repo-check'].every((option) =>
+      installation.detectedOptions.includes(option),
+    ),
     structuredEvents: true,
     explicitModelSelection: installation.detectedOptions.includes('--model'),
     sessionIdReporting: true,
