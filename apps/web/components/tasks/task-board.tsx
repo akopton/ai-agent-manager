@@ -1,6 +1,6 @@
 import { taskStatusLabels, type Task, type TaskStatus } from '@ai-agent-manager/core';
 
-import { taskStatusDotClassName } from '@/components/tasks/task-badges';
+import { taskStatusStyle } from '@/lib/tasks/status-style';
 import { TaskCard } from '@/components/tasks/task-card';
 import { cn } from '@/lib/utils';
 import type { TaskRecoveryOptions } from '@/lib/tasks/recovery';
@@ -55,7 +55,9 @@ const BoardColumn = ({
       <div className="min-w-0 space-y-0.5">
         <div className="flex items-center gap-2">
           <span
-            className={cn('size-1.5 shrink-0 rounded-full', taskStatusDotClassName[status])}
+            className="size-1.5 shrink-0 rounded-full bg-[var(--task-status-color)]"
+            data-task-status={status}
+            style={taskStatusStyle(status)}
             aria-hidden="true"
           />
           <h3 id={`column-${status}`} className="text-sm font-semibold">
@@ -116,7 +118,7 @@ export const TaskBoard = ({
       <div
         role="group"
         aria-label="Main flow"
-        className="-mx-6 grid snap-x scroll-px-6 auto-cols-[minmax(15rem,80%)] grid-flow-col gap-3 overflow-x-auto px-6 pb-2 sm:auto-cols-[minmax(15rem,45%)] lg:mx-0 lg:grid-flow-row lg:grid-cols-5 lg:scroll-px-0 lg:overflow-visible lg:px-0"
+        className="-mx-4 grid snap-x scroll-px-4 auto-cols-[minmax(15rem,80%)] grid-flow-col gap-3 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:scroll-px-6 sm:px-6 sm:auto-cols-[minmax(15rem,45%)] lg:mx-0 lg:grid-flow-row lg:grid-cols-5 lg:scroll-px-0 lg:overflow-visible lg:px-0"
       >
         {primaryBoardStatuses.map((status) => (
           <BoardColumn

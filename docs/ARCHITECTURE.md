@@ -1271,3 +1271,100 @@ The existing proposal-batch navigation remains. Chat gains no autofocus. Pane he
 coordinates to avoid resizing as the outer page scrolls, fits the desktop viewport, and keeps a
 384px floor for small windows. Existing tall mobile navigation retains normal outer page access;
 Chat history remains local once reached. No dependencies or backend changes are needed.
+
+
+## 19. UI-04C — Message and task presentation (2026-11-07)
+
+ConversationHistory nests ReplySources and ReplyTaskActions in the assistant article, retaining
+stable list-item anchors and completed-turn eligibility. The footer keeps sourceMessageId,
+request-ID retries and generation lookup by source; a synchronous submit ref also prevents
+same-tick duplicates. Focus is local and disabled during submission. Existing batch hashes switch
+to Tasks through ConversationViews. Message and batch links both update native History through
+Next's integration so subsequent proposal mutations/refreshes retain the current fragment; retrieval, context assembly and authorization are unchanged.
+Sources retains buildSourcesView provenance and adds explicit line ranges and verification wording.
+TaskProposalCard uses a 240-character collapsed prompt with a deliberate accessible expand control;
+its original editor and approval commands remain unchanged.
+
+TaskEditLink reuses server-derived editability above and after the prompt, including archive
+restrictions. TaskOrigin receives findTaskProposalOrigin's read-only projection through the task
+page: task/proposal project checks, project-scoped conversation and generation joins, assistant/chat
+message identity, SQL substr capped at 601 characters (600 plus a truncation sentinel). It reads
+one historical reply, never a whole transcript or generation prompt, and writes no new persisted
+data. Missing joins produce nullable preview fields; legacy origins retain conversation navigation.
+
+lib/tasks/status-style centralizes semantic CSS variables for every TaskStatus and derives action
+destinations from core.taskTransitions. LifecycleButton and Kanban column dots consume the same
+taskStatusStyle; the shared button lifecycle variant supplies tinted fill, border, hover and focus.
+Queue/Backlog, recovery triggers/confirmation, Request Changes and asynchronous Start reuse it.
+Stop/Discard keep destructive semantics. No new status transition, API, dependency, migration,
+worker, source access, execution or publishing behavior is introduced. UI-04D remains next.
+
+
+**UI-04C workspace-density acceptance follow-up.** AppShell delegates only its main container
+to a small client WorkspaceContent boundary. usePathname selects wide project board/conversation
+routes via the tested isWideWorkspace predicate, so client navigation changes width without
+stretching settings, task detail/review or standalone creation forms. Server content remains
+server-rendered children. No global CSS or theme tokens change. Wide routes remove max-w-6xl
+and reduce gutters; Kanban's negative margins/scroll padding match those responsive gutters.
+Conversation layout uses a 15rem sidebar with a 1rem gap; native settings stay on demand and the
+compact header keeps Project-Aware visible. Reply widths use 90ch at text-sm for reading comfort.
+
+ConversationChat retains document-relative top measurement, ResizeObserver, the 384px minimum
+and existing scroll controller; its bottom allowance becomes 16px. The separate compact composer
+uses two initial rows and a 45% maximum pane share, with internal overflow for resized inputs or
+feedback. Its accessible form name retains the recipient; visible hints avoid repeating header
+metadata. Notes keep four rows. Existing context/consent details and all API behavior remain.
+
+
+**UI-04C unified-geometry/panel correction (supersedes the initial density implementation).**
+WorkspaceContent is now a server-rendered shared main boundary without route-specific outer
+widths. lib/layout owns gutters, spacing and content-width classes; AppShell uses the same gutter
+for its top bar. PageContent limits only internal columns. ProjectContent selects reading/form
+widths for tasks/settings below the unchanged shared project header; global App Settings uses
+the form primitive. No feature container can center or move shared navigation. Root scrollbar-gutter
+is stable. Projects uses an explicit minmax(0, 1fr) grid track so long repository paths fit phones.
+
+ConversationViews owns one measured workspace height for every view (document-relative top,
+16px bottom allowance, 520px minimum). Its persistent header/title and fixed-width settings button
+sit above the shared Radix tab list. A local settings mode hides the view panels and shows the
+existing settings form in the content area; all stay mounted, preserving in-flight operations,
+form drafts and local positions. Source/batch navigation exits settings. Settings state is local,
+while the existing tab query/history and stable fragments remain authoritative navigation.
+ConversationPanel provides flex/min-height:0 boundaries, one focusable history scroller and an
+optional separate bounded composer. Chat reuses its existing controller and ResizeObserver for
+latest/following/anchors, delegating sizing to the shared frame. Tasks anchors use relative offsets
+inside the proposal scroller; the page is never scrolled by a proposal link. User scroll position
+is restored on return instead of repeatedly applying an already handled batch fragment.
+
+ConversationAiNotice now presents only actionable blockers outside the history. The existing
+App Settings consent card, anchored #ai-conversations, owns the explanation and versioned global
+acceptance/revocation controls. Project Settings retains #source-sharing and its repository-bound
+permission. No backend, schema, consent version, retrieval, lifecycle or execution change.
+
+**UI-04C persistent project shell and task-header acceptance fix (2026-11-08).**
+AppShell is viewport-height from the md breakpoint: its fixed-size top bar and sidebar surround
+min-height:0 flex/grid content. WorkspaceContent keeps shared geometry and delegates existing
+project descendants to their workspace; ordinary global pages scroll in main. The shared project
+layout renders one fixed header followed by ProjectContent as flex:1/min-height:0. Standard routes
+use its focusable overflow-y:auto viewport, retaining PageContent's internal reading/form widths.
+Conversations uses overflow:hidden at that boundary and delegates scrolling to its existing panes.
+ConversationRouteContent provides one scroller for list/new routes and none around detail panes;
+ConversationsLayout has explicit minmax(0,1fr) rows/columns. ConversationViews now fills this shared
+height rather than independently measuring document offsets. Small-screen conversation lists have
+a bounded independent scroller. Dialogs retain their existing portals.
+
+createProjectContentScroll restores per-path in-memory offsets and relative fragment anchors.
+Mutation/resize observers allow targets to arrive after streamed placeholders. Non-fragment
+restoration ends when its target is reached; anchors follow delayed layout until manual scrolling.
+Expected programmatic offsets distinguish restoration from operator movement. No persistence or
+commands are added. Phones keep normal outer access to the tall application shell, with an 800px
+project frame; this is the deliberate narrow-screen exception rather than a global overflow lock.
+
+TaskHeader uses an explicit lg grid: minmax(0,1fr) identity column plus a 24rem action column with
+a 160px minimum height. Below lg it stacks in a single column. Action content may expand for
+feedback without moving its desktop origin or overlapping the title. TaskExecutionActions extracts
+the existing Start/Stop request UI unchanged; Task Details renders it once in the header and sets
+TaskExecutionPanel.showActions=false. Other panel callers keep the default inline controls.
+Polling and execution/status explanations remain in the panel; request errors stay with the
+controls. Queue/Return, recovery, archive, Edit and review links keep their existing components,
+gates and styles. No backend, lifecycle, worktree, Git or execution behavior change.

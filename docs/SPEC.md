@@ -796,3 +796,112 @@ place. Pane height fits the available desktop viewport with a 384px readability 
 existing tall mobile/short-window chrome can require ordinary page scrolling to reach Chat.
 Once reached, browsing history does not move the page or composer. Oversized composer content
 can scroll within its own bounded footer. No API, persistence, context or execution behavior changes.
+
+
+## 21. UI-04C — Message & Task UX Polish (2026-11-07)
+
+Supersedes the earlier deferred UI-04C placement notes; UI-04A and UI-04B are operator accepted.
+Eligible completed assistant replies contain Generate tasks and optional Focus inside a compact
+message footer, alongside request progress/errors and View proposals in Tasks. Focus belongs to
+that response; generation remains explicit, source-only and idempotent. Ordinary answers never
+create tasks. Existing message/batch anchors, tab state and scroll-to-latest behavior remain.
+
+Sources is a subordinate, initially collapsed “N sources” disclosure inside the reply. It shows
+repository-relative references, line ranges, available tracked/modified/untracked state, capture
+hashes/times, HEAD provenance and existing warnings. Retrieved excerpts are distinguished from
+claims not verified by the supplied context. Retrieval, budgets and consent are unchanged.
+
+Proposal cards retain Draft/Approved/Rejected labels, AI suggestion/Edited by you, original values,
+revision-guarded editing, source links, validation and explicit Approve to Backlog. Prompts show
+at most 240 characters initially, with Expand prompt/Show less; Edit exposes the full prompt.
+Approval still creates exactly one Backlog task without authorizing execution.
+
+Task Details repeats its permitted Edit task/Change priority link after the prompt. Origin shows
+a source conversation link, an exact assistant-message anchor where available, and at most 600
+characters of plain historical conversation content. Missing/legacy origins degrade to a
+conversation link or unavailable text. No task record duplicates history or source contents.
+
+Lifecycle buttons use their destination status's semantic token, shared with Kanban indicators:
+Queue, Retry, Resume and Request Changes → Queued; Return to Backlog → Backlog; Start → In Progress.
+Start remains an asynchronous request and states that the task stays Queued until worker acceptance.
+Destructive actions keep their destructive treatment; other controls retain their normal semantics.
+Tokens are independent of Violet/Ocean/Teal/Amber, with visible focus, hover and disabled states.
+
+UI-04D is next: explicit message/note references, composer chips and final polish. Attachments,
+permanent deletion, scheduler, workspace file transfer and execution/authorization changes remain deferred.
+
+
+### UI-04C acceptance follow-up — Workspace density
+
+Project Conversations (including list/new/detail) and Kanban use the available workspace width,
+with 24px desktop/tablet and 16px phone gutters. Task Details/review and settings/creation forms
+retain the existing reading-width container. Wide chat viewports keep assistant/user message
+cards bounded to 90ch at body-text size; code blocks scroll within their card.
+
+Project navigation is compact on desktop. Conversation headers keep a prominent title and a
+short runtime/model/context summary; Project-Aware remains explicitly labelled. Language and
+editable settings remain in the existing keyboard-accessible on-demand disclosure. Blocked
+source-sharing consent remains visible and enforced. Chat tabs, transcript and composer use
+smaller gaps, a shorter initially two-row chat input, and less repeated guidance. Notes retain
+their existing input size. The composer remains separate from transcript scrolling, with no
+fixed overlay. Existing anchors, source/proposal links, tab state and scrolling rules remain.
+The accepted tall mobile application shell can still require ordinary page scrolling to Chat.
+This is a UI-04C acceptance correction; UI-04D is not implemented.
+
+
+### UI-04C acceptance correction — Unified outer geometry and conversation panels
+
+This supersedes the earlier route-specific outer-width correction and native Conversation Settings
+placement above. Historical UI-04A/B behavior and milestone numbering remain recorded.
+
+Every major page uses the same outer application boundary, 16px phone / 24px larger-screen gutters
+and 16px top padding. Global Overview, Projects and App Settings align identically. The project
+header/navigation sits outside feature-specific reading/form columns, at the same coordinates in
+Overview, Kanban, Conversations and Project Settings. Internal task/detail and settings columns
+retain reading/form limits without centering or repositioning shared navigation. The application
+sidebar is unchanged; stable scrollbar gutters prevent navigation shifts as page length changes.
+
+Each selected conversation has one persistent title/runtime/model/context header and one stable
+top-right settings control. Long titles are bounded to two displayed lines with their full title
+available. Settings opens in the main panel and changes the same control to **Back to chat**;
+return restores the previously selected Chat, Tasks or Notes view. Settings, view contents and
+drafts stay mounted. Existing validation, revisions, runtime/model/language/context controls remain.
+
+Chat, Tasks, Notes and Conversation Settings share a bounded frame with stable view navigation.
+Message history, proposal generations/cards/editors, saved notes and settings each scroll in their
+own designated content region; reading them and switching views never scrolls the outer page.
+Chat and note composers remain below their history regions; oversized footer content can scroll
+internally. Useful per-view positions and existing initial-latest/near-bottom chat behavior remain.
+Explicit message/batch anchors scroll only their relevant region. A 520px minimum keeps small
+windows usable; the existing tall phone application shell can require initial outer scrolling to
+reach the workspace, after which its views scroll locally.
+
+General AI explanation and consent are in **App Settings → AI Conversations**. Project-specific
+repository/source-sharing disclosure and consent remain in **Project Settings**. The conversation
+header retains Project-Aware mode; only small actionable consent blockers appear outside the
+transcript, linking to the relevant settings. Nothing grants or merges permissions, and disclosure
+versions, source retrieval, execution, authorization and lifecycle behavior do not change.
+UI-04D remains deferred; UI-04C still awaits operator acceptance.
+
+### UI-04C acceptance fix — Persistent project navigation and task actions (2026-11-08)
+
+The operator confirmed the Conversations behavior. UI-04C overall remains under review.
+Project pages now share a bounded desktop workspace beneath the single persistent project header
+and Overview / Kanban / Conversations / Settings navigation. Standard Overview, Kanban, Settings,
+Task Details/Edit/Review and other nested project routes scroll in that shared content viewport;
+the application sidebar and project navigation stay visible. Conversations delegates directly to
+its accepted individual panes, without another page scrollbar. Existing outer gutters, internal
+reading widths, active project sections and deep links remain.
+
+Task Details uses a dedicated action column separate from title/status metadata at viewport widths
+of 1024px and above. Queue, Return to Backlog, Start/Stop and other eligible controls share the
+header region. Long titles and changing labels/counts cannot wrap it beneath the title. Below
+1024px, title then actions stack deliberately. The lower Edit link is retained. All eligibility,
+permission checks, request feedback, polling and asynchronous execution semantics are unchanged;
+Queue alone never requests execution.
+
+On phones, the existing tall application navigation remains in normal document flow. An 800px
+project frame provides a readable local content region; initial outer scrolling may be needed to
+reach it, particularly in short windows. Reading project content then scrolls locally. Standard
+page anchors and useful in-memory route positions restore inside the viewport, including streamed
+loading states, and yield to operator scrolling. No global body overflow lock is introduced.

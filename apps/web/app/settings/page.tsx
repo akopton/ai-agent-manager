@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 
+import { PageContent } from '@/components/page-content';
 import { ConversationAiSettings } from '@/components/conversations/conversation-ai-settings';
 import { TrustedLocalSettings } from '@/components/execution/trusted-local-settings';
 import { AccentThemeSelector } from '@/components/settings/accent-theme-selector';
@@ -103,7 +104,7 @@ const TrustedLocalCard = ({ settings }: { settings: ExecutionSettingsView }) => 
 const ConversationAiCard = ({ settings }: { settings: ConversationSettingsView }) => {
   const stale = settings.enabled && !settings.current;
   return (
-    <Card>
+    <Card id="ai-conversations">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <h2>{settings.disclosure.title}</h2>
@@ -135,6 +136,12 @@ const ConversationAiCard = ({ settings }: { settings: ConversationSettingsView }
             </AlertDescription>
           </Alert>
         ) : null}
+        <p className="text-sm leading-6 text-muted-foreground">
+          Messages and earlier chat go to the selected CLI under your local login; notes stay here.
+          Claude Code uses disabled tools and Codex uses its read-only sandbox. These are CLI
+          settings, not OS-enforced isolation. Conversations never execute or publish tasks.
+          Project-Aware source sharing is controlled separately in Project Settings.
+        </p>
         <ul className="list-disc space-y-2 pl-5 text-sm leading-6">
           {settings.disclosure.statements.map((statement) => (
             <li key={statement}>{statement}</li>
@@ -159,7 +166,7 @@ const SettingsPage = async () => {
   });
 
   return (
-    <>
+    <PageContent width="form">
       <section aria-labelledby="page-title" className="space-y-2">
         <h1 id="page-title" className="text-3xl font-semibold tracking-tight">
           App Settings
@@ -180,7 +187,7 @@ const SettingsPage = async () => {
       ) : (
         <DatabaseNotReady message={result.message} />
       )}
-    </>
+    </PageContent>
   );
 };
 

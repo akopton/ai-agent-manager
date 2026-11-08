@@ -273,16 +273,17 @@ test('the list shows title, runtime, model, language and message count, linking 
   assert.match(html, /1 message</);
 });
 
-test('the notice never claims isolation and points to the separate consent when off', () => {
-  const on = render(createElement(ConversationAiNotice, { ai }));
-  assert.match(on, /Planning conversation/);
-  assert.match(on, /not OS-enforced isolation/);
-  assert.match(on, /never create tasks, worktrees, commits or pushes/);
-  assert.doesNotMatch(on, /\bsandboxed\b|\bisolated\b|read-only conversation/i);
+test('conversation notices show actionable blockers without duplicating the global disclosure', () => {
+  assert.equal(render(createElement(ConversationAiNotice, { ai })), '');
   const off = render(createElement(ConversationAiNotice, { ai: aiOff }));
   assert.match(off, /AI replies are off/);
-  assert.match(off, /href="\/settings"/);
-  assert.match(off, /Task execution consent does not enable conversations/);
+  assert.match(off, /href="\/settings#ai-conversations"/);
+  assert.doesNotMatch(off, /Planning conversation|scratch directory|OS-enforced/);
+  const blocked = render(
+    createElement(ConversationAiNotice, { ai, projectId, sourceBlocked: true }),
+  );
+  assert.match(blocked, new RegExp(`href="/projects/${projectId}/settings#source-sharing"`));
+  assert.match(blocked, /Project-Aware source sharing is not allowed yet/);
 });
 
 test('the new conversation form defaults to Claude Code, Default model and pl_technical_en', () => {
@@ -353,6 +354,16 @@ test('the composer sends to the AI by default and keeps notes clearly separate',
   assert.match(html, /Notes are not sent/);
   assert.match(html, /0 \/ 20,000 characters/);
   assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Send/);
+});
+
+test('compact Chat retains its accessible label and leaves Notes at its existing input size', () => {
+  const chat = composer();
+  const note = composer({ mode: 'note' });
+  assert.match(chat, /<label[^>]*class="[^"]*sr-only[^"]*"[^>]*>Message to the AI<\/label>/);
+  assert.match(chat, /rows="2"/);
+  assert.match(chat, /Ctrl\/⌘ \+ Enter submits/);
+  assert.match(note, /rows="4"/);
+  assert.match(note, /New note/);
 });
 
 test('AI-off Chat links to Settings; Notes remains local and secondary', () => {

@@ -1,6 +1,7 @@
 import { Suspense, type ReactNode } from 'react';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
+import { ConversationRouteContent } from '@/components/conversations/conversation-route-content';
 import { ConversationNavigation } from '@/components/conversations/conversation-navigation';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { getProjectConversations } from '@/lib/server/conversations';
@@ -20,11 +21,11 @@ const ConversationsLayout = async ({
   if (!result.ok) return <DatabaseNotReady message={result.message} />;
   if (result.data === undefined) notFound();
   return (
-    <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[17rem_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] items-start gap-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)]">
       <Suspense>
         <ConversationNavigation projectId={projectId} conversations={result.data.conversations} />
       </Suspense>
-      <div className="min-w-0 space-y-6">{children}</div>
+      <ConversationRouteContent>{children}</ConversationRouteContent>
     </div>
   );
 };

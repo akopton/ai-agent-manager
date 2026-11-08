@@ -11,11 +11,11 @@ import { buildSourcesView } from '@/lib/conversations/sources';
 export const ReplySources = ({ record }: { record: RepositoryContextRecord }) => {
   const view = buildSourcesView(record);
   return (
-    <details className="max-w-[92%] min-w-0 rounded-xl border bg-inset/60 px-3 py-2 text-xs">
-      <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1">
+    <details className="mt-3 min-w-0 rounded-lg border bg-inset/40 px-3 py-1 text-xs">
+      <summary className="flex min-h-9 cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none">
         <FileCode2 className="size-3.5 self-center text-primary" aria-hidden="true" />
         <span className="font-semibold text-foreground">
-          Sources ({view.items.length === 1 ? '1 excerpt' : `${view.items.length} excerpts`})
+          {view.items.length} {view.items.length === 1 ? 'source' : 'sources'}
         </span>
         <span className="text-muted-foreground">
           {record.sourceMode === 'working_tree' ? 'HEAD reference' : 'commit'}{' '}
@@ -29,12 +29,16 @@ export const ReplySources = ({ record }: { record: RepositoryContextRecord }) =>
           </span>
         ) : null}
       </summary>
+      <p className="mt-2 leading-5 text-muted-foreground">
+        Retrieved excerpts referenced for this reply. Other claims have not been verified by this
+        context.
+      </p>
       {view.items.length === 0 ? null : (
         <ul className="mt-2 space-y-1" aria-label="Supplied excerpts">
           {view.items.map((item) => (
             <li key={item.reference} className="flex flex-wrap gap-x-2">
               <span className="font-mono break-all text-foreground">{item.reference}</span>
-              <span className="text-muted-foreground">{item.detail}</span>
+              <span className="min-w-0 break-all text-muted-foreground">{item.detail}</span>
             </li>
           ))}
         </ul>

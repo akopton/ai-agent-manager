@@ -46,6 +46,7 @@ import {
 } from '@/lib/conversations/contracts';
 import { apiErrorResponseSchema, projectResponseSchema } from '@/lib/projects/contracts';
 import { closeDatabase, getDatabase } from '@/lib/server/database';
+import { findTaskOrigin } from '@/lib/server/task-proposals';
 import { taskListResponseSchema } from '@/lib/tasks/contracts';
 import {
   createFixtureDirectory,
@@ -726,4 +727,24 @@ test('C3.1: only completed AI replies are sources; regeneration from the same re
     params({ projectId: setup.projectId }),
   );
   assert.equal(taskListResponseSchema.parse(await listed.json()).tasks.length, 0);
+});
+
+test('UI-04C: origin preview is bounded, historical, source-specific and project-scoped', async () => {
+  const setup = await setUp();
+  const foreign = await setUp();
+  await enableAi();
+  const text = 'Historical assistant content. '.repeat(100);
+  const sourceMessageId = await discuss(setup, text);
+  await generate(setup, [parsed(1)]);
+  const [proposal] = (await listProposals(setup)).proposals;
+  assert.ok(proposal);
+  const approved = await action(approveRoute, setup, proposal.id, 'approve', { revision: 1 });
+  const { task } = approveTaskProposalResponseSchema.parse(await approved.json());
+  await discuss(setup, 'Later reply must not replace the original preview.');
+  const preview = findTaskOrigin(getDatabase(), setup.projectId, task.id);
+  assert.equal(preview?.sourceMessageId, sourceMessageId);
+  assert.equal(preview?.excerpt, text.slice(0, 601));
+  assert.equal(preview?.conversationTitle, 'Plan');
+  assert.equal(findTaskOrigin(getDatabase(), foreign.projectId, task.id), undefined);
+  assert.equal(findTaskOrigin(getDatabase(), setup.projectId, randomUUID()), undefined);
 });

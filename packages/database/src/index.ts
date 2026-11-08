@@ -227,6 +227,7 @@ export {
   approveTaskProposal,
   findTaskProposal,
   findTaskProposalByTask,
+  findTaskProposalOrigin,
   listTaskProposals,
   rejectTaskProposal,
   reopenTaskProposal,

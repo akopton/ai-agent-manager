@@ -5,6 +5,8 @@ import { runInNewContext } from 'node:vm';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { LifecycleButton } from '@/components/tasks/lifecycle-button';
+import { taskActions } from '@ai-agent-manager/core';
 import { AccentThemeSelector } from '@/components/settings/accent-theme-selector';
 import {
   accentThemeAttribute,
@@ -193,4 +195,40 @@ test('the selector offers each theme as an accessible radio with a scoped swatch
 test('the cursor contract covers enabled controls and marks disabled ones', () => {
   assert.match(css, /button:not\(:disabled\),[\s\S]*?\{\s*cursor: pointer;/);
   assert.match(css, /button:disabled,[\s\S]*?\{\s*cursor: not-allowed;/);
+});
+
+test('lifecycle text meets AA on its strongest tint across themes and elevated cards', () => {
+  const root = rootTokens();
+  const rgb = (hex: string) =>
+    [1, 3, 5].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16));
+  const mix = (foreground: string, background: string, amount: number) => {
+    const a = rgb(foreground);
+    return (
+      '#' +
+      rgb(background)
+        .map((channel, index) =>
+          Math.round(channel * (1 - amount) + a[index]! * amount)
+            .toString(16)
+            .padStart(2, '0'),
+        )
+        .join('')
+    );
+  };
+  for (const action of taskActions) {
+    if (action === 'stop' || action === 'discard') continue;
+    const html = renderToStaticMarkup(createElement(LifecycleButton, { action }, action));
+    const token = /--task-status-color:var\((--[a-z-]+)\)/.exec(html)?.[1];
+    assert.ok(token);
+    const color = root.get(token);
+    assert.ok(color);
+    for (const theme of accentThemes) {
+      assert.equal(themeBlock(theme).has(token), false);
+      for (const surface of ['--background', '--card', '--elevated']) {
+        assert.ok(
+          contrast(color, mix(color, root.get(surface)!, 0.06)) >= 4.5,
+          `${theme} ${action} on ${surface}`,
+        );
+      }
+    }
+  }
 });

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { AlertCircle, AlertTriangle, ListRestart, Loader2, Play, Square } from 'lucide-react';
+import { AlertTriangle, ListRestart, Loader2 } from 'lucide-react';
 import {
   reviewStatusLabels,
   taskRecoveryKindLabels,
@@ -13,15 +13,10 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { TaskExecutionActions } from '@/components/execution/task-execution-actions';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { requestJson, type ClientError } from '@/lib/projects/api-client';
 import { formatTimestamp } from '@/lib/projects/format';
-import {
-  taskExecutionResponseSchema,
-  type TaskExecutionView,
-  type TaskRunView,
-} from '@/lib/execution/contracts';
+import { type TaskExecutionView, type TaskRunView } from '@/lib/execution/contracts';
 import { describeIntegrity, describeRunOutcome, shouldPollExecution } from '@/lib/execution/format';
 
 const refreshIntervalMs = 2_000;
@@ -79,6 +74,7 @@ type TaskExecutionPanelProps = {
   projectId: string;
   task: { id: string; status: TaskStatus };
   execution: TaskExecutionView;
+  showActions?: boolean;
 };
 
 /**
@@ -86,10 +82,13 @@ type TaskExecutionPanelProps = {
  * refreshes from the server while a start request is pending or a run is active; the database is
  * the source of truth, not this component.
  */
-export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecutionPanelProps) => {
+export const TaskExecutionPanel = ({
+  projectId,
+  task,
+  execution,
+  showActions = true,
+}: TaskExecutionPanelProps) => {
   const router = useRouter();
-  const [pending, setPending] = useState<'start' | 'stop' | null>(null);
-  const [error, setError] = useState<ClientError | null>(null);
   const [latest, ...earlier] = execution.runs;
   const polling = shouldPollExecution(execution);
 
@@ -98,19 +97,6 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
     const timer = setInterval(() => router.refresh(), refreshIntervalMs);
     return () => clearInterval(timer);
   }, [polling, router]);
-
-  const send = async (command: 'start' | 'stop') => {
-    setPending(command);
-    setError(null);
-    const result = await requestJson(
-      'POST',
-      `/api/projects/${projectId}/tasks/${task.id}/${command}`,
-      taskExecutionResponseSchema,
-    );
-    setPending(null);
-    if (!result.ok) setError(result.error);
-    router.refresh();
-  };
 
   const command = execution.lastCommand;
   const startRequested = command?.status === 'pending';
@@ -148,33 +134,14 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
-        <div className="flex flex-wrap gap-2">
-          {canStart ? (
-            <Button type="button" disabled={pending !== null} onClick={() => void send('start')}>
-              {pending === 'start' ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Play aria-hidden="true" />
-              )}
-              Start execution
-            </Button>
-          ) : null}
-          {canStop ? (
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={pending !== null}
-              onClick={() => void send('stop')}
-            >
-              {pending === 'stop' ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Square aria-hidden="true" />
-              )}
-              Stop
-            </Button>
-          ) : null}
-        </div>
+        {showActions ? (
+          <TaskExecutionActions projectId={projectId} task={task} execution={execution} />
+        ) : null}
+        {canStart ? (
+          <p className="text-xs text-muted-foreground">
+            Start requests execution. The task stays Queued until the worker accepts it.
+          </p>
+        ) : null}
         {pendingChangeRequest !== undefined && task.status === 'queued' ? (
           <Alert>
             <ListRestart aria-hidden="true" />
@@ -265,15 +232,6 @@ export const TaskExecutionPanel = ({ projectId, task, execution }: TaskExecution
             <AlertTitle>The last start request was not executed</AlertTitle>
             <AlertDescription>
               <p>{command.resultMessage ?? command.resultCode}</p>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        {error !== null ? (
-          <Alert variant="destructive" role="alert">
-            <AlertCircle aria-hidden="true" />
-            <AlertTitle>The request was not accepted</AlertTitle>
-            <AlertDescription>
-              <p>{error.message}</p>
             </AlertDescription>
           </Alert>
         ) : null}

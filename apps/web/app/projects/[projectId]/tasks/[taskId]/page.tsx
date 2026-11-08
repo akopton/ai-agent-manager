@@ -3,9 +3,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import type { ReactNode } from 'react';
-import { ArrowLeft, CheckCircle2, FileDiff, FolderArchive, Info, Pencil } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileDiff, FolderArchive, Info } from 'lucide-react';
 import { taskPriorityLabels, taskStatusLabels } from '@ai-agent-manager/core';
 
+import { TaskExecutionActions } from '@/components/execution/task-execution-actions';
+import { TaskHeader } from '@/components/tasks/task-header';
 import { TaskExecutionPanel } from '@/components/execution/task-execution-panel';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import { TaskActions } from '@/components/tasks/task-actions';
@@ -30,7 +32,8 @@ import { getTaskRecoveryOptions } from '@/lib/server/recovery';
 import { loadForPage } from '@/lib/server/load';
 import { findTaskOrigin } from '@/lib/server/task-proposals';
 import { findProjectTask } from '@/lib/server/tasks';
-import { conversationUrl } from '@/lib/conversations/format';
+import { TaskOrigin } from '@/components/tasks/task-origin';
+import { TaskEditLink } from '@/components/tasks/task-edit-link';
 import { getTaskArchiveOption, getTaskWorkspacePanel } from '@/lib/server/workspace';
 import { taskEditability, taskStatusNotes } from '@/lib/tasks/actions';
 import {
@@ -80,7 +83,7 @@ const TaskPage = async ({
           recoveryOptions: getTaskRecoveryOptions(db, found.task),
           archiveOption: getTaskArchiveOption(db, found.task),
           workspacePanel: await getTaskWorkspacePanel(db, found.project.id, found.task.id),
-          origin: findTaskOrigin(db, found.task.id),
+          origin: findTaskOrigin(db, found.project.id, found.task.id),
         };
   });
 
@@ -110,50 +113,50 @@ const TaskPage = async ({
             {archived ? `${project.name} archived tasks` : `${project.name} board`}
           </Link>
         </Button>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0 space-y-3">
-            <h1 id="page-title" className="text-3xl font-semibold tracking-tight break-words">
-              {task.title}
-            </h1>
-            <div className="flex flex-wrap gap-2">
+        <TaskHeader
+          title={task.title}
+          badges={
+            <>
               <TaskStatusBadge status={task.status} />
               {archived ? <ArchivedBadge /> : null}
               {task.urgent ? <UrgentBadge /> : null}
               <TaskPriorityBadge priority={task.priority} />
               <TaskRuntimeBadge agentRuntime={task.agentRuntime} modelId={task.modelId} />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-start gap-2">
-            {changesInspectable ? (
-              <Button asChild variant={task.status === 'review' ? 'default' : 'outline'}>
-                <Link href={taskReviewUrl(project.id, task.id)}>
-                  <FileDiff aria-hidden="true" />
-                  {task.status === 'review' ? 'Review changes' : 'Inspect changes'}
-                </Link>
-              </Button>
-            ) : null}
-            {editability.content || editability.priority ? (
-              <Button asChild variant="outline">
-                <Link href={`/projects/${project.id}/tasks/${task.id}/edit`}>
-                  <Pencil aria-hidden="true" />
-                  {editability.content ? 'Edit task' : 'Change priority'}
-                </Link>
-              </Button>
-            ) : null}
-            {archived ? null : (
-              <>
-                <TaskActions projectId={project.id} task={task} />
-                <TaskRecoveryActions projectId={project.id} task={task} options={recoveryOptions} />
-              </>
-            )}
-            <TaskArchiveActions
-              projectId={project.id}
-              task={task}
-              option={archiveOption}
-              showUnavailableReason
-            />
-          </div>
-        </div>
+            </>
+          }
+          actions={
+            <>
+              {archived ? null : (
+                <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                  <TaskActions projectId={project.id} task={task} />
+                  <TaskExecutionActions projectId={project.id} task={task} execution={execution} />
+                  <TaskRecoveryActions
+                    projectId={project.id}
+                    task={task}
+                    options={recoveryOptions}
+                  />
+                </div>
+              )}
+              <div className="flex flex-wrap items-start gap-2 lg:justify-end">
+                {changesInspectable ? (
+                  <Button asChild variant={task.status === 'review' ? 'default' : 'outline'}>
+                    <Link href={taskReviewUrl(project.id, task.id)}>
+                      <FileDiff aria-hidden="true" />
+                      {task.status === 'review' ? 'Review changes' : 'Inspect changes'}
+                    </Link>
+                  </Button>
+                ) : null}
+                <TaskEditLink projectId={project.id} taskId={task.id} editability={editability} />
+                <TaskArchiveActions
+                  projectId={project.id}
+                  task={task}
+                  option={archiveOption}
+                  showUnavailableReason
+                />
+              </div>
+            </>
+          }
+        />
       </section>
 
       {feedback !== undefined ? (
@@ -190,6 +193,7 @@ const TaskPage = async ({
       </Alert>
 
       <TaskExecutionPanel
+        showActions={false}
         projectId={project.id}
         task={{ id: task.id, status: task.status }}
         execution={execution}
@@ -210,8 +214,13 @@ const TaskPage = async ({
           <p className="rounded-lg border bg-inset p-3 font-mono text-sm leading-6 break-words whitespace-pre-wrap">
             {task.prompt}
           </p>
+          <div className="mt-3 flex justify-end">
+            <TaskEditLink projectId={project.id} taskId={task.id} editability={editability} />
+          </div>
         </CardContent>
       </Card>
+
+      {origin === undefined ? null : <TaskOrigin projectId={project.id} origin={origin} />}
 
       <Card>
         <CardHeader>
@@ -237,17 +246,6 @@ const TaskPage = async ({
             <Field label="Priority">{taskPriorityLabels[task.priority]}</Field>
             <Field label="Urgent">{task.urgent ? 'Yes' : 'No'}</Field>
             <Field label="Created">{formatTimestamp(task.createdAt)}</Field>
-            {origin !== undefined ? (
-              <Field label="Origin">
-                Approved task proposal from{' '}
-                <Link
-                  href={conversationUrl(project.id, origin.conversationId)}
-                  className="text-primary underline-offset-4 hover:underline"
-                >
-                  a conversation
-                </Link>
-              </Field>
-            ) : null}
             {task.updatedAt !== task.createdAt ? (
               <Field label="Updated">{formatTimestamp(task.updatedAt)}</Field>
             ) : null}

@@ -4,6 +4,7 @@ import { connection } from 'next/server';
 import { Suspense, type ReactNode } from 'react';
 import { findProjectById } from '@ai-agent-manager/database';
 import { projectIdSchema } from '@ai-agent-manager/core';
+import { ProjectContent } from '@/components/projects/project-content';
 import { DatabaseNotReady } from '@/components/projects/database-not-ready';
 import {
   ProjectWorkspaceLinks,
@@ -27,9 +28,12 @@ const ProjectLayout = async ({
   if (result.data === undefined) notFound();
 
   return (
-    <>
-      <header className="space-y-3 border-b pb-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
+    <section
+      data-project-workspace
+      className="flex h-[800px] min-h-0 min-w-0 flex-col gap-4 md:h-full"
+    >
+      <header className="shrink-0 space-y-2 border-b pb-3 lg:flex lg:items-center lg:justify-between lg:gap-4 lg:space-y-0">
+        <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="min-w-0 text-lg font-semibold break-words">{result.data.name}</p>
           <Link
             href="/projects"
@@ -42,8 +46,8 @@ const ProjectLayout = async ({
           <ProjectWorkspaceNav projectId={projectId} />
         </Suspense>
       </header>
-      {children}
-    </>
+      <ProjectContent>{children}</ProjectContent>
+    </section>
   );
 };
 

@@ -59,8 +59,8 @@ test('conversation navigation scopes entries, marks only the active detail and e
   assert.match(html, /truncate/);
   assert.match(html, new RegExp(`href="/projects/${projectId}/conversations/new"`));
   assert.match(html, /aria-expanded="false" aria-controls=/);
-  assert.match(html, /lg:block hidden/);
-  assert.match(html, /max-h-\[60dvh\] overflow-y-auto/);
+  assert.match(html, /lg:block[^"]*hidden/);
+  assert.match(html, /max-h-48 overflow-y-auto/);
   assert.match(html, /focus-visible:ring-ring/);
 });
 
@@ -122,4 +122,55 @@ test('tab URLs preserve queries, refresh selection and legacy source/batch ancho
     pathname,
   );
   assert.equal(activeProjectSection(projectId, pathname), 'conversations');
+});
+
+test('the persistent header control replaces only the panel and keeps all view content mounted', () => {
+  for (const settingsOpen of [false, true]) {
+    const html = renderToStaticMarkup(
+      createElement(ConversationViewTabs, {
+        tab: 'notes',
+        onChange: () => undefined,
+        turnActive: false,
+        generating: false,
+        header: createElement('h1', null, 'A long title'),
+        settings: 'Settings form',
+        settingsOpen,
+        onSettingsChange: () => undefined,
+        chat: 'Retained chat draft',
+        tasks: 'Retained proposal draft',
+        notes: 'Retained note draft',
+      }),
+    );
+    assert.equal(html.match(/data-conversation-header/g)?.length, 1);
+    assert.equal(html.match(/aria-expanded=/g)?.length, 1);
+    assert.ok(html.includes(settingsOpen ? 'Back to chat' : 'Conversation settings'));
+    assert.match(html, /Retained chat draft/);
+    assert.match(html, /Retained proposal draft/);
+    assert.match(html, /Retained note draft/);
+    assert.match(html, /Settings form/);
+    assert.match(html, /min-h-0 min-w-0 flex-1 overflow-hidden/);
+  }
+});
+
+test('shared panels keep composer outside their focusable history scroll boundary', async () => {
+  const { ConversationPanel } = await import('@/components/conversations/conversation-panel');
+  for (const name of ['Chat', 'Tasks', 'Notes', 'Conversation settings']) {
+    const html = renderToStaticMarkup(
+      createElement(
+        ConversationPanel,
+        {
+          name,
+          label: `${name} history`,
+          footer:
+            name === 'Chat' || name === 'Notes' ? createElement('form', null, 'Draft') : undefined,
+        },
+        'Long history',
+      ),
+    );
+    assert.match(html, /role="region"[^>]*tabindex="0"/);
+    assert.match(html, /min-h-0 flex-1 overflow-y-auto overscroll-contain/);
+    assert.equal(html.includes('<form>'), name === 'Chat' || name === 'Notes');
+    if (html.includes('<form>'))
+      assert.ok(html.indexOf('<form>') > html.indexOf('Long history</div></div>'));
+  }
 });

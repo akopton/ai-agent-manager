@@ -65,14 +65,15 @@ export const buildSourcesView = (record: RepositoryContextRecord): SourcesView =
     reference: formatSourceReference(source),
     detail: [
       originLabels[source.origin],
+      `Lines ${source.startLine}–${source.endLine}`,
       source.state === 'untracked'
         ? 'Untracked · Local (no HEAD provenance)'
         : source.state === 'modified'
-          ? 'working-tree modification'
+          ? 'Tracked · Modified (working-tree modification)'
           : source.state === 'added'
-            ? 'tracked addition'
+            ? 'Tracked · Added'
             : source.state === 'matches_head'
-              ? 'working tree matches HEAD bytes'
+              ? 'Tracked · working tree matches HEAD bytes'
               : null,
       source.contentHash === undefined ? null : `SHA-256 ${source.contentHash}`,
       source.readAt === undefined ? null : `read ${source.readAt}`,

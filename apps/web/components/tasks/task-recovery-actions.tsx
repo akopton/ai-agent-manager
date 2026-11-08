@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { LifecycleButton } from '@/components/tasks/lifecycle-button';
 import { requestJson, type ClientError } from '@/lib/projects/api-client';
 import { taskResponseSchema } from '@/lib/tasks/contracts';
 import { taskRecoverySegments, type TaskRecoveryOptions } from '@/lib/tasks/recovery';
@@ -100,15 +101,15 @@ const RecoverDialog = ({ projectId, task, options, size }: ActionProps) => {
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogTrigger asChild>
-        <Button
+        <LifecycleButton
+          action={recovery.kind}
           type="button"
           size={size}
-          variant={size === 'sm' ? 'secondary' : 'default'}
           aria-label={`${label}: ${task.title}`}
         >
           <Icon aria-hidden="true" />
           {label}…
-        </Button>
+        </LifecycleButton>
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
@@ -194,13 +195,14 @@ const RecoverDialog = ({ projectId, task, options, size }: ActionProps) => {
             </Button>
           </AlertDialogCancel>
           {/* A plain button keeps the dialog open while the request runs and on failure. */}
-          <Button
+          <LifecycleButton
+            action={recovery.kind}
             onClick={() => void submit()}
             disabled={pending || (recovery.processConfirmationRequired && !confirmed)}
           >
             {pending ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
             {pending ? 'Queueing…' : `${label} and queue`}
-          </Button>
+          </LifecycleButton>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

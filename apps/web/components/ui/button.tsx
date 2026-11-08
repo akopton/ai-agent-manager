@@ -18,6 +18,8 @@ const buttonVariants = cva(
           'text-foreground hover:bg-hover hover:text-foreground aria-expanded:bg-hover aria-expanded:text-foreground',
         destructive:
           'bg-destructive/12 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/30',
+        lifecycle:
+          'border-[color-mix(in_srgb,var(--task-status-color)_35%,transparent)] bg-[color-mix(in_srgb,var(--task-status-color)_4%,transparent)] text-[var(--task-status-color)] hover:bg-[color-mix(in_srgb,var(--task-status-color)_6%,transparent)] focus-visible:border-[var(--task-status-color)] focus-visible:ring-[color-mix(in_srgb,var(--task-status-color)_50%,transparent)]',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

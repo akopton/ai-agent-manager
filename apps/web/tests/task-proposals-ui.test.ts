@@ -219,7 +219,7 @@ test('C3.1: Generate tasks appears only under completed AI replies', () => {
   assert.equal(html.match(/Generate tasks</g)?.length, 1);
   // It sits in the reply's list item, which is the navigation target for its proposals.
   const item = html.slice(html.indexOf(`id="message-${id(302)}"`));
-  assert.ok(item.indexOf('Generate tasks') < item.indexOf('</li>'));
+  assert.ok(item.indexOf('Generate tasks') < item.indexOf('</article>'));
   assert.match(html, /aria-label="Generate tasks from this reply"/);
   assert.match(html, />Focus</);
   // No action under the user message, the failed turn or the note.
@@ -484,4 +484,14 @@ test('the editor sends only changed fields with the revision and validates like 
     ]),
     { draft: 2, approved: 1, rejected: 1 },
   );
+});
+
+test('UI-04C: long proposal prompts have a bounded preview and deliberate expansion', () => {
+  const prompt = 'Implement one focused part. '.repeat(200) + 'PRIVATE-END-MARKER';
+  const html = panel({ generations: [generation()], proposals: [proposal({ prompt })] });
+  assert.match(html, /Expand prompt/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.doesNotMatch(html, /PRIVATE-END-MARKER/);
+  assert.match(html, /Approve to Backlog/);
+  assert.match(html, />Edit</);
 });

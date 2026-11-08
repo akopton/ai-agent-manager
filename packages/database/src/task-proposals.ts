@@ -9,11 +9,17 @@ import {
   type TaskProposalActionInput,
   type UpdateTaskProposalInput,
 } from '@ai-agent-manager/core';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import { findScoped, parseScope, type Scope, type Transaction } from './conversations.js';
-import { taskProposalGenerations, taskProposals } from './schema.js';
+import {
+  conversationMessages,
+  conversations,
+  taskProposalGenerations,
+  taskProposals,
+  tasks,
+} from './schema.js';
 import type { TaskProposalRecord } from './task-proposal-generations.js';
 import { createTask, findTaskById, type TaskRecord } from './tasks.js';
 
@@ -154,6 +160,47 @@ export const findTaskProposalByTask = (
   return parsed.success
     ? db.select().from(taskProposals).where(eq(taskProposals.taskId, parsed.data)).get()
     : undefined;
+};
+
+/** Read-only origin preview: one historical assistant message, bounded in SQL, scoped to the task's project. */
+export const findTaskProposalOrigin = (db: Database, projectId: string, taskId: string) => {
+  const parsed = taskIdSchema.safeParse(taskId);
+  if (!parsed.success) return undefined;
+  return db
+    .select({
+      conversationId: taskProposals.conversationId,
+      proposalId: taskProposals.id,
+      conversationTitle: conversations.title,
+      sourceMessageId: conversationMessages.id,
+      excerpt: sql<string | null>`substr(${conversationMessages.content}, 1, 601)`,
+    })
+    .from(taskProposals)
+    .innerJoin(tasks, and(eq(tasks.id, taskProposals.taskId), eq(tasks.projectId, projectId)))
+    .leftJoin(
+      conversations,
+      and(
+        eq(conversations.id, taskProposals.conversationId),
+        eq(conversations.projectId, projectId),
+      ),
+    )
+    .leftJoin(
+      taskProposalGenerations,
+      and(
+        eq(taskProposalGenerations.id, taskProposals.generationId),
+        eq(taskProposalGenerations.conversationId, conversations.id),
+      ),
+    )
+    .leftJoin(
+      conversationMessages,
+      and(
+        eq(conversationMessages.id, taskProposalGenerations.sourceMessageId),
+        eq(conversationMessages.conversationId, conversations.id),
+        eq(conversationMessages.role, 'assistant'),
+        eq(conversationMessages.kind, 'chat'),
+      ),
+    )
+    .where(and(eq(taskProposals.taskId, parsed.data), eq(taskProposals.projectId, projectId)))
+    .get();
 };
 
 /**

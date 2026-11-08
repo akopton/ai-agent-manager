@@ -108,6 +108,7 @@ export const TaskProposalCard = ({
 }: TaskProposalCardProps) => {
   const router = useRouter();
   const fieldId = useId();
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState<ProposalFormValues>(() => proposalFormValues(proposal));
   const [fieldErrors, setFieldErrors] = useState<ProposalFieldErrors>({});
@@ -359,12 +360,30 @@ export const TaskProposalCard = ({
             <span className="mr-1.5 text-muted-foreground tabular-nums">#{proposal.position}</span>
             {proposal.title}
           </h3>
-          <details className="group rounded-lg border bg-inset/40 px-3 py-2 text-sm">
-            <summary className="cursor-pointer text-xs font-medium text-muted-foreground select-none">
-              Implementation prompt ({proposal.prompt.length.toLocaleString('en')} characters)
-            </summary>
-            <p className="mt-2 leading-6 break-words whitespace-pre-wrap">{proposal.prompt}</p>
-          </details>
+          <div className="space-y-2 rounded-lg border bg-inset/40 px-3 py-2 text-sm">
+            <p className="text-xs font-medium text-muted-foreground">Implementation prompt</p>
+            <p id={`${fieldId}-full-prompt`} className="leading-6 break-words whitespace-pre-wrap">
+              {expanded || proposal.prompt.length <= 240
+                ? proposal.prompt
+                : `${proposal.prompt.slice(0, 240).trimEnd()}…`}
+            </p>
+            {proposal.prompt.length > 240 ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="min-h-9"
+                aria-expanded={expanded}
+                aria-controls={`${fieldId}-full-prompt`}
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? 'Show less' : 'Expand prompt'}
+              </Button>
+            ) : null}
+            <span className="sr-only">
+              {proposal.prompt.length.toLocaleString('en')} characters
+            </span>
+          </div>
           {proposal.rationale !== '' || proposal.dependencies !== '' ? (
             <dl className="grid gap-1 text-xs leading-5">
               {proposal.rationale !== '' ? (

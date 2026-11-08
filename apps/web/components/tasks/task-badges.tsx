@@ -13,7 +13,7 @@ import { agentRuntimeLabels, describeModel } from '@/lib/tasks/board';
 
 type BadgeVariant = NonNullable<ComponentProps<typeof Badge>['variant']>;
 
-// Status color lives in compact labels and dots only; board columns stay neutral. Status tones
+// Board columns stay neutral. Status tones
 // use fixed status tokens, never the user-selected accent.
 const statusVariants: Readonly<Record<TaskStatus, BadgeVariant>> = {
   backlog: 'outline',
@@ -25,19 +25,6 @@ const statusVariants: Readonly<Record<TaskStatus, BadgeVariant>> = {
   interrupted: 'warning',
   failed: 'destructive',
   discarded: 'outline',
-};
-
-/** Background class for the small status indicator shown in board column headers. */
-export const taskStatusDotClassName: Readonly<Record<TaskStatus, string>> = {
-  backlog: 'bg-muted-foreground/60',
-  queued: 'bg-info',
-  in_progress: 'bg-success',
-  review: 'bg-review',
-  done: 'bg-success/50',
-  stopped: 'bg-warning',
-  interrupted: 'bg-warning',
-  failed: 'bg-destructive',
-  discarded: 'bg-muted-foreground/40',
 };
 
 const priorityVariants: Readonly<Record<TaskPriority, BadgeVariant>> = {

@@ -88,6 +88,7 @@ export const ReplyTaskActions = ({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<ClientError | null>(null);
   const requestId = useRef<string | null>(null);
+  const submitting = useRef(false);
   const tooLong = instructions.trim().length > taskProposalInstructionsMaxLength;
   const state =
     generation === null ? null : describeGenerationState(generation, { latest: true, aiEnabled });
@@ -95,7 +96,8 @@ export const ReplyTaskActions = ({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pending || blockedReason !== null || tooLong) return;
+    if (submitting.current || blockedReason !== null || tooLong) return;
+    submitting.current = true;
     requestId.current ??= crypto.randomUUID();
     setPending(true);
     setError(null);
@@ -105,6 +107,7 @@ export const ReplyTaskActions = ({
       taskProposalGenerationResponseSchema,
       { requestId: requestId.current, sourceMessageId: messageId, instructions },
     );
+    submitting.current = false;
     setPending(false);
     if (!result.ok) {
       setError(result.error);
@@ -117,7 +120,7 @@ export const ReplyTaskActions = ({
   };
 
   return (
-    <div className="flex w-full max-w-[92%] flex-col gap-1.5 pl-1 text-xs">
+    <footer className="mt-3 flex min-w-0 flex-col gap-2 border-t pt-2 text-xs">
       <form
         onSubmit={submit}
         className="flex flex-wrap items-center gap-2"
@@ -129,7 +132,7 @@ export const ReplyTaskActions = ({
           type="submit"
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs"
+          className="min-h-9 px-2 text-xs"
           disabled={pending || blockedReason !== null || tooLong}
           title={blockedReason ?? 'Propose tasks using only this reply as the source.'}
           aria-describedby={blockedReason === null ? undefined : `${fieldId}-blocked`}
@@ -145,7 +148,8 @@ export const ReplyTaskActions = ({
           type="button"
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs text-muted-foreground"
+          className="min-h-9 px-2 text-xs text-muted-foreground"
+          disabled={pending}
           aria-expanded={focusOpen}
           aria-controls={`${fieldId}-focus`}
           onClick={() => setFocusOpen((open) => !open)}
@@ -157,6 +161,7 @@ export const ReplyTaskActions = ({
           <Input
             id={`${fieldId}-focus`}
             aria-label="Optional focus for the tasks from this reply"
+            disabled={pending}
             value={instructions}
             onChange={(event) => {
               setInstructions(event.target.value);
@@ -165,7 +170,7 @@ export const ReplyTaskActions = ({
             }}
             maxLength={taskProposalInstructionsMaxLength}
             placeholder="Optional, e.g. only the backend part"
-            className="h-7 max-w-xs min-w-40 flex-1 text-xs"
+            className="h-9 w-full min-w-0 flex-1 basis-48 text-xs"
             aria-invalid={tooLong}
           />
         ) : null}
@@ -194,7 +199,7 @@ export const ReplyTaskActions = ({
               className="inline-flex items-center gap-1 rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <ArrowDown className="size-3.5" aria-hidden="true" />
-              View proposals
+              View proposals in Tasks
             </a>
           ) : null}
           <ProposalGenerationActions
@@ -211,7 +216,7 @@ export const ReplyTaskActions = ({
           {error.message}
         </p>
       ) : null}
-    </div>
+    </footer>
   );
 };
 

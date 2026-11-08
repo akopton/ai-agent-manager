@@ -406,7 +406,10 @@ test('the Sources view lists only supplied excerpts with limits, refusals and fr
 
   const html = render(createElement(ReplySources, { record: record() }));
   assert.match(html, /<details/);
-  assert.match(html, /Sources \(2 excerpts\)/);
+  assert.match(html, /2 sources/);
+  assert.doesNotMatch(html, /<details[^>]* open/);
+  assert.match(html, /Other claims have not been verified by this context/);
+  assert.match(html, /Lines 1–40/);
   assert.match(html, /src\/queue\.ts:10-30/);
   assert.match(html, /Limited context/);
   assert.match(html, /uncommitted changes were not included/);

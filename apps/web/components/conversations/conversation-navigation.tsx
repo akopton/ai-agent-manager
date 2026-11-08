@@ -47,7 +47,10 @@ export const ConversationNavigation = ({
       <nav
         id={listId}
         aria-label="Project conversations"
-        className={cn('max-h-[60dvh] overflow-y-auto border-t p-2 lg:block', !open && 'hidden')}
+        className={cn(
+          'max-h-48 overflow-y-auto border-t p-2 lg:block lg:max-h-[60dvh]',
+          !open && 'hidden',
+        )}
       >
         {scoped.length === 0 ? (
           <p className="px-2 py-4 text-sm text-muted-foreground">No conversations yet.</p>

@@ -130,12 +130,12 @@ export const ConversationHistory = ({
             >
               <article
                 aria-label={`AI reply, ${formatTimestamp(message.createdAt)}`}
-                className="max-w-[92%] min-w-0 rounded-2xl rounded-tl-sm border bg-card px-4 py-3"
+                className="max-w-[min(92%,90ch)] min-w-0 rounded-2xl rounded-tl-sm border bg-card px-4 py-3 text-sm"
               >
                 <header className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
                   <Bot className="size-3.5 self-center text-primary" aria-hidden="true" />
                   <span className="font-semibold text-foreground">AI reply</span>
-                  <span className="break-all text-muted-foreground">{entry.meta}</span>
+                  <span className="min-w-0 break-words text-muted-foreground">{entry.meta}</span>
                   <span className="ml-auto">
                     <Timestamp value={message.createdAt} />
                   </span>
@@ -146,20 +146,20 @@ export const ConversationHistory = ({
                     The reply was longer than the storage limit and was shortened.
                   </p>
                 ) : null}
+                {entry.turn?.contextMode === 'project_aware' && entry.turn.repository !== null ? (
+                  <ReplySources record={entry.turn.repository} />
+                ) : null}
+                {eligible ? (
+                  <ReplyTaskActions
+                    projectId={projectId}
+                    conversationId={conversationId}
+                    messageId={message.id}
+                    generation={bySource.get(message.id) ?? null}
+                    aiEnabled={ai.enabled}
+                    blockedReason={blockedReason}
+                  />
+                ) : null}
               </article>
-              {entry.turn?.contextMode === 'project_aware' && entry.turn.repository !== null ? (
-                <ReplySources record={entry.turn.repository} />
-              ) : null}
-              {eligible ? (
-                <ReplyTaskActions
-                  projectId={projectId}
-                  conversationId={conversationId}
-                  messageId={message.id}
-                  generation={bySource.get(message.id) ?? null}
-                  aiEnabled={ai.enabled}
-                  blockedReason={blockedReason}
-                />
-              ) : null}
             </li>
           );
         }
@@ -167,7 +167,7 @@ export const ConversationHistory = ({
           <li key={message.id} className="flex flex-col items-end gap-2">
             <article
               aria-label={`Your message, ${formatTimestamp(message.createdAt)}`}
-              className="max-w-[85%] min-w-0 rounded-2xl rounded-tr-sm border bg-inset px-4 py-3"
+              className="max-w-[min(85%,90ch)] min-w-0 rounded-2xl rounded-tr-sm border bg-inset px-4 py-3 text-sm"
             >
               <header className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
                 <span className="font-semibold text-foreground">You</span>

@@ -651,18 +651,73 @@ recorded in `PROJECT_CONTEXT.md`.
 - Repeat visual checks with Violet, Ocean, Teal and Amber; primary actions follow the accent,
   secondary controls stay neutral, semantic statuses are unchanged. Kanban colors are unchanged.
 
-### UI-04C — Message & Task UX (deferred)
+### UI-04C — Message & Task UX Polish (2026-11-07)
 
-- Generate tasks and Focus inside the assistant message footer.
-- Compact Sources and proposal cards.
-- Easier access to Edit on long Task Details pages.
-- Task origin/source-message preview.
-- Status-changing task actions must use the semantic color of the destination status, drawn
-  from the same centralized status tokens as the destination Kanban column indicator.
-  Non-status actions retain their own semantics. Not implemented in UI-04A.
-  Queue uses Queued; Back to Backlog uses Backlog; Retry, Resume and Request Changes use
-  Queued. These destination-status colors remain independent of the global accent theme
-  and are deferred to the later Kanban UX polish.
+Implemented: in-card assistant action footer with source-scoped Focus/progress/Tasks navigation;
+compact Sources with provenance; bounded proposal previews with the existing editor; repeated
+Task Details Edit access; project-scoped historical origin preview and exact-message links;
+destination-status lifecycle colors shared with Kanban indicators and independent of accent.
+No task schema, generation/approval transaction, retrieval, execution or authorization changes.
+Validation results and practical limits are recorded in PROJECT_CONTEXT.md.
+
+**Manual acceptance checklist (disposable data):**
+
+- Generate tasks only on completed replies. Open Focus with keyboard, enter a scope, submit twice;
+  verify one request from the selected reply, correct progress/error feedback, Stop/Retry, and
+  View proposals in Tasks → Source reply round trip. Test lost-response retry semantics.
+- Expand Sources with Enter/Space. Inspect long paths, complete/partial line ranges, tracked edits,
+  untracked local provenance, hashes/times and warnings; confirm other claims remain unverified.
+- Review short/long Draft/Approved/Rejected cards. Expand/collapse prompts; edit all fields,
+  validate, cancel/save, compare AI originals; reject/reopen and approve once into Backlog.
+- On a long task prompt, reach Edit at its end. Check queued priority-only editing, noneditable
+  and archived states. Follow origin to the exact message; check legacy/unavailable fallbacks.
+- Compare Queue/Retry/Resume/Request Changes with Queued indicators, Return to Backlog with
+  Backlog, and Start with In Progress. Confirm asynchronous wording and destructive styles.
+- Repeat keyboard focus/activation, narrow 360px and long-path/prompt checks in Violet, Ocean,
+  Teal and Amber. Confirm no horizontal overflow and preserved chat scroll/tab/anchor state.
+- Safari, touch/virtual keyboard, zoom and authenticated real transcripts remain operator checks.
+
+**UI-04C workspace-density acceptance follow-up:**
+
+- Wide project Kanban/Conversations containers; unchanged task/settings reading widths.
+- Compact project/header/tabs, explicit Project-Aware summary, on-demand settings and smaller
+  chat composer. Bounded 90ch message cards and local code scrolling; no global CSS changes.
+- Measured browser acceptance at 1280/1440/1920px desktop, 768px tablet and 360px phone;
+  before/after geometry and validation are recorded in PROJECT_CONTEXT.md.
+- Verify short desktop windows, settings disclosure/long titles, resized input, all accents,
+  client navigation, source/batch links, scroll state and mobile board gutters. Safari/touch/
+  virtual keyboard remain operator acceptance. UI-04D stays deferred.
+
+**UI-04C unified geometry and panel correction (operator acceptance pending):**
+
+- Supersedes the route-specific outer geometry above: one app boundary/gutter and project
+  header position; internal PageContent reading/form limits only.
+- One persistent conversation header/settings button and bounded Chat/Tasks/Notes/settings
+  frame. History/proposals/notes/settings scroll locally; composers remain accessible.
+- Back to chat restores the previous tab, drafts and useful scroll positions. Existing source/
+  batch fragments, request idempotency and scroll-to-latest behavior remain.
+- Global explanation/consent belongs in App Settings; project source permission stays in Project
+  Settings. Conversations show only mode and actionable blockers outside their history.
+- Manual acceptance: compare navigation rectangles at 1280/1440/1920/360px; scroll long content
+  and editors in each view; open/close/save settings; restore drafts/scroll; navigate source/batch/
+  task links and browser history; verify global/project consent discovery and all accents.
+  Safari, touch/virtual keyboard and zoom remain operator checks. UI-04D stays deferred.
+
+**UI-04C persistent project navigation / task actions fix (2026-11-08; review pending):**
+
+- Operator confirms Conversations works correctly. The shared project shell now owns a bounded
+  default scroll viewport beneath persistent project navigation; conversation detail panes keep
+  their individual scrolling and list/new routes remain accessible.
+- Task Details has a stable dedicated desktop action column, including extracted existing
+  Start/Stop controls, and an explicit stacked layout below 1024px. Lower Edit remains.
+- Validate real Backlog → Queued → Backlog actions and pending/disabled states with short/long
+  titles at 1280/1440/1920/360px. Measure action rectangles and project tab rectangles while
+  Overview/board/settings/task content scrolls. Queue must create no execution command.
+- Check Task Edit/Review active navigation, source/origin anchors, browser back/forward, local
+  restoration through loading states, keyboard focus, dialogs and mobile initial outer access.
+  Run existing Conversations/scroll regression suites. Results are in PROJECT_CONTEXT.md.
+- Manual acceptance: Safari, touch/virtual keyboard, zoom and short mobile windows; UI-04D stays
+  deferred and UI-04C must not be committed before operator acceptance.
 
 ### UI-04D — References & Final Polish (deferred)
 

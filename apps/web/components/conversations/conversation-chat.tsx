@@ -5,7 +5,7 @@ import {
   MessageComposer,
   type MessageComposerProps,
 } from '@/components/conversations/message-composer';
-import { Card, CardContent } from '@/components/ui/card';
+import { ConversationPanel } from '@/components/conversations/conversation-panel';
 import { chatAnchorTop, createChatScrollController } from '@/lib/conversations/chat-scroll';
 
 export const ChatViewContext = createContext({ active: true, hash: '' });
@@ -36,10 +36,6 @@ export const ConversationChat = ({
         scroll.sync({ active: false, hash, anchorTop: null });
         return;
       }
-      // Use document coordinates so ordinary page scrolling never changes the pane's height.
-      const top = pane.getBoundingClientRect().top + window.scrollY;
-      const height = Math.max(384, window.innerHeight - top - 24);
-      if (pane.style.height !== `${height}px`) pane.style.height = `${height}px`;
       // Read the fragment before the first paint, including during initial hydration.
       const currentHash = window.location.hash;
       if (
@@ -63,28 +59,17 @@ export const ConversationChat = ({
   }, [active, hash, children]);
 
   return (
-    <section
-      ref={paneRef}
-      aria-label="Chat"
-      className="flex h-[70dvh] min-h-96 min-w-0 flex-col gap-4 [&:not([data-chat-ready])]:invisible"
+    <ConversationPanel
+      name="Chat"
+      label="Chat transcript"
+      panelRef={paneRef}
+      viewportRef={viewportRef}
+      contentRef={contentRef}
+      onScroll={() => controller.current?.onScroll()}
+      className="[&:not([data-chat-ready])]:invisible"
+      footer={<MessageComposer {...composer} onSent={() => controller.current?.followLatest()} />}
     >
-      <div
-        ref={viewportRef}
-        role="region"
-        aria-label="Chat transcript"
-        tabIndex={0}
-        onScroll={() => controller.current?.onScroll()}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-md p-1 outline-none [overflow-anchor:none] focus-visible:ring-2 focus-visible:ring-ring [&:not([data-scroll-ready])]:invisible"
-      >
-        <div ref={contentRef} className="space-y-4">
-          {children}
-        </div>
-      </div>
-      <Card className="max-h-[60%] shrink-0 overflow-y-auto">
-        <CardContent>
-          <MessageComposer {...composer} onSent={() => controller.current?.followLatest()} />
-        </CardContent>
-      </Card>
-    </section>
+      {children}
+    </ConversationPanel>
   );
 };

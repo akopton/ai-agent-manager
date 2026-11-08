@@ -6,7 +6,7 @@ import { AlertCircle, ListPlus, Loader2, Undo2 } from 'lucide-react';
 import type { TaskStatus } from '@ai-agent-manager/core';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
+import { LifecycleButton } from '@/components/tasks/lifecycle-button';
 import { requestJson, type ClientError } from '@/lib/projects/api-client';
 import {
   availableUserTaskActions,
@@ -60,12 +60,11 @@ export const TaskActions = ({ projectId, task, size = 'default' }: TaskActionsPr
         {actions.map((action) => {
           const Icon = icons[action];
           return (
-            <Button
+            <LifecycleButton
               key={action}
               type="button"
               size={size}
-              // Compact board cards keep the task title as the primary element.
-              variant={action === 'queue' ? (size === 'sm' ? 'secondary' : 'default') : 'outline'}
+              action={action}
               disabled={pending !== null}
               onClick={() => void run(action)}
               aria-label={`${userTaskActionLabels[action]}: ${task.title}`}
@@ -76,7 +75,7 @@ export const TaskActions = ({ projectId, task, size = 'default' }: TaskActionsPr
                 <Icon aria-hidden="true" />
               )}
               {userTaskActionLabels[action]}
-            </Button>
+            </LifecycleButton>
           );
         })}
       </div>

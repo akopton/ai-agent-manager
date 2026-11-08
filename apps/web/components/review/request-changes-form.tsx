@@ -12,6 +12,7 @@ import {
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { LifecycleButton } from '@/components/tasks/lifecycle-button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -156,14 +157,14 @@ export const RequestChangesForm = ({
             </Alert>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" disabled={pending}>
+            <LifecycleButton action="request_changes" type="submit" disabled={pending}>
               {pending ? (
                 <Loader2 className="animate-spin" aria-hidden="true" />
               ) : (
                 <MessageSquareReply aria-hidden="true" />
               )}
               Request changes
-            </Button>
+            </LifecycleButton>
             <Button asChild variant="ghost">
               <Link href={taskUrl(projectId, taskId)}>Cancel</Link>
             </Button>

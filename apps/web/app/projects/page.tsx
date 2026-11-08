@@ -104,9 +104,9 @@ const ProjectsPage = async ({
           </CardContent>
         </Card>
       ) : (
-        <ul className="grid gap-3" aria-label="Registered projects">
+        <ul className="grid grid-cols-1 gap-3" aria-label="Registered projects">
           {result.data.map((project) => (
-            <li key={project.id}>
+            <li key={project.id} className="min-w-0">
               <Link
                 href={`/projects/${project.id}`}
                 className="group block rounded-xl focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"

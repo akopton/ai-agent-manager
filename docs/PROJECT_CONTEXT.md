@@ -351,3 +351,255 @@ Chat stays separate from task execution: a conversation can never queue, start, 
   documented outer-navigation limit; the QA explicitly reached Chat before checking local scroll.
 - Remaining manual checks: Safari, touch/virtual-keyboard behavior, browser zoom and unusually
   large composer input. No authenticated CLI verification or new isolation claim was added.
+
+
+**UI-04C decisions (2026-11-07, after operator acceptance of UI-04A/B):**
+
+- Completed assistant articles now contain compact Generate tasks/optional Focus footers with
+  source-specific progress/errors and View proposals in Tasks. Existing source-only request,
+  consent and retry identity remain; a synchronous guard prevents same-tick duplicate submits.
+- Sources lives inside the corresponding reply, initially collapsed as “N sources”. Existing
+  repository-relative references, hashes, capture times, HEAD provenance, limitations and
+  unverified-reference warnings remain; every excerpt shows bounded line ranges and available
+  tracked/modified/untracked state. Retrieval, source consent and context budgets are unchanged.
+- Proposal cards show a 240-character preview with explicit expansion, retaining labelled
+  Draft/Approved/Rejected states, AI originals vs operator edits, the full field editor,
+  revision validation, Reject/Reopen, source links and individual Approve to Backlog.
+- Task Details repeats the same permitted Edit/Change priority link after the prompt. A read-only,
+  project-scoped join fetches up to 601 characters of one original assistant/chat reply; the UI
+  presents at most 600 plus an ellipsis as historical content, with an exact message anchor.
+  Legacy/unavailable sources fall back to conversation links or explanatory text. No history or
+  source-file bytes are duplicated into tasks, and no attachment capability is introduced.
+- LifecycleButton derives destinations from core.taskTransitions and shares a semantic CSS
+  variable map with Kanban indicators. Queue/Retry/Resume/Request Changes use Queued; Return to
+  Backlog uses Backlog; Start uses In Progress and explains asynchronous worker acceptance.
+  Destructive actions keep their existing treatment; other controls keep normal semantics.
+  Fixed status tokens remain independent of all four accents. Tints retain AA text contrast on
+  page/card/elevated surfaces; focus, hover and disabled behavior reuse shared button rules.
+- Browser QA caught a fragment-history issue: a native proposal-batch link from an anchored reply
+  could revert to the original message after a proposal mutation refreshed the router. Batch
+  links now use the existing source-link History integration; Tasks and the batch hash survive
+  Save/Reject/Reopen/Approve. No routes, stable anchors or tab semantics were replaced.
+- No migrations, dependencies, generation schema, approval transaction, permission model,
+  source retrieval, worker, execution, scheduler, Git or publication behavior changes. UI-04D is
+  next for explicit message/note references, composer chips and final polish. Permanent deletion,
+  attachments and working-tree transfer remain deferred. No commit or push was made.
+- Node.js 24.22.2 validation: lint, typecheck and format:check passed. All 856 full-suite tests
+  passed; 37 focused final presentation/theme/workspace/scroll tests also passed, including
+  the added semantic-color contrast regression. Default pnpm build failed both inside and
+  outside the sandbox with Turbopack's CSS worker port-binding error: “binding to a port →
+  Operation not permitted (os error 1)”. The default build did not pass. Webpack production
+  build and separate worker build passed. Tests ran outside the sandbox for tsx IPC sockets.
+- Real headless Chrome against the final Webpack production server used temporary migrated SQLite,
+  disposable unavailable repository registrations, 13 synthetic completed exchanges, synthetic
+  source provenance and a 300-line task prompt. No worker or authenticated CLI was launched.
+  Passed: in-card footer/eligibility; keyboard Sources expansion with hashes/local provenance and
+  unverified warnings; keyboard Focus and source-specific instructions; same-tick deduplication;
+  correct waiting state and Tasks batch navigation; prompt expansion/edit/save/edited labels;
+  Reject/Reopen/Approve; long-chat position across tabs; lower Task Edit; bounded historical
+  origin/exact-message navigation; all four accents at 360px with no horizontal overflow; and
+  Queue/column computed-color equality across all accents. No browser runtime exceptions and
+  zero worker commands, task runs, workspaces or publications. Mobile shell and Task Details
+  screenshots were visually inspected. Unit/API tests cover other lifecycle destinations,
+  noneditable/archived edit restrictions, legacy/unavailable origins and cross-project denial.
+- Remaining operator acceptance: Safari, touch/virtual keyboard, zoom, authenticated real chat,
+  lost responses and the full checklist in IMPLEMENTATION_PLAN.md §10. Browser coverage is
+  synthetic and does not verify CLI isolation. The existing tall mobile shell still requires
+  ordinary page scrolling to reach Chat; its accepted UI-04B behavior is unchanged.
+
+
+**UI-04C workspace-density acceptance follow-up (2026-11-07):**
+
+- Measured the original production UI: the shared max-w-6xl (1152px, including 40px padding)
+  capped Kanban and Conversations even at 1920px. A 272px conversation sidebar plus a 24px gap,
+  130px header, repeated vertical gaps and verbose composer left a 275px transcript at 1440/1920.
+- Only project board and conversation routes opt into wide WorkspaceContent geometry. The
+  240px app navigation is unchanged. Wide content gets 24px horizontal desktop/tablet padding
+  and 16px phone padding. Task Details/review, project/app settings and task creation keep the
+  previous max-width/padding. No global CSS changes. Mobile Kanban gutters were adjusted after
+  browser QA exposed an 8px overflow caused by its old negative margins assuming 24px padding.
+- Desktop project navigation shares a compact row. The conversation header keeps title and
+  runtime/model/context; Project-Aware has a labelled icon/tone. Settings (including language)
+  stay in the native on-demand disclosure. Source-sharing notices/gates are unchanged.
+  Chat has smaller gaps, a two-row initial input, concise visible guidance and an accessible
+  recipient form name. Reply cards cap at 90ch at body-text size; code scrolls locally. Existing
+  viewport measurement, anchors, near-bottom following and tab state are retained.
+- Before/after headless Chrome measurements below use 1000px-high viewports, a short title,
+  closed settings, synthetic long replies and default input height. Values are CSS pixels:
+
+| Viewport width | Chat width before → after | Header height before → after | Transcript height before → after |
+|---|---|---|---|
+| 1280 | 664 → 736 | 130 → 52 | 231 → 573 |
+| 1440 | 776 → 896 | 130 → 52 | 275 → 573 |
+| 1920 | 776 → 1376 | 130 → 52 | 275 → 573 |
+| 768 | 480 → 480 | 158 → 52 | 164 → 459 |
+| 360 | 312 → 328 | 158 → 48 | 138 → 203 |
+
+- Desktop transcript begins at y=246 instead of 436; the separate composer ends at y=984.
+  At 1920px, Kanban's main box grows 1152 → 1680px and its useful content 1072 → 1632px.
+  Extra centered margins disappear (264px per side before padding → 0); 24px inner gutters
+  remain. Task Details and both settings main boxes remain 1152px with 40px padding at 1920px.
+  At 1440px, extra centered margins shrink 24 → 0px per side; padding changes 40 → 24px.
+- Browser QA passed at all five widths: computed geometry; no horizontal overflow in workspace,
+  task or settings pages; local overflow of a deliberately long code line; open Sources with
+  long paths; stable sidebar/active conversation; all four accents; keyboard settings/language
+  access; visible Project-Aware plus blocked source consent; resized composer separate from
+  a usable transcript. The full original UI-04C browser flow also passed against the new build:
+  source-specific generation, Focus, Tasks navigation, proposal edit/reject/reopen/approval,
+  preserved chat scroll, lower Edit and exact task-origin links. Temporary SQLite/synthetic
+  replies only; no real worker/CLI. Zero execution commands/runs/workspaces/publications or
+  browser runtime exceptions. Desktop/mobile screenshots were visually inspected.
+- Additional browser checks passed at 1280×720 and 1280×900: transcript heights were 293px
+  and 473px respectively, with the composer ending 16px above the viewport bottom. Client-side
+  Settings → Kanban navigation switched reading/wide containers correctly.
+- Final Node.js 24.22.2 validation: lint, typecheck, format:check and all 858 full-suite tests
+  passed. Webpack production build passed. The initial suite attempt failed only on the new
+  test assuming the label had no shared classes; the corrected assertion and complete rerun
+  passed. The default Turbopack build was not rerun for this layout follow-up; its previously
+  recorded CSS worker port-binding failure is still an unresolved build limitation, not a pass.
+  The existing long-chat Chrome suite also passed against the new layout (latest on open/refresh/
+  switch, near-bottom following, older-history preservation, delayed layout, anchors, local page/
+  transcript scrolling and mobile tab restoration). Safari, touch/virtual keyboard,
+  browser zoom and unusually long titles/input remain manual acceptance. The tall mobile shell
+  still needs normal outer scrolling to bring all of Chat into view; no shell redesign or
+  UI-04D work was introduced. No commit or push was made.
+
+**UI-04C unified application geometry and conversation panels (2026-11-07; acceptance pending):**
+
+- Supersedes the prior route-specific outer width and native settings disclosure correction.
+  Root causes: WorkspaceContent changed both max-width and padding by route, placing shared
+  project navigation inside different boundaries; only Chat had a bounded pane; settings used
+  an open-state grid span that moved its own control; global permission prose lived in history.
+- One outer WorkspaceContent now aligns Overview, Projects, App Settings and all project
+  sections. lib/layout centralizes 16px phone / 24px desktop gutters, 16px top padding and inner
+  width classes. AppShell's top bar shares the gutter. PageContent and ProjectContent constrain
+  only internal settings/task columns below the shared project navigation. No centered feature
+  column can reposition navigation. Stable root scrollbar gutters avoid width jumps between
+  short and long pages. The 240px desktop application sidebar is unchanged.
+- Measured before/after navigation changes across Project Overview / Kanban / Conversations /
+  Project Settings, in CSS pixels (same project, 1000px-high Chrome viewports):
+
+| Width | Largest navigation x/y change before | Largest x/y change after | Shared final navigation x/y |
+|---|---|---|---|
+| 1280 | 16 / 24 | 0 / 0 | 887.20 / 72 |
+| 1440 | 40 / 24 | 0 / 0 | 1047.20 / 72 |
+| 1920 | 280 / 24 | 0 / 0 | 1527.20 / 72 |
+| 360 | 8 / 32 | 0 / 0 | 16 / 399.5 |
+
+- Navigation width/height also showed 0px variation across sections after the correction.
+  Shared outer main x/width are 240/1040, 240/1200, 240/1680 and 0/360 respectively, identical
+  across all seven measured global/project routes. Internal reading/form limits remain separate.
+- ConversationViews owns one bounded workspace height and persistent header/control/tab list.
+  Settings swaps only the body, with the same button at the top-right labelled Back to chat.
+  Two-line title presentation keeps the full title available. Chat/Tasks/Notes/settings remain
+  mounted; ConversationPanel supplies consistent min-height:0/flex/overflow boundaries, a
+  keyboard-focusable history area and separate Chat/Notes composers. Oversized inputs/feedback
+  may scroll inside the footer; native textareas retain their ordinary editing scrollbars.
+- Tasks batch anchors now use local offsets rather than scrollIntoView. Handled fragments do
+  not repeatedly overwrite a user-scrolled proposal position on return. Chat retains the existing
+  latest/following/anchor controller and delayed-layout handling. Settings back restores the prior
+  tab, drafts and scroll. Tab/fragment history and pending worker-owned operations remain.
+- Full AI explanation is consolidated into the existing App Settings AI Conversations consent
+  card (#ai-conversations), retaining versioned acceptance/revocation. Project repository/source
+  permission stays in Project Settings (#source-sharing). Conversations show only explicit
+  Project-Aware mode and actionable blockers outside the transcript. No consent version,
+  permission check, retrieval, database, task lifecycle or execution change.
+- Production Chrome QA used temporary migrated SQLite, synthetic turns/proposals/notes and no
+  CLI/worker. At 1280/1440/1920/360px, all seven route boundaries and all four project navigation
+  rectangles matched. Header, button, tab list, sidebar and page scroll showed exactly 0px changes
+  while switching Chat/Tasks/Notes/settings and scrolling their long contents. Header/button DOM
+  nodes persisted. Chat, note and proposal drafts and per-view positions survived round trips.
+  Expanded editors remained local. Settings keyboard activation, validation/save, return from
+  Notes/Tasks, polling and a pending turn across settings all passed. Global consent discovery,
+  all accents and absence of permission prose from history passed; no horizontal overflow.
+- QA exposed an implicit-grid min-width overflow in the Projects library with long fixture
+  paths at 360px. An explicit zero-minimum single column and shrinkable list items fixed it.
+  Desktop/mobile screenshots were visually inspected. The original UI-04C browser workflow
+  also passed: source-specific Focus/generation, same-tick deduplication, Sources, batch/source
+  links, proposal editing/reject/reopen/approval, lower Task Edit, exact origin and semantic colors.
+  No browser runtime exceptions or execution/publication records were created by these checks.
+- The final long-chat browser suite also passed: initial latest on open/refresh/conversation
+  change, no autofocus, outgoing/near-bottom following, preserved older-history reading through
+  polling, delayed layout/anchor alignment, local source/batch navigation, keyboard PageDown,
+  note saving/tab restoration and mobile local scrolling. Its synthetic replies exceeded 25,000px
+  of transcript height. No task/execution mutations or browser runtime exceptions occurred.
+- Node.js 24.22.2 validation: lint, typecheck, format:check and all 860 tests passed. The default
+  pnpm build failed both inside/outside the sandbox with Turbopack's CSS worker “binding to a port
+  → Operation not permitted (os error 1)”; it did not pass. Webpack production and separate worker
+  builds passed. Tests ran outside the sandbox because tsx requires local IPC sockets.
+- Remaining operator checks: Safari, touch/virtual keyboard, zoom and real conversation content.
+  The shared frame has a 520px minimum. The existing tall mobile shell may need initial outer
+  scrolling to reach it; subsequent panel reading/switching remains local. UI-04D is not
+  implemented. No commit or push was made.
+
+**UI-04C persistent navigation and task-action acceptance fix (2026-11-08):**
+
+- The operator confirms Conversations works correctly; UI-04C overall remains under review.
+  Both remaining issues were reproduced in production Chrome before edits. Scrolling standard
+  project pages by 700px moved the project tabs from y=72 to y=-628 at 1280px. A real disposable
+  Task Details Queue click moved its action group from (957.83,177), width 298.17, to (264,261),
+  width 886.91; Return restored the old position. The shared wrapping flex row allowed the longer
+  Queued controls/archive-unavailable copy to force the action group beneath the title. Start
+  also lived in the separate Execution panel rather than this header.
+- AppShell now has a desktop viewport-height grid/flex chain with min-height:0 boundaries.
+  The single project layout keeps its existing header/nav outside ProjectContent's bounded
+  focusable scroll viewport. Overview, board, settings and all task descendants share it;
+  existing reading/form widths and outer gutters remain. Global pages use main scrolling.
+  Conversations delegates directly to its existing panes; list/new forms have a local scroller.
+  ConversationViews fills the project region rather than measuring a competing page height.
+- Phones retain the existing tall application navigation in normal document flow. An 800px
+  project frame is the deliberate readability exception: initial outer scrolling may be needed,
+  especially in short windows, then reading project content remains local. The conversation
+  sidebar has an independent small-screen scroll limit. No body-wide overflow lock was added.
+- Streamed-page tests exposed timing races in local restoration. Relative anchors now wait for
+  targets via mutation/resize observation. createProjectContentScroll ends ordinary restoration
+  when its position is reached, so later mutations cannot pull readers back to the top. Anchors
+  follow delayed layout until manual scrolling. Per-path offsets remain in memory and browser
+  back/forward restores them; no database/browser storage writes were introduced. Regression
+  tests cover new-page reading, short loading placeholders and delayed anchors.
+- TaskHeader separates identity from a 24rem action column at lg (1024px and above), with a
+  160px minimum action height. Below lg it deliberately stacks title then actions. The same
+  container holds lifecycle, existing Start/Stop, recovery, Edit/archive and review links.
+  TaskExecutionActions reuses the previous endpoints/eligibility/error feedback; Task Details
+  disables only the duplicate inline controls in TaskExecutionPanel. Polling, status/async notes,
+  server permission gates, destination colors and the lower Edit link remain unchanged.
+- Final production browser QA used temporary migrated SQLite and an actual disposable Git
+  repository, long instructions, 36 Backlog tasks, a 500-line prompt, long/short titles and
+  synthetic conversation history/proposals/notes. It waited for actual rendered page content
+  and positive scroll capacity before measuring. Long Overview/board/settings/task content
+  scrolled 700px at all four widths; tab/header/sidebar/page-position changes were exactly 0px.
+  Desktop document height stayed within the viewport. Task Edit/Review retained the same shell
+  and Kanban highlight; narrow Review content scrolled locally where needed.
+
+| Viewport | Task action rectangle x, y, width, height: Backlog = Queued = returned Backlog |
+|---|---|
+| 1280 | 872, 177, 384, 160 |
+| 1440 | 1032, 177, 384, 160 |
+| 1920 | 1032, 177, 384, 160 |
+
+- These desktop rectangles matched for short and 235-character titles, including a deliberately
+  delayed Queue response while controls were disabled/loading. Mobile (360px) deliberately
+  stacked at x=16, width=328; the short-title action origin stayed y=512.5 through both
+  transitions. Its content height changed 76 → 116 → 76px as Start/archive feedback appeared.
+  The long-title mobile origin stayed y=800.5. This is intentional stacked-content growth,
+  not an unexpected desktop displacement. Screenshots were visually inspected.
+- Project tab coordinates stayed x/y=887.20/72, 1047.20/72 and 1527.20/72 at the three desktop
+  widths. At 360px, after initial outer access, x/y=16/219.5 remained unchanged while content
+  scrolled. The lower Edit link remained reachable without moving navigation. Project source
+  anchors scrolled the local viewport. Browser back/forward restored the board's 450px offset.
+  Keyboard PageDown scrolled the project region; the existing dialog portal escaped clipping
+  and was cancelled without mutation. All accents had no horizontal overflow.
+- Conversations checks passed: no additional outer scrollbar; Chat/Tasks/Notes/Settings scrolling,
+  persistent header/settings control, drafts, pending operations and consent placement. The full
+  long-chat suite passed latest/following/reading preservation, delayed source anchors, refresh,
+  keyboard scrolling, conversation changes and narrow-screen restoration. No CLI/worker was
+  launched for browser QA. Real Queue/Return transitions created zero worker commands, task
+  runs, workspaces or publications; no browser runtime exceptions occurred.
+- Node.js 24.22.2: lint, typecheck, format:check and all 865 tests passed. The 24 focused final
+  scroll/header/navigation/execution presentation regressions passed. Default pnpm build failed
+  inside and outside the sandbox with Turbopack's CSS worker “binding to a port → Operation not
+  permitted (os error 1)”; it did not pass. The Webpack production build and separate worker
+  build passed. Tests ran outside the sandbox for tsx local IPC sockets.
+- Manual acceptance remains: repeat real operator Queue/Return and long-page scrolling; Safari,
+  touch/virtual keyboard, browser zoom, very short/narrow windows and large project names.
+  UI-04D remains deferred. No commit or push was made.

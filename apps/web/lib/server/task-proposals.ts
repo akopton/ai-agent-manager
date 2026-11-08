@@ -10,7 +10,7 @@ import {
   findProjectById,
   findTaskProposal,
   findTaskProposalGeneration,
-  findTaskProposalByTask,
+  findTaskProposalOrigin,
   listTaskProposalGenerations,
   listTaskProposals,
   rejectTaskProposal,
@@ -385,13 +385,5 @@ export const approveProjectTaskProposal = async (
   };
 };
 
-/** The proposal (and conversation) a task was created from, for the task's origin line. */
-export const findTaskOrigin = (
-  db: Database,
-  taskId: string,
-): { conversationId: string; proposalId: string } | undefined => {
-  const proposal = findTaskProposalByTask(db, taskId);
-  return proposal === undefined
-    ? undefined
-    : { conversationId: proposal.conversationId, proposalId: proposal.id };
-};
+/** Historical origin is read through a bounded, project-scoped database query. */
+export const findTaskOrigin = findTaskProposalOrigin;
