@@ -271,6 +271,10 @@ export {
 } from './workspace-cleanup.js';
 export {
   addConversationNoteInputSchema,
+  conversationNoteRevisionInputSchema,
+  updateConversationNoteInputSchema,
+  type UpdateConversationNoteInput,
+  type ConversationNoteRevisionInput,
   ConversationError,
   conversationErrorCodes,
   conversationErrorCodeSchema,
@@ -455,3 +459,13 @@ export {
   type RepositorySource,
   type RequestedRepositoryFile,
 } from './project-context.js';
+
+export {
+  conversationReferenceLimits,
+  conversationReferenceIdsSchema,
+  conversationReferenceSnapshotSchema,
+  conversationReferenceSnapshotsSchema,
+  referenceContextInstruction,
+  renderConversationReferences,
+  type ConversationReferenceSnapshot,
+} from './conversation-reference.js';

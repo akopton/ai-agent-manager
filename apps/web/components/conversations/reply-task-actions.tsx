@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
@@ -65,6 +65,7 @@ type ReplyTaskActionsProps = {
   aiEnabled: boolean;
   /** Why a new request cannot be made now, or `null` when it can. */
   blockedReason: string | null;
+  referenceAction?: ReactNode;
 };
 
 /**
@@ -80,6 +81,7 @@ export const ReplyTaskActions = ({
   generation,
   aiEnabled,
   blockedReason,
+  referenceAction,
 }: ReplyTaskActionsProps) => {
   const router = useRouter();
   const fieldId = useId();
@@ -121,65 +123,68 @@ export const ReplyTaskActions = ({
 
   return (
     <footer className="mt-3 flex min-w-0 flex-col gap-2 border-t pt-2 text-xs">
-      <form
-        onSubmit={submit}
-        className="flex flex-wrap items-center gap-2"
-        noValidate
-        aria-busy={pending}
-        aria-label="Generate tasks from this reply"
-      >
-        <Button
-          type="submit"
-          size="sm"
-          variant="ghost"
-          className="min-h-9 px-2 text-xs"
-          disabled={pending || blockedReason !== null || tooLong}
-          title={blockedReason ?? 'Propose tasks using only this reply as the source.'}
-          aria-describedby={blockedReason === null ? undefined : `${fieldId}-blocked`}
+      <div className="flex flex-wrap items-start gap-2">
+        {referenceAction}
+        <form
+          onSubmit={submit}
+          className="flex min-w-0 flex-1 flex-wrap items-center gap-2"
+          noValidate
+          aria-busy={pending}
+          aria-label="Generate tasks from this reply"
         >
-          {pending ? (
-            <Loader2 className="animate-spin" aria-hidden="true" />
-          ) : (
-            <ListChecks aria-hidden="true" />
-          )}
-          {generation === null ? 'Generate tasks' : 'Generate tasks again'}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="min-h-9 px-2 text-xs text-muted-foreground"
-          disabled={pending}
-          aria-expanded={focusOpen}
-          aria-controls={`${fieldId}-focus`}
-          onClick={() => setFocusOpen((open) => !open)}
-        >
-          <SlidersHorizontal aria-hidden="true" />
-          Focus
-        </Button>
-        {focusOpen ? (
-          <Input
-            id={`${fieldId}-focus`}
-            aria-label="Optional focus for the tasks from this reply"
+          <Button
+            type="submit"
+            size="sm"
+            variant="ghost"
+            className="min-h-9 px-2 text-xs"
+            disabled={pending || blockedReason !== null || tooLong}
+            title={blockedReason ?? 'Propose tasks using only this reply as the source.'}
+            aria-describedby={blockedReason === null ? undefined : `${fieldId}-blocked`}
+          >
+            {pending ? (
+              <Loader2 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <ListChecks aria-hidden="true" />
+            )}
+            {generation === null ? 'Generate tasks' : 'Generate tasks again'}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="min-h-9 px-2 text-xs text-muted-foreground"
             disabled={pending}
-            value={instructions}
-            onChange={(event) => {
-              setInstructions(event.target.value);
-              requestId.current = null;
-              setError(null);
-            }}
-            maxLength={taskProposalInstructionsMaxLength}
-            placeholder="Optional, e.g. only the backend part"
-            className="h-9 w-full min-w-0 flex-1 basis-48 text-xs"
-            aria-invalid={tooLong}
-          />
-        ) : null}
-        {blockedReason !== null ? (
-          <span id={`${fieldId}-blocked`} className="sr-only">
-            {blockedReason}
-          </span>
-        ) : null}
-      </form>
+            aria-expanded={focusOpen}
+            aria-controls={`${fieldId}-focus`}
+            onClick={() => setFocusOpen((open) => !open)}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            Focus
+          </Button>
+          {focusOpen ? (
+            <Input
+              id={`${fieldId}-focus`}
+              aria-label="Optional focus for the tasks from this reply"
+              disabled={pending}
+              value={instructions}
+              onChange={(event) => {
+                setInstructions(event.target.value);
+                requestId.current = null;
+                setError(null);
+              }}
+              maxLength={taskProposalInstructionsMaxLength}
+              placeholder="Optional, e.g. only the backend part"
+              className="h-9 w-full min-w-0 flex-1 basis-48 text-xs"
+              aria-invalid={tooLong}
+            />
+          ) : null}
+          {blockedReason !== null ? (
+            <span id={`${fieldId}-blocked`} className="sr-only">
+              {blockedReason}
+            </span>
+          ) : null}
+        </form>
+      </div>
       {generation !== null && state !== null ? (
         <div
           role="status"

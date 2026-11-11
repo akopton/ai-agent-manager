@@ -13,6 +13,10 @@ import {
   createDatabase,
   finishConversationTurn,
 } from '@ai-agent-manager/database';
+import {
+  PATCH as updateNoteRoute,
+  DELETE as deleteNoteRoute,
+} from '@/app/api/projects/[projectId]/conversations/[conversationId]/messages/[noteId]/route';
 import { POST as messageRoute } from '@/app/api/projects/[projectId]/conversations/[conversationId]/messages/route';
 import { GET as getRoute } from '@/app/api/projects/[projectId]/conversations/[conversationId]/route';
 import { POST as retryRoute } from '@/app/api/projects/[projectId]/conversations/[conversationId]/turns/[turnId]/retry/route';
@@ -27,6 +31,7 @@ import {
 import { PUT as trustedLocalRoute } from '@/app/api/settings/trusted-local/route';
 import {
   conversationDetailResponseSchema,
+  updateConversationNoteResponseSchema,
   conversationResponseSchema,
   conversationSettingsResponseSchema,
   conversationTurnResponseSchema,
@@ -76,7 +81,7 @@ after(() => {
 });
 
 const send = (
-  method: 'POST' | 'PUT',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
@@ -427,4 +432,157 @@ test('a model of the other provider is refused; switching runtime resets the mod
     conversationResponseSchema.parse(await custom.json()).conversation.modelId,
     'claude-future-9',
   );
+});
+
+test('references accept IDs only, expose bounded provenance and preserve request idempotency', async () => {
+  const { projectId, conversation } = await setUp();
+  await enableAi();
+  const noteId = randomUUID();
+  const { addConversationNote } = await import('@ai-agent-manager/database');
+  addConversationNote(getDatabase(), {
+    scope: { projectId, conversationId: conversation.id },
+    id: noteId,
+    input: { requestId: randomUUID(), content: 'Explicit note '.repeat(80) },
+    now: Date.now(),
+  });
+  const input = { requestId: randomUUID(), content: 'Consider this note', referenceIds: [noteId] };
+  const result = await sendMessage(projectId, conversation.id, input);
+  assert.equal(result.status, 202);
+  const payload = sendConversationMessageResponseSchema.parse(await result.json());
+  assert.equal(payload.turn.references?.[0]?.sourceId, noteId);
+  assert.equal(payload.turn.references?.[0]?.preview.length, 240);
+  assert.equal('content' in (payload.turn.references?.[0] ?? {}), false);
+  const repeated = await sendMessage(projectId, conversation.id, input);
+  assert.equal(repeated.status, 200);
+  assert.equal(
+    sendConversationMessageResponseSchema.parse(await repeated.json()).turn.id,
+    payload.turn.id,
+  );
+  const changed = await sendMessage(projectId, conversation.id, { ...input, referenceIds: [] });
+  assert.equal((await errorOf(changed)).code, 'conversation_request_conflict');
+  const textInjection = await sendMessage(projectId, conversation.id, {
+    ...input,
+    referenceIds: [{ sourceId: noteId, content: 'Client supplied' }],
+  });
+  assert.equal(textInjection.status, 400);
+});
+
+test('note API revisions, deletion and historical source availability stay scoped and guarded', async () => {
+  const own = await setUp();
+  const foreign = await setUp();
+  await enableAi();
+  const { addConversationNote } = await import('@ai-agent-manager/database');
+  const note = addConversationNote(getDatabase(), {
+    scope: { projectId: own.projectId, conversationId: own.conversation.id },
+    id: randomUUID(),
+    input: { requestId: randomUUID(), content: 'Original historical note' },
+    now: Date.now(),
+  }).message;
+  const scope = { projectId: own.projectId, conversationId: own.conversation.id, noteId: note.id };
+  const path = `/api/projects/${scope.projectId}/conversations/${scope.conversationId}/messages/${note.id}`;
+  const original = await sendMessage(scope.projectId, scope.conversationId, {
+    requestId: randomUUID(),
+    content: 'Use original',
+    referenceIds: [note.id],
+  });
+  assert.equal(original.status, 202);
+  const queued = sendConversationMessageResponseSchema.parse(await original.json());
+  const { requestConversationTurnStop } = await import('@ai-agent-manager/database');
+  requestConversationTurnStop(getDatabase(), { scope, turnId: queued.turn.id, now: Date.now() });
+  const updated = await updateNoteRoute(
+    send('PATCH', path, { revision: 1, content: 'Edited current note' }),
+    params(scope),
+  );
+  assert.equal(updated.status, 200);
+  assert.equal(
+    updateConversationNoteResponseSchema.parse(await updated.json()).message.content,
+    'Edited current note',
+  );
+  const current = (await detail(scope.projectId, scope.conversationId)).messages.find(
+    (item) => item.id === note.id,
+  );
+  assert.equal(current?.content, 'Edited current note');
+  assert.equal(current?.revision, 2);
+  assert.equal(current?.createdAt, note.createdAt);
+  const stale = await updateNoteRoute(
+    send('PATCH', path, { revision: 1, content: 'Stale edit' }),
+    params(scope),
+  );
+  assert.equal(stale.status, 409);
+  assert.equal((await errorOf(stale)).code, 'conversation_note_changed');
+  for (const route of [updateNoteRoute, deleteNoteRoute]) {
+    const method = route === updateNoteRoute ? 'PATCH' : 'DELETE';
+    const body = route === updateNoteRoute ? { revision: 2, content: 'Blocked' } : { revision: 2 };
+    const cross = await route(
+      send(method, path, body),
+      params({ ...scope, projectId: foreign.projectId, conversationId: foreign.conversation.id }),
+    );
+    assert.equal(cross.status, 404);
+    const crossConversation = await route(
+      send(method, path, body),
+      params({ ...scope, conversationId: foreign.conversation.id }),
+    );
+    assert.equal(crossConversation.status, 404);
+    const originBlocked = await route(
+      send(method, path, body, { origin: 'https://untrusted.example' }),
+      params(scope),
+    );
+    assert.equal(originBlocked.status, 403);
+    const hostBlocked = await route(
+      send(method, path, body, { host: 'untrusted.example' }),
+      params(scope),
+    );
+    assert.equal(hostBlocked.status, 403);
+    const contentType = await route(
+      send(method, path, body, { 'content-type': 'text/plain' }),
+      params(scope),
+    );
+    assert.equal(contentType.status, 415);
+    const tooLarge = await route(
+      send(method, path, { ...body, extra: 'x'.repeat(70_000) }),
+      params(scope),
+    );
+    assert.equal(tooLarge.status, 413);
+  }
+  for (const content of ['', 'x'.repeat(20_001)])
+    assert.equal(
+      (await updateNoteRoute(send('PATCH', path, { revision: 2, content }), params(scope))).status,
+      400,
+    );
+  const before = (await detail(scope.projectId, scope.conversationId)).turns.find(
+    (turn) => turn.id === queued.turn.id,
+  );
+  assert.equal(before?.references?.[0]?.preview, 'Original historical note');
+  assert.equal(before?.references?.[0]?.sourceAvailable, true);
+  assert.equal(
+    (await deleteNoteRoute(send('DELETE', path, { revision: 2 }), params(scope))).status,
+    200,
+  );
+  assert.equal(
+    (await deleteNoteRoute(send('DELETE', path, { revision: 2 }), params(scope))).status,
+    200,
+  );
+  assert.equal(
+    (
+      await updateNoteRoute(
+        send('PATCH', path, { revision: 2, content: 'Resurrect' }),
+        params(scope),
+      )
+    ).status,
+    404,
+  );
+  const after = await detail(scope.projectId, scope.conversationId);
+  assert.equal(
+    after.messages.some((item) => item.id === note.id),
+    false,
+  );
+  const historical = after.turns.find((turn) => turn.id === queued.turn.id);
+  assert.equal(historical?.references?.[0]?.preview, 'Original historical note');
+  assert.equal(historical?.references?.[0]?.sourceAvailable, false);
+  const rejected = await sendMessage(scope.projectId, scope.conversationId, {
+    requestId: randomUUID(),
+    content: 'Unsent deleted reference',
+    referenceIds: [note.id],
+  });
+  assert.equal(rejected.status, 400);
 });

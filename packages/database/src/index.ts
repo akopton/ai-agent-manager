@@ -240,3 +240,5 @@ export {
   setProjectSourceAccess,
   type ProjectSourceAccessRecord,
 } from './project-source-access.js';
+
+export { updateConversationNote, deleteConversationNote } from './conversation-notes.js';

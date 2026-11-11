@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
   ConversationError,
+  conversationReferenceSnapshotsSchema,
+  conversationReferenceLimits,
   conversationDisclosure,
   evaluateConversationConsent,
   evaluateProjectSourceAccess,
@@ -11,10 +13,14 @@ import {
   type Conversation,
   type ConversationMessage,
   type UpdateConversationData,
+  type UpdateConversationNoteInput,
+  type ConversationNoteRevisionInput,
 } from '@ai-agent-manager/core';
 import {
   acceptConversationDisclosure,
   addConversationNote,
+  updateConversationNote,
+  deleteConversationNote,
   disableConversationAi,
   getConversationConsent,
   listConversationTurns,
@@ -98,6 +104,8 @@ const toMessage = ({
   kind,
   content,
   createdAt,
+  updatedAt,
+  revision,
 }: ConversationMessageRecord): ConversationMessage => ({
   id,
   conversationId,
@@ -106,6 +114,8 @@ const toMessage = ({
   kind,
   content,
   createdAt,
+  updatedAt,
+  revision,
 });
 
 const findProject = (db: Database, projectId: string): ProjectRecord | undefined => {
@@ -187,7 +197,10 @@ const manifestSchema = z.object({
 });
 
 /** The UI view of a turn. The prompt and the manifest's internals are never exposed. */
-export const toTurnView = (turn: ConversationTurnRecord): ConversationTurnView => {
+export const toTurnView = (
+  turn: ConversationTurnRecord,
+  availableSourceIds?: ReadonlySet<string>,
+): ConversationTurnView => {
   let context: ConversationTurnView['context'] = null;
   if (turn.contextManifestJson !== null) {
     try {
@@ -204,6 +217,15 @@ export const toTurnView = (turn: ConversationTurnRecord): ConversationTurnView =
     }
   }
   return {
+    references: conversationReferenceSnapshotsSchema
+      .parse(JSON.parse(turn.referencesJson))
+      .map(({ sourceId, kind, role, content }) => ({
+        sourceId,
+        kind,
+        role,
+        preview: content.slice(0, conversationReferenceLimits.previewCharacters),
+        sourceAvailable: availableSourceIds?.has(sourceId) ?? true,
+      })),
     id: turn.id,
     status: turn.status,
     active: isActiveConversationTurnStatus(turn.status),
@@ -270,11 +292,12 @@ export const findConversationDetail = (
   ) {
     return undefined;
   }
+  const availableSourceIds = new Set(messages.map((message) => message.id));
   return {
     project: { id: project.id, name: project.name, defaultBaseBranch: project.defaultBaseBranch },
     conversation: toConversation(conversation),
     messages: messages.map(toMessage),
-    turns: turns.map(toTurnView),
+    turns: turns.map((turn) => toTurnView(turn, availableSourceIds)),
     ai: getConversationAiStatus(db),
     generations: proposals.generations,
     proposals: proposals.proposals,
@@ -389,7 +412,10 @@ export const sendProjectConversationMessage = (
     input: request,
     now: now(),
   });
-  return { message: toMessage(message), turn: toTurnView(turn), created };
+  const available = new Set(
+    listConversationMessages(db, { projectId, conversationId })?.map((message) => message.id),
+  );
+  return { message: toMessage(message), turn: toTurnView(turn, available), created };
 };
 
 /** Records Stop for a turn of this conversation; the worker terminates the CLI. */
@@ -401,12 +427,16 @@ export const stopProjectConversationTurn = (
   { now = Date.now }: Pick<ConversationServiceOptions, 'now'> = {},
 ): ConversationTurnView => {
   const project = requireProject(db, projectId);
+  const available = new Set(
+    listConversationMessages(db, { projectId, conversationId })?.map((message) => message.id),
+  );
   return toTurnView(
     requestConversationTurnStop(db, {
       scope: { projectId: project.id, conversationId },
       turnId,
       now: now(),
     }),
+    available,
   );
 };
 
@@ -427,7 +457,10 @@ export const retryProjectConversationTurn = (
     input: request,
     now: now(),
   });
-  return { turn: toTurnView(turn), created };
+  const available = new Set(
+    listConversationMessages(db, { projectId, conversationId })?.map((message) => message.id),
+  );
+  return { turn: toTurnView(turn, available), created };
 };
 
 export const getConversationSettings = (db: Database): ConversationSettingsView => {
@@ -462,4 +495,30 @@ export const disableConversationAiReplies = (
 ): ConversationSettingsView => {
   disableConversationAi(db, { now: now() });
   return getConversationSettings(db);
+};
+
+export const updateProjectConversationNote = (
+  db: Database,
+  projectId: string,
+  conversationId: string,
+  noteId: string,
+  input: UpdateConversationNoteInput,
+  { now = Date.now }: Pick<ConversationServiceOptions, 'now'> = {},
+): ConversationMessage => {
+  requireProject(db, projectId);
+  return toMessage(
+    updateConversationNote(db, { scope: { projectId, conversationId }, noteId, input, now: now() }),
+  );
+};
+
+export const deleteProjectConversationNote = (
+  db: Database,
+  projectId: string,
+  conversationId: string,
+  noteId: string,
+  input: ConversationNoteRevisionInput,
+  { now = Date.now }: Pick<ConversationServiceOptions, 'now'> = {},
+): void => {
+  requireProject(db, projectId);
+  deleteConversationNote(db, { scope: { projectId, conversationId }, noteId, input, now: now() });
 };

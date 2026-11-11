@@ -116,12 +116,14 @@ const conversationErrorStatus = (code: ConversationErrorCode): number => {
       return 400;
     case 'project_not_found':
     case 'conversation_not_found':
+    case 'conversation_note_not_found':
     case 'conversation_turn_not_found':
     case 'task_proposal_generation_not_found':
     case 'task_proposal_not_found':
     case 'task_proposal_source_not_found':
       return 404;
     case 'conversation_changed':
+    case 'conversation_note_changed':
     case 'conversation_request_conflict':
     case 'conversation_turn_active':
     case 'conversation_ai_disabled':

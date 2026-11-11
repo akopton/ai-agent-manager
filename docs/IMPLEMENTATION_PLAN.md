@@ -1,8 +1,8 @@
 # AI Agent Manager — MVP Implementation Plan
 
-**Status:** Draft v0.10 — C4 (Project-Aware conversations with controlled source-code context) delivered (§8); v0.9: C3.1 (task proposals from individual AI replies) delivered (§8); v0.8: AI Conversations C3 (task proposals to Backlog) delivered (§8); v0.7: AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)  
-**Date:** 2026-11-07 (v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Based on:** [`SPEC.md`](./SPEC.md) v0.11 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.10  
+**Status:** Draft v0.11 — UI-04D implemented with operator acceptance pending (§10); v0.10 — C4 (Project-Aware conversations with controlled source-code context) delivered (§8); v0.9: C3.1 (task proposals from individual AI replies) delivered (§8); v0.8: AI Conversations C3 (task proposals to Backlog) delivered (§8); v0.7: AI Conversations C2 (CLI-backed conversations, provider-specific model selection) delivered (§8); v0.6: AI Conversations roadmap reset to C1–C4 and C1 (conversation foundation) delivered (§8); v0.5: TM-02 task archiving and managed worktree cleanup recorded as a focused slice (M2-02, M3-02, M7-02); v0.4 added SEC-02 execution security modes and staged plan (§9.3, §9.4); v0.3 added platform strategy and SEC-01 (§9); v0.2 added AI Conversations (§8)\
+**Date:** 2026-11-11 (UI-04D; prior snapshot: 2026-11-07; v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)\
+**Based on:** [`SPEC.md`](./SPEC.md) v0.14 and [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.13\
 **Scope:** Single-user, local-first macOS MVP
 
 ## 1. Purpose and delivery rules
@@ -719,11 +719,51 @@ Validation results and practical limits are recorded in PROJECT_CONTEXT.md.
 - Manual acceptance: Safari, touch/virtual keyboard, zoom and short mobile windows; UI-04D stays
   deferred and UI-04C must not be committed before operator acceptance.
 
-### UI-04D — References & Final Polish (deferred)
+### UI-04D — References & Final Polish (implemented 2026-11-11; operator acceptance pending)
 
-- Explicit references to chat messages and notes.
-- Composer reference chips.
-- Responsive and keyboard polish.
+- [x] Reference user messages, completed AI replies and saved notes using source IDs only.
+- [x] Bounded role/note previews, individual removal, source navigation and sent provenance.
+- [x] Explicit note-sharing notice and revised versioned AI Conversations disclosure.
+- [x] Conversation/project-scoped server resolution, eligibility/count/size/budget validation.
+- [x] Additive immutable turn snapshots; worker execution/recovery and manual Retry reuse them.
+- [x] Payload-aware request idempotency; unselected notes excluded in both context modes.
+- [x] Existing conversation shells, headers, panels, footers, theme tokens and composer reused.
+- [x] Fake-CLI, temporary-database, API and presentation regression coverage.
+- [x] Acceptance follow-up: revision-checked inline note editing and confirmed content-cleared
+      tombstone deletion, preserving historical snapshots/Retry and source availability.
+
+Validation: Node.js 24.22.2 lint, typecheck, format:check and all 873 full-suite tests passed;
+45 focused final web tests passed. Webpack production and worker builds passed. Default pnpm
+build failed inside/outside the sandbox with the known Turbopack CSS worker port-binding error.
+Production Chrome passed the reference/fake-CLI flow plus existing proposal, long-chat and
+persistent-navigation regression suites. Detailed evidence and limitations: PROJECT_CONTEXT.
+
+Note-management follow-up validation: Node.js 24 lint/typecheck/format:check and all 878 tests
+passed. Focused production Chrome note management and the existing reference acceptance flow
+passed with disposable data; Webpack and worker builds passed. Default Turbopack still fails
+inside/outside the sandbox on its CSS worker port binding. See PROJECT_CONTEXT for full evidence.
+
+Operator acceptance checklist:
+
+- [ ] Renew AI Conversations disclosure; reference an old user message and completed reply.
+- [ ] Reference a saved note, inspect recipient notice, remove/reselect it and send.
+- [ ] Navigate to each source and return; verify text and references survive tab/settings changes.
+- [ ] Switch conversations; confirm references never appear in the destination composer.
+- [ ] Try five references, oversized/over-budget sources and a lost-response resend.
+- [ ] Stop/interrupt a turn; manually Retry and inspect the same selected context.
+- [ ] Repeat persistent project navigation, long Chat/Tasks/Notes reading, Task Details actions,
+      Kanban destination colors, source disclosures and proposal edit/approval flows.
+- [ ] Check all four accents, narrow/short windows, zoom, Safari and touch/virtual keyboard.
+- [ ] Exercise an authenticated real conversation separately; automated QA uses fake CLIs only.
+- [ ] Edit/cancel/save a note; verify creation time, updated time and stale-change feedback.
+- [ ] Cancel and confirm Delete at desktop/360px; check focus and that a new note gets a fresh sequence.
+- [ ] Edit a selected note, then send; compare the current context with an older stored snapshot.
+- [ ] Delete a selected note; verify Send is blocked until removal and historical previews/Retry
+      preserve the earlier text with Source unavailable.
+
+Drafts/references are scoped to the mounted conversation and are not durable across reload or
+conversation replacement. Selected source text over 20,000 characters is refused with guidance;
+partial-source selection and file attachments remain deferred. See SPEC §22 / ARCHITECTURE §20.
 
 ### Later functional work (unscheduled)
 

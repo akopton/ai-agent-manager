@@ -668,6 +668,10 @@ export const conversationMessages = sqliteTable(
     content: text('content').notNull(),
     requestId: text('request_id').unique(),
     createdAt: integer('created_at').notNull(),
+    /** Notes only: optimistic concurrency and a reserved, content-cleared deletion tombstone. */
+    revision: integer('revision').notNull().default(1),
+    updatedAt: integer('updated_at'),
+    deletedAt: integer('deleted_at'),
   },
   (table) => [
     unique('conversation_messages_sequence_unique').on(table.conversationId, table.sequence),
@@ -746,6 +750,8 @@ export const conversationTurns = sqliteTable(
     cliVersion: text('cli_version'),
     /** What was sent (history sequences, budget, language); never the prompt itself. */
     contextManifestJson: text('context_manifest_json'),
+    /** UI-04D: server-resolved immutable quotations; copied unchanged on manual Retry. */
+    referencesJson: text('references_json').notNull().default('[]'),
     workerInstanceId: text('worker_instance_id'),
     pid: integer('pid'),
     stopRequestedAt: integer('stop_requested_at'),

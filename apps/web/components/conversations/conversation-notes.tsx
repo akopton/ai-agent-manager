@@ -1,12 +1,31 @@
-import type { ConversationMessage } from '@ai-agent-manager/core';
-import { formatTimestamp } from '@/lib/projects/format';
+'use client';
 
-export const ConversationNotes = ({ messages }: { messages: readonly ConversationMessage[] }) => {
-  const notes = messages.filter((message) => message.kind === 'note');
+import { useRef, useState } from 'react';
+import type { ConversationMessage } from '@ai-agent-manager/core';
+import { ConversationNoteCard } from '@/components/conversations/conversation-note-card';
+
+export const ConversationNotes = ({
+  messages,
+  projectId,
+}: {
+  messages: readonly ConversationMessage[];
+  projectId: string;
+}) => {
+  const [deletedIds, setDeletedIds] = useState<ReadonlySet<string>>(new Set());
+  const section = useRef<HTMLElement>(null);
+  const notes = messages.filter(
+    (message) => message.kind === 'note' && !deletedIds.has(message.id),
+  );
   return (
-    <section aria-label="Conversation notes" className="space-y-4">
+    <section
+      ref={section}
+      tabIndex={-1}
+      aria-label="Conversation notes"
+      className="space-y-4 outline-none"
+    >
       <p className="text-sm text-muted-foreground">
-        Notes stay in AI Agent Manager. They are never sent to Claude Code or Codex.
+        Notes stay in AI Agent Manager. They are sent only when you explicitly reference them in a
+        new chat message.
       </p>
       {notes.length === 0 ? (
         <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
@@ -15,16 +34,15 @@ export const ConversationNotes = ({ messages }: { messages: readonly Conversatio
       ) : (
         <ol aria-label="Saved notes" className="space-y-3">
           {notes.map((note) => (
-            <li key={note.id}>
-              <article className="rounded-xl border border-dashed bg-inset/60 px-4 py-3">
-                <header className="mb-2 flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-                  <span>Note · Not sent to an AI</span>
-                  <time dateTime={new Date(note.createdAt).toISOString()}>
-                    {formatTimestamp(note.createdAt)}
-                  </time>
-                </header>
-                <p className="text-sm leading-6 break-words whitespace-pre-wrap">{note.content}</p>
-              </article>
+            <li key={note.id} id={`note-${note.id}`}>
+              <ConversationNoteCard
+                projectId={projectId}
+                note={note}
+                onDeleted={() => {
+                  setDeletedIds((current) => new Set([...current, note.id]));
+                  requestAnimationFrame(() => section.current?.focus({ preventScroll: true }));
+                }}
+              />
             </li>
           ))}
         </ol>

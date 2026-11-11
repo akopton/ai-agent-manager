@@ -1,5 +1,9 @@
+import {
+  ReferenceButton,
+  ReferencePreviews,
+} from '@/components/conversations/conversation-references';
 import { AlertCircle, Bot, Loader2, MessagesSquare, OctagonX } from 'lucide-react';
-import type { ConversationMessage } from '@ai-agent-manager/core';
+import { conversationReferenceLimits, type ConversationMessage } from '@ai-agent-manager/core';
 
 import { MarkdownContent } from '@/components/conversations/markdown-content';
 import { ReplySources } from '@/components/conversations/reply-sources';
@@ -107,8 +111,8 @@ export const ConversationHistory = ({
         </div>
         <h2 className="text-base font-semibold">No messages yet</h2>
         <p className="max-w-md text-sm leading-6 text-muted-foreground">
-          Ask the AI to help plan this topic, or save a note for yourself. Notes are never sent to
-          Claude Code or Codex.
+          Ask the AI to help plan this topic, or save a note for yourself. Notes are shared only
+          when explicitly referenced.
         </p>
       </div>
     );
@@ -157,6 +161,17 @@ export const ConversationHistory = ({
                     generation={bySource.get(message.id) ?? null}
                     aiEnabled={ai.enabled}
                     blockedReason={blockedReason}
+                    referenceAction={
+                      <ReferenceButton
+                        source={{
+                          ...message,
+                          content: message.content.slice(
+                            0,
+                            conversationReferenceLimits.previewCharacters,
+                          ),
+                        }}
+                      />
+                    }
                   />
                 ) : null}
               </article>
@@ -164,7 +179,11 @@ export const ConversationHistory = ({
           );
         }
         return (
-          <li key={message.id} className="flex flex-col items-end gap-2">
+          <li
+            key={message.id}
+            id={messageAnchor(message.id)}
+            className="flex flex-col items-end gap-2"
+          >
             <article
               aria-label={`Your message, ${formatTimestamp(message.createdAt)}`}
               className="max-w-[min(85%,90ch)] min-w-0 rounded-2xl rounded-tr-sm border bg-inset px-4 py-3 text-sm"
@@ -179,7 +198,19 @@ export const ConversationHistory = ({
                   <Timestamp value={message.createdAt} />
                 </span>
               </header>
+              <ReferencePreviews references={entry.turn?.references ?? []} />
               <p className="text-sm leading-6 break-words whitespace-pre-wrap">{message.content}</p>
+              <footer className="mt-3 border-t pt-2">
+                <ReferenceButton
+                  source={{
+                    ...message,
+                    content: message.content.slice(
+                      0,
+                      conversationReferenceLimits.previewCharacters,
+                    ),
+                  }}
+                />
+              </footer>
             </article>
             {entry.state !== null && entry.turn !== null ? (
               <TurnStatus

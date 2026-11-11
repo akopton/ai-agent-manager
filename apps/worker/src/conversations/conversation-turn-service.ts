@@ -16,6 +16,8 @@ import {
   cliLoginHint,
   composeContextPlanningPrompt,
   composeConversationPrompt,
+  conversationReferenceSnapshotsSchema,
+  type ConversationReferenceSnapshot,
   composeProjectAwarePrompt,
   composeSourceTaskProposalPrompt,
   composeTaskProposalPrompt,
@@ -487,6 +489,7 @@ export const createConversationTurnService = (
   const runProjectAwareTurn = async (
     claim: ClaimedConversationTurn,
     entry: ActiveWork,
+    references: readonly ConversationReferenceSnapshot[],
   ): Promise<void> => {
     const { turn, userMessage, conversation } = claim;
     const name = runtimeNames[turn.agentRuntime];
@@ -639,6 +642,7 @@ export const createConversationTurnService = (
       notesExcluded: claim.notesExcluded,
       record: retrieved.record,
       excerpts: retrieved.excerpts,
+      references,
     });
     progress({
       contextStage: 'answering',
@@ -672,8 +676,32 @@ export const createConversationTurnService = (
   };
 
   const runTurn = async (claim: ClaimedConversationTurn, entry: ActiveWork): Promise<void> => {
+    let references: ConversationReferenceSnapshot[];
+    try {
+      references = conversationReferenceSnapshotsSchema.parse(
+        JSON.parse(claim.turn.referencesJson),
+      );
+    } catch {
+      finish(
+        claim.turn.id,
+        failed({
+          errorCode: 'worker_error',
+          errorMessage:
+            'Stored reference context is invalid. Nothing was sent. Send a new message with references selected again.',
+        }),
+      );
+      return;
+    }
+    // Deleted source notes remain in immutable reference snapshots, but are not live excluded notes.
+    const contextClaim = {
+      ...claim,
+      notesExcluded:
+        claim.notesExcluded -
+        references.filter((item) => item.kind === 'note' && claim.noteIds.includes(item.sourceId))
+          .length,
+    };
     if (claim.turn.contextMode === 'project_aware') {
-      await runProjectAwareTurn(claim, entry);
+      await runProjectAwareTurn(contextClaim, entry, references);
       return;
     }
     const { turn, userMessage } = claim;
@@ -682,7 +710,8 @@ export const createConversationTurnService = (
       languageMode: turn.languageMode,
       history: claim.history,
       message: userMessage.content,
-      notesExcluded: claim.notesExcluded,
+      notesExcluded: contextClaim.notesExcluded,
+      references,
     });
     updateConversationTurnProgress(
       db,

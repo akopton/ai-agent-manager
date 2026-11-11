@@ -6,9 +6,14 @@ import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, NotebookPen, Send } from 'lucide-react';
 import {
   conversationMessageContentSchema,
+  conversationReferenceLimits,
   conversationMessageMaxLength,
 } from '@ai-agent-manager/core';
 
+import {
+  ReferencePreviews,
+  useReferenceDraft,
+} from '@/components/conversations/conversation-references';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -53,6 +58,8 @@ export const MessageComposer = ({
   onSent,
 }: MessageComposerProps) => {
   const router = useRouter();
+  const referenceDraft = useReferenceDraft();
+  const requestSignature = useRef<string | null>(null);
   const fieldId = useId();
   const [content, setContent] = useState('');
   const [error, setError] = useState<ClientError | null>(null);
@@ -70,6 +77,14 @@ export const MessageComposer = ({
     if (submitting.current || blocked) {
       return;
     }
+    if (chat && referenceDraft.references.some((item) => item.sourceAvailable === false)) {
+      setError({
+        code: 'invalid_reference',
+        message:
+          'A referenced note or message is unavailable or was deleted. Remove its reference before sending.',
+      });
+      return;
+    }
     const parsed = conversationMessageContentSchema.safeParse(content);
     if (!parsed.success) {
       setError({
@@ -78,17 +93,23 @@ export const MessageComposer = ({
       });
       return;
     }
+    const referenceIds = chat ? referenceDraft.references.map((item) => item.sourceId) : [];
+    const signature = JSON.stringify({ content, referenceIds });
+    if (requestSignature.current !== signature) requestId.current = null;
+    requestSignature.current = signature;
     requestId.current ??= crypto.randomUUID();
     setError(null);
     submitting.current = true;
     setPending(true);
+    if (chat) referenceDraft.lock(true);
     const base = `/api/projects/${projectId}/conversations/${conversationId}`;
-    const body = { requestId: requestId.current, content };
+    const body = { requestId: requestId.current, content, ...(chat ? { referenceIds } : {}) };
     const response = chat
       ? await requestJson('POST', `${base}/turns`, sendConversationMessageResponseSchema, body)
       : await requestJson('POST', `${base}/messages`, conversationMessageResponseSchema, body);
     submitting.current = false;
     setPending(false);
+    if (chat) referenceDraft.lock(false);
     if (!response.ok) {
       // Keep the draft and its request ID: retrying the same text cannot store it twice.
       setError(response.error);
@@ -96,7 +117,10 @@ export const MessageComposer = ({
     }
     requestId.current = null;
     setContent('');
-    if (chat) onSent?.();
+    if (chat) {
+      referenceDraft.clear();
+      onSent?.();
+    }
     router.refresh();
   };
 
@@ -130,6 +154,26 @@ export const MessageComposer = ({
           {chat ? 'Message to the AI' : 'New note'}
         </Label>
       </div>
+      {chat ? (
+        <>
+          <ReferencePreviews
+            references={referenceDraft.references}
+            onRemove={referenceDraft.remove}
+            disabled={pending}
+          />
+          {referenceDraft.references.length > 0 ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {referenceDraft.references.length} / {conversationReferenceLimits.count} references.
+              References are shared only when you send.
+            </p>
+          ) : null}
+          {referenceDraft.references.some((item) => item.kind === 'note') ? (
+            <p className="text-xs text-warning">
+              Referenced note content will be shared with {target} when you send this message.
+            </p>
+          ) : null}
+        </>
+      ) : null}
       <Textarea
         id={`${fieldId}-content`}
         name="content"
@@ -161,7 +205,7 @@ export const MessageComposer = ({
         >
           {chat ? (
             aiEnabled ? (
-              <>Notes are not sent. </>
+              <>Notes are private unless explicitly referenced. </>
             ) : (
               <>
                 AI replies are off.{' '}
@@ -172,7 +216,10 @@ export const MessageComposer = ({
               </>
             )
           ) : (
-            <>Saved in AI Agent Manager only. It is never sent to Claude Code or Codex. </>
+            <>
+              Saved in AI Agent Manager only. Share it later only by explicitly referencing it in
+              Chat.{' '}
+            </>
           )}
           <span className={tooLong ? 'text-destructive' : undefined}>
             {length.toLocaleString('en')} / {conversationMessageMaxLength.toLocaleString('en')}{' '}

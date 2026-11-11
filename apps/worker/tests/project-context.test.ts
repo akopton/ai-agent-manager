@@ -19,6 +19,8 @@ import {
   type AgentRuntime,
 } from '@ai-agent-manager/core';
 import {
+  addConversationNote,
+  sendConversationMessage,
   findConversationTurn,
   findTaskProposalGenerationById,
   listConversationMessages,
@@ -127,7 +129,29 @@ for (const runtime of ['claude', 'codex'] as const) {
       await service.start();
       let turnId = '';
       try {
-        turnId = fixture.send(conversationId, 'How does runQueuedTask work?').turnId;
+        const note = addConversationNote(fixture.db, {
+          scope: scope(fixture, conversationId),
+          id: randomUUID(),
+          input: { requestId: randomUUID(), content: 'EXPLICIT_PROJECT_NOTE' },
+          now: Date.now(),
+        }).message;
+        addConversationNote(fixture.db, {
+          scope: scope(fixture, conversationId),
+          id: randomUUID(),
+          input: { requestId: randomUUID(), content: 'UNSELECTED_PROJECT_NOTE' },
+          now: Date.now(),
+        });
+        turnId = sendConversationMessage(fixture.db, {
+          scope: scope(fixture, conversationId),
+          messageId: randomUUID(),
+          turnId: randomUUID(),
+          input: {
+            requestId: randomUUID(),
+            content: 'How does runQueuedTask work?',
+            referenceIds: [note.id],
+          },
+          now: Date.now(),
+        }).turn.id;
         const status = await fixture.waitForTurn(turnId, ['completed', 'failed']);
         assert.equal(
           status,
@@ -141,6 +165,9 @@ for (const runtime of ['claude', 'codex'] as const) {
       assert.equal(invocations.length, 2);
       const [plan, answer] = invocations;
       assert.ok(plan !== undefined && answer !== undefined);
+      assert.doesNotMatch(plan.stdin, /EXPLICIT_PROJECT_NOTE|UNSELECTED_PROJECT_NOTE/);
+      assert.match(answer.stdin, /EXPLICIT_PROJECT_NOTE/);
+      assert.doesNotMatch(answer.stdin, /UNSELECTED_PROJECT_NOTE/);
       // Planning: a catalog of readable paths, no file content and no excluded paths.
       assert.match(plan.stdin, /<repository_catalog>/);
       assert.match(plan.stdin, /src\/worker\.ts/);

@@ -3,6 +3,7 @@ export type ConversationTab = (typeof conversationTabs)[number];
 
 /** Legacy source and batch anchors must reveal their destination even without a tab query. */
 export const resolveConversationTab = (tab: string | null, hash = ''): ConversationTab => {
+  if (hash.startsWith('#note-')) return 'notes';
   if (hash.startsWith('#message-')) return 'chat';
   if (hash.startsWith('#proposals-')) return 'tasks';
   return tab === 'tasks' || tab === 'notes' ? tab : 'chat';

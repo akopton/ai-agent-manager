@@ -2,6 +2,10 @@ import {
   addConversationNoteInputSchema,
   agentRuntimeSchema,
   conversationContextModeSchema,
+  updateConversationNoteInputSchema,
+  conversationNoteRevisionInputSchema,
+  conversationReferenceSnapshotSchema,
+  conversationReferenceLimits,
   conversationTurnStageSchema,
   projectSourceAccessInputSchema,
   repositoryContextRecordSchema,
@@ -70,6 +74,14 @@ export const conversationListResponseSchema = z.object({
 
 export const conversationResponseSchema = z.object({ conversation: conversationSchema });
 
+export const conversationReferencePreviewSchema = conversationReferenceSnapshotSchema
+  .pick({ sourceId: true, kind: true, role: true })
+  .extend({
+    preview: z.string().max(conversationReferenceLimits.previewCharacters),
+    sourceAvailable: z.boolean().optional(),
+  });
+export type ConversationReferencePreview = z.infer<typeof conversationReferencePreviewSchema>;
+
 /** One request for an AI reply, as the UI shows it. Never contains the prompt. */
 export const conversationTurnViewSchema = z.object({
   id: z.string(),
@@ -95,6 +107,10 @@ export const conversationTurnViewSchema = z.object({
    * never file content. `null` for General Chat turns and before retrieval finished.
    */
   repository: repositoryContextRecordSchema.nullable(),
+  references: z
+    .array(conversationReferencePreviewSchema)
+    .max(conversationReferenceLimits.count)
+    .optional(),
   /** From the context manifest: earlier chat messages sent along, and those left out. */
   context: z
     .object({
@@ -318,4 +334,12 @@ export type ConversationSettingsView = z.infer<typeof conversationSettingsViewSc
 
 export const conversationSettingsResponseSchema = z.object({
   settings: conversationSettingsViewSchema,
+});
+
+export const updateConversationNoteRequestSchema = updateConversationNoteInputSchema;
+export const deleteConversationNoteRequestSchema = conversationNoteRevisionInputSchema;
+export const deleteConversationNoteResponseSchema = z.object({ deleted: z.literal(true) });
+
+export const updateConversationNoteResponseSchema = conversationMessageResponseSchema.omit({
+  created: true,
 });

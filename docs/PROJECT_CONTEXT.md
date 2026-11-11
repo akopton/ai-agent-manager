@@ -1,8 +1,8 @@
 # AI Agent Manager — Project Context and Decision Log
 
-**Status:** Context snapshot v0.8 — C4 decisions recorded (§10); v0.7: C3.1 decisions recorded (§10); v0.6: AI Conversations C3 decisions recorded (§10); v0.5: AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)  
-**Date:** 2026-11-07 (v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Related documents:** [`SPEC.md`](./SPEC.md) v0.11, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.10, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.10
+**Status:** Context snapshot v0.9 — UI-04D implementation and verification recorded; v0.8 — C4 decisions recorded (§10); v0.7: C3.1 decisions recorded (§10); v0.6: AI Conversations C3 decisions recorded (§10); v0.5: AI Conversations C2 decisions recorded (§10); v0.4: SEC-02 execution security modes recorded; v0.3 recorded platform strategy and SEC-01; v0.2 recorded AI Conversations decisions (§10)\
+**Date:** 2026-11-11 (UI-04D; prior snapshot: 2026-11-07; v0.4: 2026-11-04, v0.1: 2026-11-03)\
+**Related documents:** [`SPEC.md`](./SPEC.md) v0.14, [`ARCHITECTURE.md`](./ARCHITECTURE.md) v0.13, [`IMPLEMENTATION_PLAN.md`](./IMPLEMENTATION_PLAN.md) v0.11
 
 ## 1. Why this project exists
 
@@ -603,3 +603,152 @@ Chat stays separate from task execution: a conversation can never queue, start, 
 - Manual acceptance remains: repeat real operator Queue/Return and long-page scrolling; Safari,
   touch/virtual keyboard, browser zoom, very short/narrow windows and large project names.
   UI-04D remains deferred. No commit or push was made.
+
+**UI-04D — Conversation references and reusable structures (2026-11-11):**
+
+- The operator accepted UI-04C and selected this bounded follow-up. Existing AppShell/project
+  layouts, ConversationViews/ConversationPanel, mounted tabs, scroll controllers, MessageComposer,
+  shared Button/Input/Card controls, reply footer and Nebula Graphite tokens were audited and
+  reused. No application-wide layout/theme refactor, new dependency or permission expansion.
+- User messages and completed assistant replies expose Reference. Notes expose Reference in chat,
+  returning to Chat without changing the note or launching a process. Shared previews identify
+  role/kind, show 240 characters, link to original stable anchors and offer individual removal.
+  User chat messages now have anchors; sent user messages retain snapshot provenance previews.
+- `ReferenceDraftProvider` holds selections within the conversation-keyed workspace, outside
+  mounted panels. Tab/settings switches preserve text, request state and references. Other
+  conversations get fresh state. Same-route message/note links navigate local panes and preserve
+  drafts; reference selection never focuses the composer. State remains in memory and is lost
+  when the conversation is unmounted/reloaded. Existing note saving is unchanged.
+- `referenceIds` is an optional ordered UUID array on Send. Database resolution uses the scoped
+  conversation inside the existing send transaction. Missing/foreign/ineligible sources, duplicate
+  IDs, more than five selections, sources over 20,000 characters or combined references over
+  30,000 characters fail before a message/turn is inserted. Existing history/excerpt caps remain,
+  bounding combined source content to 110,000 characters (General) / 140,000 (Project-Aware).
+  Oversized references are refused, never silently shortened for the model.
+- Additive migration `0014_conversation_references` adds `references_json` to turns (historical
+  default `[]`). It snapshots source ID/kind/role/sequence/content atomically. Ordered IDs are
+  part of request idempotency; repeat sends return the original turn without resolving source
+  text again. Retry copies/validates the snapshot, including through interruptions/restart, and
+  never refreshes referenced content. No existing message/note content is rewritten by this work.
+- General and Project-Aware answer prompts include JSON quotations in a separate
+  `<explicit_references trust="untrusted">` section, after history and before the new message.
+  Angle brackets in quotations are JSON escaped; fixed instructions identify them as untrusted
+  data with no capabilities. Project-Aware file selection/catalog/retrieval is unchanged. Notes
+  are excluded unless explicitly referenced; the manifest counts only unreferenced notes as
+  excluded. An answer can naturally quote a shared note and then become ordinary chat history.
+- The composer explicitly names the recipient of note content before Send. AI Conversations
+  disclosure `2026-11-11.1` corrects the former unconditional never-sent promise and requires renewed
+  acceptance. Login, model profiles, task execution permissions and per-project source consent
+  remain unchanged. Apply the new migration explicitly with the existing database migration
+  command before starting this web/worker version; no real operator database was migrated here.
+- Regression tests cover input limits/framing, same/different-project scoping, eligible sources,
+  atomic failure, ID-only API payloads, bounded public provenance, immutable snapshots after a
+  source changes, request conflicts/deduplication, fake Claude/Codex execution after restart and
+  Retry, default note exclusion, Project-Aware answering, no task/publication records and shared
+  preview accessibility. Existing source-specific proposal tests remain in place; their user
+  anchor assertion was updated because user messages are now valid navigation targets.
+- Remaining maintenance: similar request/error/loading and empty-state presentation across
+  settings/proposal forms can be consolidated in a future bounded task. Safe permanent deletion,
+  optional task-worktree local-change transfer, file attachments, summaries, streaming/partial
+  replies and all previous platform/security follow-ups remain deferred. No commit or push.
+- Final Node.js 24.22.2 validation: `pnpm lint`, `pnpm typecheck`, `pnpm format:check` and
+  `pnpm test` passed (873 tests). A separate 45-test final web run passed after the footer/preview
+  composition changes. `pnpm build` failed inside and outside the sandbox with the known
+  Turbopack CSS worker “binding to a port → Operation not permitted (os error 1)” error; it did
+  not pass. `pnpm --filter @ai-agent-manager/web exec next build --webpack` and
+  `pnpm --filter @ai-agent-manager/worker build` passed. Tests used outside-sandbox tsx for local
+  IPC sockets. Initial attempts caught fixture/API expectation mistakes and an old test asserting
+  user messages had no anchors; those were corrected before the complete passing rerun.
+- Final production headless Chrome reference QA used a temporary migrated SQLite database,
+  disposable Git repository, sixteen synthetic completed exchanges and fake Claude/Codex
+  executables. It passed old-user keyboard selection, completed-reply selection, note return to
+  Chat and provider notice, individual removal without note changes, message/note source links,
+  browser return, tab draft/reference retention, no autofocus, fresh state in another conversation,
+  Cmd+Enter Send, exact reference IDs/content in fake CLI stdin, unselected-note exclusion,
+  draft clearing and persisted sent provenance. At 1440/768/360px all four accents fit without
+  horizontal overflow. Desktop/mobile screenshots were visually inspected. Large reference
+  selections use the existing bounded composer's footer scrollbar on short/narrow screens.
+- Existing production Chrome regressions also passed against the final build: Sources keyboard
+  disclosure/provenance; source-specific Generate tasks and same-tick deduplication; Focus; proposal
+  edit/save/reject/reopen/approve and origin links; Kanban destination colors; initial latest and
+  near-bottom following; deliberate old-history reading through refresh/delayed layout; message
+  anchors; Chat/Tasks/Notes scroll restoration; fixed project navigation; stable Task Details
+  Queue/Return positions; back/forward; dialogs and all four accents. The old proposal QA driver
+  was narrowed to find Focus inside its form after Reference became the first footer button.
+  No application regression was required to fix that selector. All browser flows finished with
+  zero runtime exceptions and zero task runs, worker commands, workspaces or publications. The
+  reference flow used one fake conversation CLI invocation; other browser flows used no worker.
+- Operator acceptance remains for Safari, touch/virtual keyboard, zoom, very short windows and an
+  authenticated real conversation. Browser tests verify application behavior, not provider CLI
+  isolation. See IMPLEMENTATION_PLAN §10 for the manual checklist. Safe permanent deletion and
+  optional task-worktree local-change transfer remain unscheduled. No commit or push was made.
+
+**UI-04D acceptance follow-up — Saved note editing and deletion (2026-11-11):**
+
+- The operator requested note management before closing the still-uncommitted UI-04D milestone.
+  ConversationNotes, MessageComposer, reference snapshots, scoped API/transaction/revision patterns,
+  shared buttons/fields and Radix AlertDialog were inspected. Existing panels, scroll ownership,
+  navigation and composer structures are preserved; no broad UI refactor or dependency was added.
+- Inline Edit populates the current text; Save uses existing note normalization/limits and a
+  captured revision. Cancel discards local edits and restores Edit focus. Creation time, sequence,
+  conversation and ID survive; edited time/revision advance. Revision conflicts preserve typed
+  text for review rather than overwriting another edit. Ordinary chat/assistant messages cannot
+  be changed through these endpoints, and note changes launch no CLI or execution work.
+- Deletion uses a destructive confirmation, initially focused on Cancel. Migration
+  `0015_conversation_note_management` adds revision, updated_at and deleted_at metadata. Delete
+  clears the current body and retains a tombstone with ID/request ID/sequence/timestamps, preserving
+  FK identity and sequence allocation. Active lists/counts hide tombstones. This is logical deletion,
+  not secure erasure; historical reference snapshots/provider records and other copies remain.
+  Confirmations bind to their opened revision; repeated completed deletion is idempotent. Stale
+  edits/create-request replays cannot resurrect a deleted note. No other resource is deletable.
+- PATCH/DELETE on the scoped messages/:noteId route retain Host/Origin/content-type/body-size/Zod
+  guards. Update returns a message-only response; Delete returns deleted:true, also on repetition.
+  Missing/foreign/non-note targets return 404, stale revisions 409, invalid content 400.
+- Existing references_json is not rewritten. New references resolve current note text; saved
+  snapshots and Retry keep earlier text even when the live note changes or disappears. Turn views
+  mark source availability from current scoped messages; unavailable historical sources keep
+  bounded snapshot previews without dead links. Current source previews feed the existing draft
+  provider, so unsent note previews update after edits. Deleted unsent references remain removable
+  and block client/server submission; the message draft is preserved. The worker's note-exclusion
+  count now accounts for referenced live IDs, avoiding subtraction of already-deleted sources.
+- Focused production headless Chrome QA passed with temporary migrated SQLite, a disposable
+  repository and long synthetic chat/note lists. Keyboard Edit populated/focused existing text;
+  Cancel restored Edit focus without a write; empty/oversized changes were refused; Save advanced
+  revision/edited time; tab switching preserved Chat text and refreshed selected-note previews.
+  A new queued message captured the updated note while older snapshots retained their original
+  text. A simulated other-client edit caused a 409 without replacing the unsaved editor draft.
+- Delete confirmation initially focused Cancel and explained retained copies. Cancellation kept
+  the note and restored the trigger after the dialog exit animation. Confirmed deletion removed
+  the active card, cleared the current body into a revisioned tombstone and focused Notes.
+  Historical previews retained both original/edited snapshots without dead links; an unsent
+  deleted-note reference blocked Send before a new turn was inserted and preserved the draft.
+  Note creation after deletion, desktop/mobile fixed header geometry, 360px editor/actions and
+  confirmation geometry, and all four accents without horizontal overflow passed. The mobile
+  confirmation screenshot was visually inspected. This note-management browser flow launched zero
+  CLIs and created zero tasks, worker commands, task runs, workspaces or publications; no browser
+  runtime exceptions occurred.
+- The existing UI-04D reference browser acceptance flow also passed against the final build:
+  old user/reply and note selection, source anchors, removal, tabs, fresh state in another
+  conversation, 1440/768/360px across all accents, keyboard Send, exact fake-CLI reference context
+  and default note exclusion. That separate regression used one fake conversation CLI invocation
+  and zero task execution/publication records. No authenticated CLI was launched.
+- Browser QA caught an update-response mismatch: Save initially expected the create response's
+  required created flag. A message-only update response schema and API assertion fixed this;
+  the final complete browser flow passed. The confirmation focus check waits for the shared
+  dialog's existing exit animation. No layout or process-launch code was changed to resolve it.
+- Final Node.js 24.22.2 validation: pnpm lint, pnpm typecheck, pnpm format:check and pnpm test
+  passed (878 tests). The initial full attempt failed an unchanged process-stop test expecting
+  SIGKILL but receiving SIGTERM while builds were running; the complete rerun passed without
+  changing that test or launch behavior. Focused persistence/fake-CLI (15) and API/presentation
+  (27) runs passed before the browser response-schema correction, which the final full suite
+  additionally verifies. Default pnpm build failed inside and outside the sandbox with the known
+  Turbopack CSS worker port-binding error; it did not pass. The final Webpack production build
+  passed, and the worker build passed. Tests ran outside the sandbox for tsx IPC sockets.
+- Apply additive migration 0015 (and 0014 if still pending) with the existing database migration
+  command before running the updated app. The operator database was not migrated. Remaining
+  acceptance: real operator note flows, Safari/touch/virtual keyboard/zoom, and any authenticated
+  AI checks. Deleted note snapshots retain their original full text locally and in any prior
+  provider records; preview display remains bounded to 240 characters. No undelete, secure wipe,
+  ordinary chat editing or deletion of conversations/proposals/tasks is implemented. Prior backlog
+  for safe permanent deletion of those resources and optional worktree-change transfer remains
+  deferred. No commit or push was made.

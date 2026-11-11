@@ -1,0 +1,1 @@
+ALTER TABLE `conversation_turns` ADD `references_json` text DEFAULT '[]' NOT NULL;

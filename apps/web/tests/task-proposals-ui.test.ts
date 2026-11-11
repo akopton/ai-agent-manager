@@ -222,8 +222,13 @@ test('C3.1: Generate tasks appears only under completed AI replies', () => {
   assert.ok(item.indexOf('Generate tasks') < item.indexOf('</article>'));
   assert.match(html, /aria-label="Generate tasks from this reply"/);
   assert.match(html, />Focus</);
-  // No action under the user message, the failed turn or the note.
-  assert.doesNotMatch(html, new RegExp(`id="message-${id(301)}"`));
+  // User messages now have stable reference anchors, but no Generate tasks action.
+  const userItem = html.slice(
+    html.indexOf(`id="message-${id(301)}"`),
+    html.indexOf(`id="message-${id(302)}"`),
+  );
+  assert.match(userItem, />Reference</);
+  assert.doesNotMatch(userItem, /Generate tasks/);
   assert.doesNotMatch(html, new RegExp(`id="message-${id(304)}"`));
 });
 

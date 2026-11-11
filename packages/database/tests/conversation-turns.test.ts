@@ -33,6 +33,9 @@ import {
   retryConversationTurn,
   sendConversationMessage,
   updateConversation,
+  updateConversationNote,
+  deleteConversationNote,
+  listProjectConversations,
   type DatabaseConnection,
 } from '../src/index.js';
 
@@ -437,5 +440,361 @@ test('conversation turns never touch tasks, runs or worker commands', () => {
     claimConversationTurn(db, { workerInstanceId: 'w', now: 4_500 });
     complete(db, result.turn.id, 'Plan reply');
     assert.deepEqual(counts(), before);
+  });
+});
+
+test('explicit references resolve user/reply/note IDs, persist snapshots and deduplicate the whole payload', () => {
+  withDatabase((db, connection) => {
+    enable(db);
+    const first = send(db, 'Original question');
+    claimConversationTurn(db, { workerInstanceId: randomUUID(), now: 5_000 });
+    complete(db, first.turn.id, 'Completed answer');
+    const answer = listConversationMessages(db, scopeA)?.find(
+      (message) => message.role === 'assistant',
+    );
+    assert.ok(answer);
+    const note = addConversationNote(db, {
+      scope: scopeA,
+      id: randomUUID(),
+      input: { requestId: randomUUID(), content: 'Explicitly shared note' },
+      now: 7_000,
+    }).message;
+    const requestId = randomUUID();
+    const input = {
+      requestId,
+      content: 'Compare these',
+      referenceIds: [first.message.id, answer.id, note.id],
+    };
+    const submit = (values = input) =>
+      sendConversationMessage(db, {
+        scope: scopeA,
+        messageId: randomUUID(),
+        turnId: randomUUID(),
+        input: values,
+        now: 8_000,
+      });
+    const sent = submit();
+    const snapshots = JSON.parse(sent.turn.referencesJson);
+    assert.deepEqual(
+      snapshots.map((item: { content: string }) => item.content),
+      ['Original question', 'Completed answer', 'Explicitly shared note'],
+    );
+    assert.equal(submit().created, false);
+    throwsCode(
+      () => submit({ ...input, referenceIds: [note.id] }),
+      'conversation_request_conflict',
+    );
+    const claimed = claimConversationTurn(db, { workerInstanceId: randomUUID(), now: 9_000 });
+    assert.ok(claimed.claimed);
+    assert.equal(claimed.claim.turn.referencesJson, sent.turn.referencesJson);
+    assert.equal(
+      claimed.claim.history.some((entry) => entry.content === note.content),
+      false,
+    );
+    // A later source change must never change retry context. No existing source is rewritten by the feature.
+    connection.sqlite
+      .prepare('UPDATE conversation_messages SET content = ? WHERE id = ?')
+      .run('Changed later', note.id);
+    finishConversationTurn(
+      db,
+      sent.turn.id,
+      {
+        status: 'interrupted',
+        errorCode: 'worker_restarted',
+        errorMessage: 'Restarted',
+        effectiveModelId: null,
+        exitCode: null,
+        signal: null,
+        endedAt: 10_000,
+      },
+      { createMessageId: randomUUID },
+    );
+    const retryInput = { requestId: randomUUID() };
+    const retry = retryConversationTurn(db, {
+      scope: scopeA,
+      turnId: sent.turn.id,
+      newTurnId: randomUUID(),
+      input: retryInput,
+      now: 11_000,
+    });
+    assert.equal(retry.turn.referencesJson, sent.turn.referencesJson);
+    assert.equal(
+      retryConversationTurn(db, {
+        scope: scopeA,
+        turnId: sent.turn.id,
+        newTurnId: randomUUID(),
+        input: retryInput,
+        now: 11_000,
+      }).created,
+      false,
+    );
+    assert.equal(submit().created, false);
+  });
+});
+
+test('references refuse missing, foreign, duplicate, oversized and over-budget sources atomically', () => {
+  withDatabase((db, connection) => {
+    enable(db);
+    const note = (scope: typeof scopeA, content: string) =>
+      addConversationNote(db, {
+        scope,
+        id: randomUUID(),
+        input: { requestId: randomUUID(), content },
+        now: 3_500,
+      }).message;
+    const foreign = note(scopeB, 'Other project');
+    const otherConversation = randomUUID();
+    createConversation(db, {
+      id: otherConversation,
+      input: { projectId: projectA, title: 'Same project other conversation' },
+      now: 3_000,
+    });
+    const sibling = note({ ...scopeA, conversationId: otherConversation }, 'Other conversation');
+    const one = note(scopeA, 'a'.repeat(20_000));
+    const two = note(scopeA, 'b'.repeat(10_001));
+    const countBefore = listConversationMessages(db, scopeA)?.length;
+    const submit = (referenceIds: string[]) =>
+      sendConversationMessage(db, {
+        scope: scopeA,
+        messageId: randomUUID(),
+        turnId: randomUUID(),
+        input: { requestId: randomUUID(), content: 'New request', referenceIds },
+        now: 4_000,
+      });
+    for (const ids of [
+      [randomUUID()],
+      [foreign.id],
+      [sibling.id],
+      [one.id, one.id],
+      [one.id, two.id],
+      Array.from({ length: 6 }, () => randomUUID()),
+    ]) {
+      throwsCode(() => submit(ids), 'invalid_conversation_input');
+    }
+    // A legacy assistant record without a completed turn is ineligible.
+    connection.sqlite
+      .prepare('UPDATE conversation_messages SET role = ?, kind = ? WHERE id = ?')
+      .run('assistant', 'chat', two.id);
+    throwsCode(() => submit([two.id]), 'invalid_conversation_input');
+    connection.sqlite
+      .prepare('UPDATE conversation_messages SET content = ? WHERE id = ?')
+      .run('x'.repeat(20_001), one.id);
+    throwsCode(() => submit([one.id]), 'invalid_conversation_input');
+    assert.equal(listConversationMessages(db, scopeA)?.length, countBefore);
+    assert.equal(listConversationTurns(db, scopeA)?.length, 0);
+    for (const table of ['tasks', 'worker_commands', 'task_runs', 'workspaces', 'publications']) {
+      assert.equal(connection.sqlite.prepare(`SELECT count(*) FROM ${table}`).pluck().get(), 0);
+    }
+    // Empty selection (including removing before sending) adds no snapshots.
+    assert.equal(submit([]).turn.referencesJson, '[]');
+  });
+});
+
+test('notes edit with revisions and delete into content-cleared, sequence-reserving tombstones', () => {
+  withDatabase((db, connection) => {
+    const requestId = randomUUID();
+    const note = addConversationNote(db, {
+      scope: scopeA,
+      id: randomUUID(),
+      input: { requestId, content: 'Original note' },
+      now: 3_000,
+    }).message;
+    const command = { scope: scopeA, noteId: note.id, now: 4_000 };
+    for (const content of ['', '   ', 'x'.repeat(20_001)]) {
+      throwsCode(
+        () => updateConversationNote(db, { ...command, input: { revision: 1, content } }),
+        'invalid_conversation_input',
+      );
+    }
+    const edited = updateConversationNote(db, {
+      ...command,
+      input: { revision: 1, content: ' Updated note ' },
+    });
+    assert.equal(edited.content, 'Updated note');
+    assert.equal(edited.revision, 2);
+    assert.equal(edited.updatedAt, 4_000);
+    assert.equal(edited.createdAt, note.createdAt);
+    assert.equal(edited.sequence, note.sequence);
+    assert.equal(edited.id, note.id);
+    throwsCode(
+      () =>
+        updateConversationNote(db, { ...command, input: { revision: 1, content: 'Stale edit' } }),
+      'conversation_note_changed',
+    );
+    throwsCode(
+      () => deleteConversationNote(db, { ...command, input: { revision: 1 } }),
+      'conversation_note_changed',
+    );
+    deleteConversationNote(db, { ...command, now: 5_000, input: { revision: 2 } });
+    deleteConversationNote(db, { ...command, now: 6_000, input: { revision: 2 } });
+    assert.deepEqual(listConversationMessages(db, scopeA), []);
+    assert.equal(listProjectConversations(db, projectA)[0]?.messageCount, 0);
+    const tombstone = connection.sqlite
+      .prepare(
+        'SELECT content, sequence, revision, deleted_at FROM conversation_messages WHERE id = ?',
+      )
+      .get(note.id);
+    assert.deepEqual(tombstone, {
+      content: '',
+      sequence: note.sequence,
+      revision: 3,
+      deleted_at: 5_000,
+    });
+    throwsCode(
+      () =>
+        updateConversationNote(db, { ...command, input: { revision: 2, content: 'Resurrect' } }),
+      'conversation_note_not_found',
+    );
+    throwsCode(
+      () =>
+        addConversationNote(db, {
+          scope: scopeA,
+          id: randomUUID(),
+          input: { requestId, content: 'Original note' },
+          now: 7_000,
+        }),
+      'conversation_request_conflict',
+    );
+    const next = addConversationNote(db, {
+      scope: scopeA,
+      id: randomUUID(),
+      input: { requestId: randomUUID(), content: 'Next note' },
+      now: 8_000,
+    }).message;
+    assert.equal(next.sequence, note.sequence + 1);
+    for (const table of [
+      'conversation_turns',
+      'tasks',
+      'task_runs',
+      'workspaces',
+      'worker_commands',
+      'publications',
+    ])
+      assert.equal(connection.sqlite.prepare(`SELECT count(*) FROM ${table}`).pluck().get(), 0);
+  });
+});
+
+test('note mutations refuse other scopes and every ordinary chat message', () => {
+  withDatabase((db) => {
+    enable(db);
+    const note = addConversationNote(db, {
+      scope: scopeA,
+      id: randomUUID(),
+      input: { requestId: randomUUID(), content: 'Private note' },
+      now: 3_000,
+    }).message;
+    const siblingId = randomUUID();
+    createConversation(db, {
+      id: siblingId,
+      input: { projectId: projectA, title: 'Sibling' },
+      now: 3_000,
+    });
+    for (const scope of [scopeB, { ...scopeA, conversationId: siblingId }]) {
+      const command = { scope, noteId: note.id, now: 4_000 };
+      throwsCode(
+        () =>
+          updateConversationNote(db, {
+            ...command,
+            input: { revision: 1, content: 'Other scope' },
+          }),
+        'conversation_note_not_found',
+      );
+      throwsCode(
+        () => deleteConversationNote(db, { ...command, input: { revision: 1 } }),
+        'conversation_note_not_found',
+      );
+    }
+    const first = send(db, 'Chat stays unchanged');
+    claimConversationTurn(db, { workerInstanceId: randomUUID(), now: 5_000 });
+    complete(db, first.turn.id, 'Assistant stays unchanged');
+    for (const chat of listConversationMessages(db, scopeA)?.filter(
+      (item) => item.kind === 'chat',
+    ) ?? []) {
+      const command = { scope: scopeA, noteId: chat.id, now: 7_000 };
+      throwsCode(
+        () =>
+          updateConversationNote(db, { ...command, input: { revision: 1, content: 'Overwrite' } }),
+        'conversation_note_not_found',
+      );
+      throwsCode(
+        () => deleteConversationNote(db, { ...command, input: { revision: 1 } }),
+        'conversation_note_not_found',
+      );
+    }
+    assert.equal(
+      listConversationMessages(db, scopeA)?.find((item) => item.id === note.id)?.content,
+      'Private note',
+    );
+  });
+});
+
+test('note edits affect new references; deletion preserves sent snapshots, Retry and message order', () => {
+  withDatabase((db, connection) => {
+    enable(db);
+    const note = addConversationNote(db, {
+      scope: scopeA,
+      id: randomUUID(),
+      input: { requestId: randomUUID(), content: 'First version' },
+      now: 3_000,
+    }).message;
+    let sentAt = 4_000;
+    const submit = (requestId = randomUUID()) =>
+      sendConversationMessage(db, {
+        scope: scopeA,
+        messageId: randomUUID(),
+        turnId: randomUUID(),
+        input: { requestId, content: 'Use the note', referenceIds: [note.id] },
+        now: sentAt++,
+      });
+    const old = submit();
+    claimConversationTurn(db, { workerInstanceId: randomUUID(), now: 5_000 });
+    // Editing during a pending turn changes no queued snapshot.
+    updateConversationNote(db, {
+      scope: scopeA,
+      noteId: note.id,
+      input: { revision: 1, content: 'Second version' },
+      now: 5_500,
+    });
+    complete(db, old.turn.id, 'First reply');
+    const requestId = randomUUID();
+    const current = submit(requestId);
+    assert.equal(JSON.parse(old.turn.referencesJson)[0].content, 'First version');
+    assert.equal(JSON.parse(current.turn.referencesJson)[0].content, 'Second version');
+    const messagesBefore = listConversationMessages(db, scopeA)?.filter(
+      (item) => item.kind === 'chat',
+    );
+    const turnBefore = connection.sqlite
+      .prepare('SELECT * FROM conversation_turns WHERE id = ?')
+      .get(old.turn.id);
+    requestConversationTurnStop(db, { scope: scopeA, turnId: current.turn.id, now: 6_000 });
+    deleteConversationNote(db, {
+      scope: scopeA,
+      noteId: note.id,
+      input: { revision: 2 },
+      now: 7_000,
+    });
+    assert.deepEqual(
+      connection.sqlite.prepare('SELECT * FROM conversation_turns WHERE id = ?').get(old.turn.id),
+      turnBefore,
+    );
+    assert.deepEqual(
+      listConversationMessages(db, scopeA)?.filter((item) => item.kind === 'chat'),
+      messagesBefore,
+    );
+    assert.equal(submit(requestId).created, false);
+    throwsCode(() => submit(), 'invalid_conversation_input');
+    const retry = retryConversationTurn(db, {
+      scope: scopeA,
+      turnId: current.turn.id,
+      newTurnId: randomUUID(),
+      input: { requestId: randomUUID() },
+      now: 8_000,
+    });
+    assert.equal(retry.turn.referencesJson, current.turn.referencesJson);
+    const claimed = claimConversationTurn(db, { workerInstanceId: randomUUID(), now: 9_000 });
+    assert.ok(claimed.claimed);
+    assert.equal(claimed.claim.turn.referencesJson, current.turn.referencesJson);
+    assert.equal(claimed.claim.notesExcluded, 0);
+    assert.equal(listConversationTurns(db, scopeA)?.length, 3);
   });
 });

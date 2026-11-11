@@ -14,6 +14,8 @@ import { ConversationPanel } from '@/components/conversations/conversation-panel
 import { chatAnchorTop } from '@/lib/conversations/chat-scroll';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Tabs } from 'radix-ui';
+import type { ConversationReferencePreview } from '@/lib/conversations/contracts';
+import { ReferenceDraftProvider } from '@/components/conversations/conversation-references';
 import { ChatViewContext } from '@/components/conversations/conversation-chat';
 import {
   conversationTabs,
@@ -146,12 +148,13 @@ export const ConversationViewTabs = ({
   );
 };
 
-export const ConversationViews = (
-  props: Omit<
-    Parameters<typeof ConversationViewTabs>[0],
-    'tab' | 'onChange' | 'settingsOpen' | 'onSettingsChange'
-  >,
-) => {
+export const ConversationViews = ({
+  referenceSources,
+  ...props
+}: Omit<
+  Parameters<typeof ConversationViewTabs>[0],
+  'tab' | 'onChange' | 'settingsOpen' | 'onSettingsChange'
+> & { referenceSources?: readonly ConversationReferencePreview[] }) => {
   const pathname = usePathname();
   const search = useSearchParams();
   const hash = useSyncExternalStore(subscribeHash, readHash, serverHash);
@@ -161,6 +164,17 @@ export const ConversationViews = (
   const workspaceRef = useRef<HTMLDivElement>(null);
   const taskScrollTop = useRef(0);
   const taskHandledHash = useRef<string | null>(null);
+  const noteHandledHash = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (tab !== 'notes' || settingsOpen || noteHandledHash.current === hash) return;
+    const viewport = workspaceRef.current?.querySelector<HTMLElement>(
+      '[aria-label="Saved conversation notes"]',
+    );
+    if (!viewport) return;
+    const top = chatAnchorTop(viewport, hash);
+    if (top !== null) viewport.scrollTop = top;
+    noteHandledHash.current = hash;
+  }, [tab, settingsOpen, hash]);
 
   useLayoutEffect(() => {
     if (tab !== 'tasks' || settingsOpen) return;
@@ -195,7 +209,9 @@ export const ConversationViews = (
         if (
           destination.origin !== window.location.origin ||
           destination.pathname !== pathname ||
-          (!destination.hash.startsWith('#message-') && !destination.hash.startsWith('#proposals-'))
+          (!destination.hash.startsWith('#message-') &&
+            !destination.hash.startsWith('#proposals-') &&
+            !destination.hash.startsWith('#note-'))
         )
           return;
         // Keep fragments in Next's history state so refreshes preserve the selected source/batch.
@@ -209,18 +225,35 @@ export const ConversationViews = (
         window.dispatchEvent(new HashChangeEvent('hashchange'));
       }}
     >
-      <ConversationViewTabs
-        {...props}
-        hash={hash}
-        tab={tab}
-        settingsOpen={settingsOpen}
-        onSettingsChange={() => setSettingsView({ open: !settingsOpen, hash })}
-        onChange={(next) => {
-          setSettingsView({ open: false, hash });
-          window.history.pushState(null, '', conversationTabUrl(pathname, search.toString(), next));
+      <ReferenceDraftProvider
+        sources={referenceSources}
+        onSelect={() => {
+          setSettingsView({ open: false, hash: '' });
+          window.history.pushState(
+            null,
+            '',
+            conversationTabUrl(pathname, search.toString(), 'chat'),
+          );
           window.dispatchEvent(new HashChangeEvent('hashchange'));
         }}
-      />
+      >
+        <ConversationViewTabs
+          {...props}
+          hash={hash}
+          tab={tab}
+          settingsOpen={settingsOpen}
+          onSettingsChange={() => setSettingsView({ open: !settingsOpen, hash })}
+          onChange={(next) => {
+            setSettingsView({ open: false, hash });
+            window.history.pushState(
+              null,
+              '',
+              conversationTabUrl(pathname, search.toString(), next),
+            );
+            window.dispatchEvent(new HashChangeEvent('hashchange'));
+          }}
+        />
+      </ReferenceDraftProvider>
     </div>
   );
 };

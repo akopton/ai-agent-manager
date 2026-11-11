@@ -1,3 +1,8 @@
+import {
+  referenceContextInstruction,
+  renderConversationReferences,
+  type ConversationReferenceSnapshot,
+} from './conversation-reference.js';
 import { z } from 'zod';
 import type { AgentRuntime } from './agent-runtime.js';
 import {
@@ -893,6 +898,7 @@ const sectionTags = [
   'repository_catalog',
   'context_request_contract',
   'repository_context',
+  'explicit_references',
   'source',
   'search_results',
 ];
@@ -1091,12 +1097,14 @@ export const composeProjectAwarePrompt = ({
   notesExcluded = 0,
   record,
   excerpts,
+  references = [],
 }: {
   runtime: AgentRuntime;
   languageMode: ConversationLanguageMode;
   history: readonly ConversationHistoryEntry[];
   message: string;
   notesExcluded?: number;
+  references?: readonly ConversationReferenceSnapshot[];
   record: RepositoryContextRecord;
   excerpts: readonly RepositoryExcerpt[];
 }): { prompt: string; manifest: ProjectAwareContextManifest } => {
@@ -1151,10 +1159,11 @@ export const composeProjectAwarePrompt = ({
     ...excerpts.map(renderExcerpt),
   ].join('\n');
   const prompt = [
-    `<instructions>\n${[`You are running as ${runtimeNames[runtime]}.`, ...answerInstructions].join('\n')}\n</instructions>`,
+    `<instructions>\n${[`You are running as ${runtimeNames[runtime]}.`, ...answerInstructions, referenceContextInstruction].join('\n')}\n</instructions>`,
     `<language>\n${conversationLanguageInstructions[languageMode]}\n</language>`,
     `<repository_context>\n${repositoryText}\n</repository_context>`,
     `<conversation_history>\n${text}\n</conversation_history>`,
+    ...(references.length === 0 ? [] : [renderConversationReferences(references)]),
     `<new_message role="user">\n${neutralizeContextText(message)}\n</new_message>`,
   ].join('\n\n');
   return {

@@ -1,8 +1,8 @@
 # AI Agent Manager — Technical Architecture
 
-**Status:** Draft v0.12 — C4.2 nonignored untracked source discovery; v0.11 — C4.1 descriptor-anchored working-tree source reads; v0.10 — C4 project-aware conversations with controlled source-code context (§15.4 "C4", §15.10, §15.11); v0.9: C3.1 source-scoped proposal generation (§15.3, §15.8, §15.10); v0.8: AI Conversations C3 implementation notes: task proposal generation, editing and approval (§15.3, §15.8, §15.10, §15.11); v0.7: AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)\
-**Date:** 2026-11-07 (v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)  
-**Product specification:** [`SPEC.md`](./SPEC.md) v0.12\
+**Status:** Draft v0.13 — UI-04D reference contracts, snapshots and shared UI composition (§20); v0.12 — C4.2 nonignored untracked source discovery; v0.11 — C4.1 descriptor-anchored working-tree source reads; v0.10 — C4 project-aware conversations with controlled source-code context (§15.4 "C4", §15.10, §15.11); v0.9: C3.1 source-scoped proposal generation (§15.3, §15.8, §15.10); v0.8: AI Conversations C3 implementation notes: task proposal generation, editing and approval (§15.3, §15.8, §15.10, §15.11); v0.7: AI Conversations C2 implementation notes (§15.6, §15.10, §15.11) and the model catalog (§7.2); v0.6: AI Conversations C1 implementation notes (§15.3, §15.10); v0.5: TM-02 task archiving and managed worktree cleanup (§5.1, §8); v0.4 added execution security modes SEC-02 (§7.5); v0.3 added platform strategy (§16) and SEC-01 (§7.4); v0.2 added AI Conversations (§15)\
+**Date:** 2026-11-11 (UI-04D; prior snapshot: 2026-11-07; v0.8: 2026-11-07, v0.7: 2026-11-07, v0.6: 2026-11-06, v0.4: 2026-11-04, v0.1: 2026-11-03)\
+**Product specification:** [`SPEC.md`](./SPEC.md) v0.14\
 **Scope:** Single-user, local-first MVP
 
 > This document describes **how** we intend to implement the requirements in `SPEC.md`. Where implementation details are not yet proven, they are called out as validation gates rather than assumed capabilities.
@@ -1368,3 +1368,97 @@ TaskExecutionPanel.showActions=false. Other panel callers keep the default inlin
 Polling and execution/status explanations remain in the panel; request errors stay with the
 controls. Queue/Return, recovery, archive, Edit and review links keep their existing components,
 gates and styles. No backend, lifecycle, worktree, Git or execution behavior change.
+
+## 20. UI-04D — Explicit conversation references (2026-11-11)
+
+- `core/conversation-reference.ts` owns ID/snapshot Zod contracts, count/character/preview limits
+  and deterministic untrusted-section rendering. Sources are existing conversation_messages:
+  user chat, user note, or assistant chat linked to a completed turn in this conversation.
+- Additive migration `0014_conversation_references` adds non-null
+  `conversation_turns.references_json`, default `[]` for all historical turns. Each snapshot holds
+  `{sourceId, kind, role, sequence, content}`. The turn links it to its user message, conversation
+  and project. This duplicates only explicitly selected, bounded quotations, never complete
+  histories or repository captures. Existing messages/notes are not rewritten.
+- `database/conversation-references.ts` resolves IDs inside the existing IMMEDIATE send transaction,
+  after scoped conversation lookup and consent/activity checks, before appendMessage/insertTurn.
+  Count, UUID and duplicate validation occurs at input parsing; source eligibility, 20,000-character
+  individual and 30,000-character combined budgets are validated before insertion. Fixed existing
+  history/repository/message caps bound aggregate content to 110,000/140,000 characters, preserving
+  the launcher's existing 1 MiB prompt cap. Invalid requests roll back atomically.
+- Idempotency compares normalized message text and ordered snapshot source IDs, without resolving
+  source text again. Retry validates and copies the original reference snapshot rather than
+  rereading messages/notes. It retains C2's latest-turn, consent, scope and capacity checks and
+  current runtime/model/language selection. No automatic retry is introduced.
+- The worker validates stored reference JSON before either General Chat or Project-Aware work;
+  malformed stored context fails visibly before any CLI launch. Queued turns retain snapshots
+  across restart; running/stopping turns still become interrupted. Explicit references go to the
+  answer prompt only, leaving the Project-Aware names-only file-selection phase unchanged.
+- Both answer composers insert the following section after bounded history and before the
+  operator's new message (empty selections omit the section):
+
+  ```text
+  <explicit_references trust="untrusted">
+  [{"sourceId":"<UUID>","kind":"note","role":"user","sequence":7,"content":"Selected note text"}]
+  </explicit_references>
+  ```
+
+  Values are JSON encoded; `<` and `>` in quotation content are encoded as `\u003c`/`\u003e`, so
+  source text cannot create section tags. Fixed application instructions identify these as
+  untrusted quotations, never application instructions. This framing is defense in depth, not an
+  isolation boundary. Existing launch gates, environment, profiles and capabilities are unchanged.
+  Unselected notes are never added. `notesExcluded` counts notes not explicitly supplied.
+- REST `/turns` accepts optional `referenceIds: UUID[]` (default `[]`), never source content.
+  Turn views expose only source ID, kind, role and a 240-character preview from the stored snapshot;
+  full reference context remains local to persistence/worker execution. Notes and messages retain
+  original stable IDs. User messages gain message anchors; notes gain note anchors.
+- UI reuse: `ReferenceDraftProvider` is inside the keyed ConversationViews workspace, outside
+  force-mounted panels. `ReferenceButton` serves message footers and notes. `ReferencePreviews`
+  serves composer selection and sent provenance. MessageComposer retains draft/request lifecycle,
+  locks reference edits while submitting and uses a payload signature for request-ID changes.
+  Shared panels own scroll/footer overflow. Same-route links use existing History integration;
+  note anchors add only the corresponding local pane offset. No new layout shell or CSS palette.
+- Disclosure `2026-11-11.1` explains explicit note sharing and manual Retry, replacing the historical
+  unconditional note exclusion statement. Existing acceptance becomes stale; no login or model
+  configuration changes. Apply migrations explicitly before running the updated web/worker.
+
+Broader maintenance opportunities remain deferred: similar request/error/loading code across
+proposal/settings forms and repeated empty-state presentation. UI-04D makes only reference-related
+composition changes; shared geometry, theme tokens and scroll ownership remain authoritative.
+
+### UI-04D note-management acceptance follow-up (2026-11-11)
+
+- Additive migration `0015_conversation_note_management` adds `revision` (default 1), nullable
+  `updated_at` and nullable `deleted_at` to conversation_messages. Existing IDs, sequences and
+  timestamps remain unchanged; legacy notes acquire a modification timestamp on their first edit.
+  Chat messages keep the default metadata and are never editable through note commands.
+- `database/conversation-notes.ts` implements scoped, validated, IMMEDIATE transactions for update
+  and delete. Only `kind=note, role=user` rows in the resolved project/conversation qualify.
+  Updates require the loaded revision, preserve creation/identity/order and advance revision/time.
+  Delete requires the confirmed revision; it clears `content` to an empty string, sets deleted_at,
+  advances revision/time and retains the row/request ID. It performs no SQL row deletion or FK
+  cascade. Repeated deletion of the same scoped tombstone succeeds without another write; unknown
+  or foreign sources are missing. A stale update cannot recreate a tombstone.
+- Visible history and conversation message counts exclude tombstones. Sequence allocation retains
+  them in max(sequence), preventing reuse even when the last note is removed. Conversation activity
+  updated_at changes, while chat/turn/proposal records and original last_message_at are not
+  rewritten. Original create-request replay after edit/delete may conflict; it never inserts a
+  replacement or exposes a deleted note. There is no undelete/secure-wipe API.
+- PATCH and DELETE `/api/projects/:projectId/conversations/:conversationId/messages/:noteId` use
+  existing loopback Host/Origin/content-type/body-size guards. PATCH accepts `{revision, content}`
+  and returns `{message}`; DELETE accepts `{revision}` and returns `{deleted:true}` (200 also on
+  repetition). Invalid payloads are 400, missing/foreign/non-note/deleted-update sources 404,
+  stale revisions 409. No user-controlled role, identity, timestamps or deletion flags are accepted.
+- Reference resolution refuses tombstones for new sends. Existing turn references_json remains
+  byte-for-byte unchanged, including across queued execution, interruption and Retry. Public turn
+  previews derive sourceAvailable from live scoped message IDs; it is presentation metadata,
+  never persisted into historical reference snapshots. Unavailable historical sources retain
+  snapshot previews; unsent selections remain removable and are refused before queueing.
+- ConversationViews supplies bounded current source previews to ReferenceDraftProvider, allowing
+  selected note previews/availability to follow router refreshes without replacing the draft.
+  The worker subtracts explicitly referenced live note IDs from the live excluded-note count;
+  a deleted note replayed from a snapshot must not reduce the number of other notes excluded.
+- ConversationNotes reuses its existing list/panel boundaries and delegates one note to
+  ConversationNoteCard. The card uses shared Textarea/Label/Button and the existing Radix
+  AlertDialog for focus trapping, Cancel-first confirmation and keyboard behavior. It snapshots
+  the revision when editing/confirmation starts, locks pending actions and preserves stale editor
+  text. No new layout shell, provider profile, permission, dependency or execution path is added.

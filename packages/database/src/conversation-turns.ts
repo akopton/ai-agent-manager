@@ -1,7 +1,9 @@
+import { resolveConversationReferences } from './conversation-references.js';
 import {
   acceptConversationDisclosureInputSchema,
   activeConversationTurnStatuses,
   conversationDisclosure,
+  conversationReferenceSnapshotsSchema,
   conversationMessageIdSchema,
   ConversationError,
   conversationReplyMaxLength,
@@ -18,7 +20,7 @@ import {
   type RetryConversationTurnInput,
   type SendConversationMessageInput,
 } from '@ai-agent-manager/core';
-import { and, asc, desc, eq, inArray, isNotNull, lt, max } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, max } from 'drizzle-orm';
 import { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import {
@@ -161,6 +163,7 @@ const insertTurn = (
     userMessageId: string;
     requestId: string;
     retryOfTurnId: string | null;
+    referencesJson: string;
     now: number;
   },
 ): ConversationTurnRecord =>
@@ -171,6 +174,7 @@ const insertTurn = (
       conversationId: conversation.id,
       userMessageId: values.userMessageId,
       retryOfTurnId: values.retryOfTurnId,
+      referencesJson: values.referencesJson,
       requestId: values.requestId,
       status: 'queued',
       // Snapshot: later settings changes apply to later turns only.
@@ -226,7 +230,7 @@ export const sendConversationMessage = (
   if (!parsed.success) {
     throw invalidInput(parsed.error);
   }
-  const { requestId, content } = parsed.data;
+  const { requestId, content, referenceIds } = parsed.data;
 
   return db.transaction((tx) => {
     const conversation = findScoped(tx, ids);
@@ -248,7 +252,12 @@ export const sendConversationMessage = (
         existing.conversationId !== conversation.id ||
         existing.kind !== 'chat' ||
         existing.content !== content ||
-        turn === undefined
+        turn === undefined ||
+        JSON.stringify(
+          conversationReferenceSnapshotsSchema
+            .parse(JSON.parse(turn.referencesJson))
+            .map((item) => item.sourceId),
+        ) !== JSON.stringify(referenceIds)
       ) {
         throw new ConversationError(
           'conversation_request_conflict',
@@ -279,6 +288,7 @@ export const sendConversationMessage = (
     if (hasActiveGeneration(tx, conversation.id)) {
       throw activeGenerationError();
     }
+    const references = resolveConversationReferences(tx, conversation.id, referenceIds);
     const message = appendMessage(tx, conversation, {
       id: parsedMessageId.data,
       role: 'user',
@@ -292,6 +302,7 @@ export const sendConversationMessage = (
       userMessageId: message.id,
       requestId,
       retryOfTurnId: null,
+      referencesJson: JSON.stringify(references),
       now,
     });
     return { message, turn, created: true };
@@ -382,7 +393,12 @@ export const retryConversationTurn = (
     const lastMessage = tx
       .select({ id: conversationMessages.id })
       .from(conversationMessages)
-      .where(eq(conversationMessages.conversationId, conversation.id))
+      .where(
+        and(
+          eq(conversationMessages.conversationId, conversation.id),
+          isNull(conversationMessages.deletedAt),
+        ),
+      )
       .orderBy(desc(conversationMessages.sequence))
       .get();
     if (
@@ -412,6 +428,9 @@ export const retryConversationTurn = (
       userMessageId: source.userMessageId,
       requestId: parsed.data.requestId,
       retryOfTurnId: source.id,
+      referencesJson: JSON.stringify(
+        conversationReferenceSnapshotsSchema.parse(JSON.parse(source.referencesJson)),
+      ),
       now,
     });
     tx.update(conversations)
@@ -511,8 +530,10 @@ export type ClaimedConversationTurn = {
   userMessage: ConversationMessageRecord;
   /** Completed earlier exchanges (user message, then its reply), in history order. */
   history: ConversationHistoryEntry[];
-  /** Notes before this message; never sent. */
+  /** Live notes before this message; the worker subtracts explicitly referenced live notes. */
   notesExcluded: number;
+  /** IDs of those live notes, so deleted reference snapshots do not reduce the exclusion count. */
+  noteIds: string[];
   /**
    * C4: for a project-aware turn, the registered repository (identity re-checked by the worker
    * before anything is read) and the commit of the latest earlier project-aware reply, so a
@@ -535,7 +556,7 @@ export const loadHistory = (
   tx: Transaction,
   conversationId: string,
   beforeSequence: number,
-): { history: ConversationHistoryEntry[]; notesExcluded: number } => {
+): { history: ConversationHistoryEntry[]; notesExcluded: number; noteIds: string[] } => {
   const completed = tx
     .select({
       userMessageId: conversationTurns.userMessageId,
@@ -562,6 +583,7 @@ export const loadHistory = (
       and(
         eq(conversationMessages.conversationId, conversationId),
         lt(conversationMessages.sequence, beforeSequence),
+        isNull(conversationMessages.deletedAt),
       ),
     )
     .orderBy(asc(conversationMessages.sequence))
@@ -571,6 +593,7 @@ export const loadHistory = (
       .filter((message) => message.kind === 'chat' && included.has(message.id))
       .map(({ id, sequence, role, content }) => ({ id, sequence, role, content })),
     notesExcluded: messages.filter((message) => message.kind === 'note').length,
+    noteIds: messages.filter((message) => message.kind === 'note').map((message) => message.id),
   };
 };
 
@@ -677,7 +700,11 @@ export const claimConversationTurn = (
     if (turn === undefined || conversation === undefined || userMessage === undefined) {
       throw new Error(`Conversation turn ${next.id} could not be claimed consistently.`);
     }
-    const { history, notesExcluded } = loadHistory(tx, conversation.id, userMessage.sequence);
+    const { history, notesExcluded, noteIds } = loadHistory(
+      tx,
+      conversation.id,
+      userMessage.sequence,
+    );
     let repository: ClaimedConversationTurn['repository'] = null;
     if (turn.contextMode === 'project_aware') {
       const project = tx
@@ -699,7 +726,7 @@ export const claimConversationTurn = (
     }
     return {
       claimed: true,
-      claim: { turn, conversation, userMessage, history, notesExcluded, repository },
+      claim: { turn, conversation, userMessage, history, notesExcluded, noteIds, repository },
     };
   }, immediate);
 

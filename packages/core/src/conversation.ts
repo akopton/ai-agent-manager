@@ -172,6 +172,15 @@ export const addConversationNoteInputSchema = z.strictObject({
   content: conversationMessageContentSchema,
 });
 
+export const conversationNoteRevisionInputSchema = z.strictObject({
+  revision: z.number().int().min(1),
+});
+export const updateConversationNoteInputSchema = conversationNoteRevisionInputSchema.extend({
+  content: conversationMessageContentSchema,
+});
+export type UpdateConversationNoteInput = z.input<typeof updateConversationNoteInputSchema>;
+export type ConversationNoteRevisionInput = z.input<typeof conversationNoteRevisionInputSchema>;
+
 export type AddConversationNoteInput = z.input<typeof addConversationNoteInputSchema>;
 
 /** A stored conversation. Timestamps are Unix milliseconds. */
@@ -196,7 +205,7 @@ export const conversationSchema = z.object({
 
 export type Conversation = z.infer<typeof conversationSchema>;
 
-/** A stored message. `sequence` orders the history: 1, 2, 3… per conversation, without gaps. */
+/** A stored message. `sequence` orders the history: 1, 2, 3… per conversation; deleted-note positions stay reserved. */
 export const conversationMessageSchema = z.object({
   id: conversationMessageIdSchema,
   conversationId: conversationIdSchema,
@@ -205,6 +214,9 @@ export const conversationMessageSchema = z.object({
   kind: conversationMessageKindSchema,
   content: z.string(),
   createdAt: z.number().int(),
+  /** Additive note-management metadata; optional for older clients/fixtures. */
+  revision: z.number().int().positive().optional(),
+  updatedAt: z.number().int().nullable().optional(),
 });
 
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
@@ -232,6 +244,8 @@ export const conversationErrorCodes = [
   'conversation_not_found',
   /** The settings changed since the operator loaded them. */
   'conversation_changed',
+  'conversation_note_not_found',
+  'conversation_note_changed',
   /** A request ID was reused for a different message or conversation. */
   'conversation_request_conflict',
   // C2 — CLI-backed turns.

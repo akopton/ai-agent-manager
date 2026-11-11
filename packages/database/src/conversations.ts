@@ -16,7 +16,7 @@ import {
   type AgentRuntime,
   type UpdateConversationInput,
 } from '@ai-agent-manager/core';
-import { and, asc, count, desc, eq, inArray, max, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { DatabaseConnection } from './client.js';
 import {
@@ -256,7 +256,7 @@ export const listProjectConversations = (
       .select({ conversationId: conversationMessages.conversationId, count: count() })
       .from(conversationMessages)
       .innerJoin(conversations, eq(conversations.id, conversationMessages.conversationId))
-      .where(eq(conversations.projectId, parsed.data))
+      .where(and(eq(conversations.projectId, parsed.data), isNull(conversationMessages.deletedAt)))
       .groupBy(conversationMessages.conversationId)
       .all()
       .map(({ conversationId, count: total }) => [conversationId, total]),
@@ -293,7 +293,12 @@ export const listConversationMessages = (
   return db
     .select()
     .from(conversationMessages)
-    .where(eq(conversationMessages.conversationId, conversation.id))
+    .where(
+      and(
+        eq(conversationMessages.conversationId, conversation.id),
+        isNull(conversationMessages.deletedAt),
+      ),
+    )
     .orderBy(asc(conversationMessages.sequence))
     .all();
 };
@@ -402,6 +407,7 @@ export const appendMessage = (
       content: message.content,
       requestId: message.requestId,
       createdAt: message.now,
+      updatedAt: message.kind === 'note' ? message.now : null,
     })
     .returning()
     .get();
@@ -455,7 +461,12 @@ export const addConversationNote = (
       .where(eq(conversationMessages.requestId, requestId))
       .get();
     if (existing !== undefined) {
-      if (existing.conversationId !== conversation.id || existing.content !== content) {
+      if (
+        existing.conversationId !== conversation.id ||
+        existing.kind !== 'note' ||
+        existing.deletedAt !== null ||
+        existing.content !== content
+      ) {
         throw new ConversationError(
           'conversation_request_conflict',
           'This request was already used for a different message. Reload the page and try again.',

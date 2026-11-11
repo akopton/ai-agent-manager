@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { connection } from 'next/server';
 import { FolderGit2 } from 'lucide-react';
-import { conversationContextModeLabels } from '@ai-agent-manager/core';
+import { conversationContextModeLabels, conversationReferenceLimits } from '@ai-agent-manager/core';
 
 import { ConversationPanel } from '@/components/conversations/conversation-panel';
 import { ConversationChat } from '@/components/conversations/conversation-chat';
@@ -65,6 +65,12 @@ const ConversationPage = async ({
       <ConversationAutoRefresh active={active || generating} />
       <ConversationViews
         key={conversation.id}
+        referenceSources={messages.map(({ id, kind, role, content }) => ({
+          sourceId: id,
+          kind,
+          role,
+          preview: content.slice(0, conversationReferenceLimits.previewCharacters),
+        }))}
         header={
           <div className="min-w-0 space-y-1">
             <h1
@@ -176,7 +182,10 @@ const ConversationPage = async ({
               />
             }
           >
-            <ConversationNotes messages={messages} />
+            <ConversationNotes
+              projectId={project.id}
+              messages={messages.filter((message) => message.kind === 'note')}
+            />
           </ConversationPanel>
         }
       />

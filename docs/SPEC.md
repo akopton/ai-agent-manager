@@ -1,8 +1,8 @@
 # AI Agent Manager — Product Specification (MVP)
 
-**Status:** Draft v0.13 — C4.2: safe untracked source awareness before UI-04; v0.12 — C4.1: current tracked working-tree source context before UI-04; v0.11 — C4: Project-Aware conversations with controlled source-code context (§18.1, §18.6, §18.9, §18.10); v0.10: C3.1: task proposals are generated from one selected AI reply (§18.1, §18.8); v0.9: AI Conversations C3 delivered: explicitly requested task proposals, operator editing and individual Approve to Backlog (§18.1, §18.8); v0.8: AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)\
-**Date:** 2026-11-07 (v0.10: 2026-11-07, v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)  
-**Product type:** Local-first web application for orchestrating coding agents  
+**Status:** Draft v0.14 — UI-04D explicit message/note references and immutable turn snapshots (§22); v0.13 — C4.2: safe untracked source awareness before UI-04; v0.12 — C4.1: current tracked working-tree source context before UI-04; v0.11 — C4: Project-Aware conversations with controlled source-code context (§18.1, §18.6, §18.9, §18.10); v0.10: C3.1: task proposals are generated from one selected AI reply (§18.1, §18.8); v0.9: AI Conversations C3 delivered: explicitly requested task proposals, operator editing and individual Approve to Backlog (§18.1, §18.8); v0.8: AI Conversations C2 delivered: CLI-backed planning turns with a separate consent and provider-specific model selection (§18.1, §18.4, §18.9); v0.7: AI Conversations C1 delivered: project-scoped conversations, language modes and operator notes (§18.1, §18.4); v0.6: task archiving (§7.1) and managed worktree cleanup (§9.1) accepted for Manual Task Management v1 (TM-02); v0.5 added execution security modes (Trusted Local / Strict Isolated, §12.1); v0.4 specified AI Conversations (§18)\
+**Date:** 2026-11-11 (UI-04D; prior snapshot: 2026-11-07; v0.10: 2026-11-07, v0.9: 2026-11-07, v0.8: 2026-11-07, v0.7: 2026-11-06, v0.5: 2026-11-04, v0.3: 2026-11-03)\
+**Product type:** Local-first web application for orchestrating coding agents\
 **Audience:** Single user (the application owner)
 
 > **Purpose:** Define **what** the application must do, its product constraints, and acceptance criteria. API design, database schemas, code organization, adapter internals, and process management belong in `ARCHITECTURE.md`.
@@ -905,3 +905,71 @@ project frame provides a readable local content region; initial outer scrolling 
 reach it, particularly in short windows. Reading project content then scrolls locally. Standard
 page anchors and useful in-memory route positions restore inside the viewport, including streamed
 loading states, and yield to operator scrolling. No global body overflow lock is introduced.
+
+## 22. UI-04D — Conversation references and reusable structures (2026-11-11)
+
+- **Reference** on a user message or completed AI reply attaches an explicit quotation to the
+  existing Chat composer. **Reference in chat** on a saved note returns to Chat and attaches it.
+  Selecting, removing or navigating a reference starts no CLI and changes no saved source.
+- Previews identify the role or saved note, show at most 240 characters, link to the original
+  stable message/note anchor and have individually labelled Remove controls. The sent user
+  message retains bounded provenance previews and source links. Generate tasks remains a
+  separate action using only its selected assistant reply; references do not extend its input.
+- Notes remain separate from chat and excluded from ordinary context. A note is shared with the
+  selected provider **only after sending a new message explicitly referencing it**, or manually
+  retrying that message. The composer names the recipient before Send. AI Conversations
+  disclosure `2026-11-11.1` replaces the previous unconditional “never sent” statement and requires
+  renewed acceptance; CLI profiles, credentials and repository permissions are unchanged.
+- The request carries source IDs only. The server resolves them within the current conversation
+  and project before storing a user message or queued turn. Missing, foreign or ineligible
+  sources cause an actionable error, with no partial turn. Duplicate IDs and more than five
+  references are refused. Each source must fit 20,000 characters; together they must fit 30,000.
+  Sources are never silently truncated for execution. Existing 20,000-character message,
+  60,000-character General Chat history, 30,000-character Project-Aware history and
+  60,000-character repository-excerpt budgets remain. Maximum source-content totals are thus
+  110,000 characters for General Chat and 140,000 for Project-Aware answers, plus bounded prompt
+  framing. References have a separate allowance and do not displace selected history/excerpts.
+- Server-resolved quotations are snapshotted atomically with the turn. Execution, queued restart
+  recovery and manual Retry use these snapshots; Retry never resolves fresh source text. Request
+  ID idempotency includes the ordered reference selection. Repeating the same request returns
+  the stored result even if a source later changes; changing references requires a new request ID.
+- References enter a separate, clearly labelled untrusted context section before the new message.
+  They grant no tools or application actions. Unselected note bodies are excluded; a model may
+  naturally quote an explicitly shared note in its answer, which can enter later chat history.
+- Existing application/project shells own geometry and scroll boundaries. ConversationViews,
+  ConversationPanel, MessageComposer, shared buttons and message footers are reused. One shared
+  reference preview serves drafts and sent provenance; state lives within the conversation-keyed
+  workspace. Chat/Tasks/Notes/settings round trips retain the draft and references; another
+  conversation starts with fresh state. Drafts remain in memory, not browser/SQLite storage.
+- Source links use local pane navigation without clearing the draft or focusing the composer.
+  Existing latest-message positioning, deliberate older-history reading, keyboard submission,
+  same-tick duplicate protection and all four Nebula Graphite accents remain acceptance criteria.
+
+Deferred: safe permanent deletion, optional task-worktree local-change transfer, manual file
+attachments, summaries, streaming/partial replies and previously deferred platform/security work.
+No scheduler, source-retrieval expansion, publication capability or shell permission is introduced.
+
+### UI-04D acceptance follow-up — Edit and delete saved notes (2026-11-11)
+
+- Saved notes offer inline Edit, Save and Cancel, alongside Reference in chat and a distinct
+  destructive Delete action. Editing preserves the note ID, conversation, sequence and original
+  creation time; successful edits advance a revision and record/display a modification time.
+  Existing normalized 1–20,000-character limits apply. Empty/oversized/stale edits are refused.
+- Delete requires an accessible confirmation explaining retained reference copies. It removes the
+  note from the active list and clears its current text, retaining an identity/sequence/timestamp
+  tombstone. Sequence numbers are never reassigned. This is logical removal, not secure erasure;
+  previously sent snapshots, provider records and other copies are not erased. Conversations,
+  chat messages, AI replies, turns, proposals and tasks cannot be deleted through these actions.
+- Revision checks reject stale Save or a confirmation opened before another edit. Repeating a
+  successful scoped deletion is harmless. Deleted notes cannot be recreated by stale edits or
+  replaying their original create request. Editing/deleting can occur during an AI turn because
+  the turn already owns an immutable reference snapshot; these actions send nothing to AI.
+- New reference sends resolve the current saved note content. Existing snapshots and Retry remain
+  unchanged after edits or deletion. Historical previews retain their snapshot text and identify
+  unavailable sources without a dead link. Unsent selections refresh their preview after a note
+  edit; deleted sources show Remove before sending and fail client/server validation before any
+  new message/turn is stored. Draft text and other references remain intact.
+- Existing panels/scroll ownership/navigation/composers and theme tokens remain authoritative.
+  Editors focus only after explicit Edit; Cancel restores the action, deletion confirmation starts
+  on Cancel, and successful deletion returns focus to Notes. Save/delete pending states prevent
+  duplicate requests; stale errors preserve the editor draft until Cancel/reopen.

@@ -120,10 +120,10 @@ const history = (
     }),
   );
 
-test('the history empty state explains that notes are never sent', () => {
+test('the history empty state explains explicit note sharing', () => {
   const html = history([]);
   assert.match(html, /No messages yet/);
-  assert.match(html, /Notes are never sent to Claude Code or Codex/);
+  assert.match(html, /Notes are shared only when explicitly referenced/);
 });
 
 test('notes live in Notes, are ordered, escaped and never shown as AI replies', () => {
@@ -132,10 +132,10 @@ test('notes live in Notes, are ordered, escaped and never shown as AI replies', 
     message({ id: id(102), sequence: 2, content: 'Beta\n\n- item' }),
   ];
   assert.doesNotMatch(history(messages), /Alpha|Beta|Not sent to an AI/);
-  const html = render(createElement(ConversationNotes, { messages }));
+  const html = render(createElement(ConversationNotes, { messages, projectId }));
   assert.ok(html.indexOf('Alpha') < html.indexOf('Beta'));
   assert.match(html, /<ol aria-label="Saved notes"/);
-  assert.equal(html.match(/Not sent to an AI/g)?.length, 2);
+  assert.equal(html.match(/Note · Private unless referenced/g)?.length, 2);
   assert.doesNotMatch(html, /AI reply/);
   assert.doesNotMatch(html, /<script>/, 'content is escaped');
   assert.match(html, /whitespace-pre-wrap/);
@@ -351,7 +351,7 @@ test('the composer sends to the AI by default and keeps notes clearly separate',
   assert.match(html, new RegExp(`<textarea[^>]* id="${labelFor}"`));
   assert.doesNotMatch(html, /radiogroup|Save as Note/);
   assert.match(html, /Send to AI/);
-  assert.match(html, /Notes are not sent/);
+  assert.match(html, /Notes are private unless explicitly referenced/);
   assert.match(html, /0 \/ 20,000 characters/);
   assert.match(html, /<button[^>]*type="submit"[^>]*disabled=""[^>]*>.*Send/);
 });
@@ -376,7 +376,7 @@ test('AI-off Chat links to Settings; Notes remains local and secondary', () => {
   assert.match(note, />New note<\/label>/);
   assert.match(note, /Save as Note/);
   assert.match(note, /data-variant="outline"/);
-  assert.match(note, /never sent to Claude Code or Codex/);
+  assert.match(note, /Share it later only by explicitly referencing it in Chat/);
 });
 
 test('while a reply is pending the composer is blocked', () => {
